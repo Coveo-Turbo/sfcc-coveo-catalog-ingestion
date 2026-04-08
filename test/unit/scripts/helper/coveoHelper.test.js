@@ -4,6 +4,22 @@ var path = require('path');
 var assert = require('chai').assert;
 var proxyquire = require('proxyquire').noCallThru();
 
+function createHashSet() {
+    function HashSet() {
+        this.values = {};
+    }
+
+    HashSet.prototype.add = function (value) {
+        this.values[value] = true;
+    };
+
+    HashSet.prototype.contains = function (value) {
+        return !!this.values[value];
+    };
+
+    return HashSet;
+}
+
 function createIterator(values) {
     var index = 0;
 
@@ -52,6 +68,7 @@ describe('coveoHelper', function () {
                     return '2026-01-01t000000.000';
                 }
             },
+            'dw/util/HashSet': createHashSet(),
             'dw/catalog/ProductMgr': {
                 queryAllSiteProducts: function () {
                     return createIterator([
@@ -126,6 +143,7 @@ describe('coveoHelper', function () {
                     return '2026-01-01t000000.000';
                 }
             },
+            'dw/util/HashSet': createHashSet(),
             'dw/catalog/ProductMgr': {
                 queryAllSiteProducts: function () {
                     return createIterator([]);
@@ -153,5 +171,102 @@ describe('coveoHelper', function () {
         assert.throws(function () {
             helper.buildProductQuery(true);
         }, /requires a successful full catalog sync/);
+    });
+
+    it('returns deduplicated root product ids for full exports when search hits include variants', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/util/Calendar': function Calendar() {},
+            'dw/io/File': function File() {},
+            'dw/io/FileWriter': function FileWriter() {},
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/StringUtils': {
+                formatCalendar: function () {
+                    return '2026-01-01t000000.000';
+                }
+            },
+            'dw/util/HashSet': createHashSet(),
+            'dw/catalog/ProductMgr': {
+                getProduct: function (productId) {
+                    var products = {
+                        'MASTER-1': {
+                            ID: 'MASTER-1',
+                            master: true
+                        },
+                        'MASTER-1-RED-S': {
+                            ID: 'MASTER-1-RED-S',
+                            variant: true,
+                            masterProduct: {
+                                ID: 'MASTER-1'
+                            }
+                        },
+                        'MASTER-1-RED-M': {
+                            ID: 'MASTER-1-RED-M',
+                            variant: true,
+                            masterProduct: {
+                                ID: 'MASTER-1'
+                            }
+                        },
+                        'STANDALONE-1': {
+                            ID: 'STANDALONE-1'
+                        }
+                    };
+
+                    return products[productId];
+                }
+            },
+            'dw/catalog/ProductSearchModel': function ProductSearchModel() {
+                this.setCategoryID = function () {};
+                this.setRecursiveCategorySearch = function () {};
+                this.search = function () {};
+                this.getProductSearchHits = function () {
+                    return createIterator([
+                        {
+                            productID: 'MASTER-1'
+                        },
+                        {
+                            productID: 'MASTER-1-RED-S'
+                        },
+                        {
+                            productID: 'MASTER-1-RED-M'
+                        },
+                        {
+                            productID: 'STANDALONE-1'
+                        }
+                    ]);
+                };
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
+                    COVEO_FILE_FORMAT: '.json'
+                },
+                CoveoFeedType: {
+                    PRODUCT_FEED: 'PRODUCT_FEED'
+                }
+            },
+            '*/cartridge/scripts/helper/catalogExportValidator': {
+                buildAddOrUpdatePayload: function (items) {
+                    return {
+                        addOrUpdate: items
+                    };
+                }
+            }
+        });
+
+        var iterator = helper.buildProductQuery(false);
+        var values = [];
+
+        while (iterator.hasNext()) {
+            values.push(iterator.next());
+        }
+
+        assert.deepEqual(values, ['MASTER-1', 'STANDALONE-1']);
     });
 });

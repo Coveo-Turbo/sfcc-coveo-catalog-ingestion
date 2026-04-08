@@ -5,6 +5,7 @@ var File = require('dw/io/File');
 var FileWriter = require('dw/io/FileWriter');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 var StringUtils = require('dw/util/StringUtils');
+var HashSet = require('dw/util/HashSet');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var ProductSearchModel = require('dw/catalog/ProductSearchModel');
 
@@ -108,7 +109,7 @@ function buildDeltaProductQuery() {
     var lastSync = coveoConstant.COVEO_CONSTANTS.CATALOG_LAST_SYNC;
     var products = ProductMgr.queryAllSiteProducts();
     var rootIds = [];
-    var seen = {};
+    var seen = new HashSet();
 
     if (empty(lastSync)) {
         throw new Error('The Coveo delta export requires a successful full catalog sync before it can run.');
@@ -119,8 +120,8 @@ function buildDeltaProductQuery() {
             var product = products.next();
             var rootId = getExportRootProductId(product);
 
-            if (!empty(rootId) && !seen[rootId] && isModifiedSince(product, lastSync)) {
-                seen[rootId] = true;
+            if (!empty(rootId) && !seen.contains(rootId) && isModifiedSince(product, lastSync)) {
+                seen.add(rootId);
                 rootIds.push(rootId);
             }
         }
@@ -132,12 +133,44 @@ function buildDeltaProductQuery() {
 }
 
 /**
+ * Builds the full export root ids from product search hits.
+ * @returns {Object} iterator of root product ids.
+ */
+function buildFullProductQuery() {
+    var productSearchModel = new ProductSearchModel();
+    var productSearchHitsItr = null;
+    var rootIds = [];
+    var seen = new HashSet();
+
+    productSearchModel.setCategoryID('root');
+    productSearchModel.setRecursiveCategorySearch(true);
+    productSearchModel.search();
+    productSearchHitsItr = productSearchModel.getProductSearchHits();
+
+    try {
+        while (productSearchHitsItr.hasNext()) {
+            var productSearchHit = productSearchHitsItr.next();
+            var product = ProductMgr.getProduct(productSearchHit.productID);
+            var rootId = getExportRootProductId(product);
+
+            if (!empty(rootId) && !seen.contains(rootId)) {
+                seen.add(rootId);
+                rootIds.push(rootId);
+            }
+        }
+    } finally {
+        closeIterator(productSearchHitsItr);
+    }
+
+    return createArrayIterator(rootIds);
+}
+
+/**
  * This function is used for delta products
  * @param {boolean} isDelta - isDelta
  * @returns {Object} productSearch - productSearch
  */
 function buildProductQuery(isDelta) {
-    var productSearchHitsItr;
     try {
         Logger.info('Starting product search...');
 
@@ -145,27 +178,11 @@ function buildProductQuery(isDelta) {
             return buildDeltaProductQuery();
         }
 
-        var productSearchModel = new ProductSearchModel();
-        productSearchModel.setCategoryID('root');
-        productSearchModel.setRecursiveCategorySearch(true);
-        productSearchModel.search();
-        productSearchHitsItr = productSearchModel.getProductSearchHits();
+        return buildFullProductQuery();
     } catch (ex) {
         Logger.error('(coveoHelper-buildProductQuery) -> Error occured while bulding the product query and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
         throw ex;
     }
-
-    return {
-        hasNext: function () {
-            return productSearchHitsItr.hasNext();
-        },
-        next: function () {
-            return productSearchHitsItr.next().productID;
-        },
-        close: function () {
-            closeIterator(productSearchHitsItr);
-        }
-    };
 }
 
 /**
