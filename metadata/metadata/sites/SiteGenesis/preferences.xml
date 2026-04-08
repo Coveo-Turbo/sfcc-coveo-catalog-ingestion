@@ -15,6 +15,7 @@
             <preference preference-id="coveoSearchHub">SG-SearchHub</preference>
             <preference preference-id="coveoSearchResponseFields">
                 <value>ec_product_id</value>
+                <value>ec_thumbnails</value>
                 <value>ec_sgquickview</value>
                 <value>ec_rating</value>
                 <value>ec_swatch</value>

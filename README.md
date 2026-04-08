@@ -20,6 +20,7 @@ This refactor updates both the ingestion flow and the catalog payload to match c
     - `ec_product_id` for `Product` items
     - `ec_variant_id` for `Variant` items
   - `language` on every item
+  - `ec_images` as a gallery image array and `ec_thumbnails` for product thumbnails
 - Legacy `ec_productid` is no longer emitted.
 - Exported JSON is validated before upload so malformed product/variant relationships fail early.
 - Push API credentials now come from the SFCC service credential instead of the site preference.
@@ -34,6 +35,7 @@ The current export behavior is:
 - Variant items point back to their parent grouped product through `ec_product_id` and carry their own `ec_variant_id = variant.ID`.
 - Product items set `permanentid = ec_product_id`, while Variant items set `permanentid = ec_variant_id`.
 - Every exported item includes the site language derived from the default locale.
+- `ec_thumbnails` uses SFCC `medium` images, while `ec_images` keeps the `large` gallery images.
 - Grouped product families share `ec_item_group_id = master.ID`.
 
 ## Key Files
@@ -67,6 +69,7 @@ These tests cover:
 - Allow outbound connections for both the configured Coveo Push API host and the S3 host returned by file-container `uploadUri` values, such as `https://coveo-nprod-customerdata.s3.amazonaws.com`.
 - Verify the Coveo catalog mappings use `ec_product_id`, `ec_variant_id`, `ec_item_group_id`, and `objecttype`.
 - Verify the source mappings also map `permanentid` and `language`.
+- Ensure the sample storefront response fields include `ec_thumbnails`.
 - Run a full export before trusting any delta export.
 
 See [sandbox-setup.md](/Users/jfallaire/Sources/PSInternal/sfcc-cartridge/documentation/sandbox-setup.md) for the full deployment and validation sequence.

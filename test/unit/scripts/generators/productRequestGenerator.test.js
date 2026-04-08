@@ -64,6 +64,18 @@ function createVariationModel(colorId, sizeId) {
 }
 
 function createProduct(options) {
+    var imageSets = options.images || {};
+
+    function createImage(url) {
+        return {
+            httpsURL: {
+                toString: function () {
+                    return url;
+                }
+            }
+        };
+    }
+
     return {
         ID: options.ID,
         master: !!options.master,
@@ -81,14 +93,24 @@ function createProduct(options) {
         },
         custom: options.custom || {},
         variationModel: createVariationModel(options.custom && options.custom.color, options.custom && options.custom.size),
+        getImages: function (imageType) {
+            var imageUrls = imageSets[imageType];
+
+            if (!imageUrls) {
+                return createArrayWrapper([]);
+            }
+
+            return createArrayWrapper(imageUrls.map(function (url) {
+                return createImage(url);
+            }));
+        },
         getImage: function (imageType) {
-            return {
-                httpsURL: {
-                    toString: function () {
-                        return 'https://example.com/images/' + options.ID + '/' + imageType + '.jpg';
-                    }
-                }
-            };
+            var imageUrls = imageSets[imageType];
+            var imageUrl = imageUrls && imageUrls.length
+                ? imageUrls[0]
+                : null;
+
+            return imageUrl ? createImage(imageUrl) : null;
         },
         getAttributeModel: function () {
             return {
@@ -116,7 +138,13 @@ describe('productRequestGenerator', function () {
 
     it('exports a standalone product without creating a synthetic variant item', function () {
         var standaloneProduct = createProduct({
-            ID: 'SKU-1'
+            ID: 'SKU-1',
+            images: {
+                large: [
+                    'https://example.com/images/SKU-1/large-1.jpg',
+                    'https://example.com/images/SKU-1/large-2.jpg'
+                ]
+            }
         });
 
         var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
@@ -175,6 +203,11 @@ describe('productRequestGenerator', function () {
         assert.strictEqual(exports[0].ec_product_id, 'SKU-1');
         assert.strictEqual(exports[0].permanentid, 'SKU-1');
         assert.strictEqual(exports[0].language, 'en');
+        assert.deepEqual(exports[0].ec_images, [
+            'https://example.com/images/SKU-1/large-1.jpg',
+            'https://example.com/images/SKU-1/large-2.jpg'
+        ]);
+        assert.deepEqual(exports[0].ec_thumbnails, []);
         assert.notProperty(exports[0], 'ec_variant_id');
     });
 
@@ -190,6 +223,15 @@ describe('productRequestGenerator', function () {
             custom: {
                 color: 'red',
                 size: 'small'
+            },
+            images: {
+                large: [
+                    'https://example.com/images/MASTER-1-RED-S/large-1.jpg',
+                    'https://example.com/images/MASTER-1-RED-S/large-2.jpg'
+                ],
+                medium: [
+                    'https://example.com/images/MASTER-1-RED-S/medium-1.jpg'
+                ]
             }
         });
         var redVariantMedium = createProduct({
@@ -285,6 +327,7 @@ describe('productRequestGenerator', function () {
                 && item.ec_product_id === 'MASTER-1-red'
                 && item.permanentid === 'MASTER-1-red'
                 && item.language === 'en'
+                && item.ec_thumbnails[0] === 'https://example.com/images/MASTER-1-RED-S/medium-1.jpg'
                 && item.ec_item_group_id === 'MASTER-1';
         }));
         assert.isDefined(variants.find(function (item) {

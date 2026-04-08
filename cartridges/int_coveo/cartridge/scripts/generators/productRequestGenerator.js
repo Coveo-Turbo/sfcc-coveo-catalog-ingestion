@@ -282,6 +282,49 @@ function getProductSize(product) {
 }
 
 /**
+ * Returns image URLs for a given SFCC image view type.
+ * @param {Object} product - product
+ * @param {string} viewType - image view type
+ * @returns {Array} image urls
+ */
+function getImageUrls(product, viewType) {
+    var imageUrls = [];
+
+    try {
+        var images = product.getImages && product.getImages(viewType);
+        if (!empty(images) && typeof images.toArray === 'function') {
+            imageUrls = images.toArray().map(function (image) {
+                return image && image.httpsURL ? image.httpsURL.toString() : '';
+            }).filter(function (url) {
+                return !empty(url);
+            });
+        }
+
+        if (!imageUrls.length) {
+            var singleImage = product.getImage && product.getImage(viewType);
+            if (singleImage && singleImage.httpsURL) {
+                imageUrls.push(singleImage.httpsURL.toString());
+            }
+        }
+    } catch (ex) {
+        Logger.error('(productRequestGenerator-getImageUrls) -> Error occured while collecting product images and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+    }
+
+    return imageUrls.filter(function (url, index, urls) {
+        return urls.indexOf(url) === index;
+    });
+}
+
+/**
+ * Returns thumbnails from the medium image view.
+ * @param {Object} product - product
+ * @returns {Array} thumbnail urls
+ */
+function getThumbnailUrls(product) {
+    return getImageUrls(product, 'medium');
+}
+
+/**
  * Get Product Data
  * @function getProductsData
  * @param {Object} product - product
@@ -295,7 +338,8 @@ function getProductsData(product, exportOptions) {
         var itemGroupId = exportOptions && exportOptions.itemGroupId ? exportOptions.itemGroupId : null;
         var coveoProductAttribute = getAttributeValue(product);
         var coveoProductCategory = getAllCategories(product, null, []);
-        var productImage = product.getImage('large');
+        var productImages = getImageUrls(product, 'large');
+        var productThumbnails = getThumbnailUrls(product);
         var swatchImage = product.getImage('swatch');
         var productRating = getProductRating(product);
         var productColor = getProductColor(product);
@@ -315,7 +359,8 @@ function getProductsData(product, exportOptions) {
             language: getExportLanguage(),
             permanentid: productId,
             ec_product_id: productId,
-            ec_images: productImage && productImage.httpsURL ? productImage.httpsURL.toString() : '',
+            ec_images: productImages,
+            ec_thumbnails: productThumbnails,
             ec_swatch: swatchImage && swatchImage.httpsURL ? swatchImage.httpsURL.toString() : '',
             ec_price: product.priceModel.maxPrice.value,
             ec_category: coveoProductCategory,

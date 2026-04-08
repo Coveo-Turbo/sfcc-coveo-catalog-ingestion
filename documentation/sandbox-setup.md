@@ -150,6 +150,7 @@ Leave the imported sample values only as placeholders. Override them with your r
 Recommended response fields for the sample storefront setup are:
 
 - `ec_product_id`
+- `ec_thumbnails`
 - `ec_sfraquickview` or `ec_sgquickview`
 - `ec_rating`
 - `ec_swatch`
@@ -236,6 +237,8 @@ Confirm that:
 - `Product` items set `permanentid = ec_product_id`
 - `Variant` items set `permanentid = ec_variant_id`
 - every item contains `language`
+- `ec_images` is an array of gallery images
+- `ec_thumbnails` is populated from `medium` images, while `ec_images` contains the `large` gallery images
 - standalone products export only a `Product` item
 - grouped product ids use the expected `<masterID>-<colorID>` shape
 - grouped products share `ec_item_group_id = <masterID>`

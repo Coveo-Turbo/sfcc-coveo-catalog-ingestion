@@ -110,7 +110,7 @@
                                     }
                                 </style>
                                 <div class="coveo-custom-image">
-                                    <atomic-result-image class="coveo-image" field="ec_images" image-size="icon">
+                                    <atomic-result-image class="coveo-image" field="ec_thumbnails" image-size="icon">
                                     </atomic-result-image>
                                     <span class="quickview fa-stack fa-lg">
                                         <i class="fa fa-circle fa-inverse fa-stack-2x"></i>
