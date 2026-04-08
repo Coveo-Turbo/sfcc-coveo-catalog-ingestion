@@ -153,6 +153,11 @@ describe('productRequestGenerator', function () {
                     };
                 }
             },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
             'dw/object/ObjectAttributeDefinition': {},
             'dw/web/URLUtils': {
                 abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
@@ -168,6 +173,8 @@ describe('productRequestGenerator', function () {
         assert.lengthOf(exports, 1);
         assert.strictEqual(exports[0].objecttype, 'Product');
         assert.strictEqual(exports[0].ec_product_id, 'SKU-1');
+        assert.strictEqual(exports[0].permanentid, 'SKU-1');
+        assert.strictEqual(exports[0].language, 'en');
         assert.notProperty(exports[0], 'ec_variant_id');
     });
 
@@ -244,6 +251,11 @@ describe('productRequestGenerator', function () {
                     };
                 }
             },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
             'dw/object/ObjectAttributeDefinition': {},
             'dw/web/URLUtils': {
                 abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
@@ -271,18 +283,24 @@ describe('productRequestGenerator', function () {
         assert.isDefined(products.find(function (item) {
             return item.objecttype === 'Product'
                 && item.ec_product_id === 'MASTER-1-red'
+                && item.permanentid === 'MASTER-1-red'
+                && item.language === 'en'
                 && item.ec_item_group_id === 'MASTER-1';
         }));
         assert.isDefined(variants.find(function (item) {
             return item.objecttype === 'Variant'
                 && item.ec_product_id === 'MASTER-1-red'
                 && item.ec_variant_id === 'MASTER-1-RED-S'
+                && item.permanentid === 'MASTER-1-RED-S'
+                && item.language === 'en'
                 && item.ec_sku === 'MASTER-1-RED-S';
         }));
         assert.isDefined(variants.find(function (item) {
             return item.objecttype === 'Variant'
                 && item.ec_product_id === 'MASTER-1-blue'
                 && item.ec_variant_id === 'MASTER-1-BLUE-S'
+                && item.permanentid === 'MASTER-1-BLUE-S'
+                && item.language === 'en'
                 && item.ec_sku === 'MASTER-1-BLUE-S';
         }));
     });

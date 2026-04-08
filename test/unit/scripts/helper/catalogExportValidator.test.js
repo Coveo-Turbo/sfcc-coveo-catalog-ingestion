@@ -34,11 +34,15 @@ describe('catalogExportValidator', function () {
             {
                 documentId: 'https://example.com/product/red',
                 objecttype: 'Product',
+                language: 'en',
+                permanentid: 'MASTER-red',
                 ec_product_id: 'MASTER-red'
             },
             {
                 documentId: 'https://example.com/product/red?pid=sSKU-1',
                 objecttype: 'Variant',
+                language: 'en',
+                permanentid: 'SKU-1',
                 ec_product_id: 'MASTER-red',
                 ec_variant_id: 'SKU-1'
             }
@@ -49,11 +53,15 @@ describe('catalogExportValidator', function () {
                 {
                     documentId: 'https://example.com/product/red',
                     objecttype: 'Product',
+                    language: 'en',
+                    permanentid: 'MASTER-red',
                     ec_product_id: 'MASTER-red'
                 },
                 {
                     documentId: 'https://example.com/product/red?pid=sSKU-1',
                     objecttype: 'Variant',
+                    language: 'en',
+                    permanentid: 'SKU-1',
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }
@@ -67,6 +75,8 @@ describe('catalogExportValidator', function () {
                 {
                     documentId: 'https://example.com/product/red',
                     objecttype: 'Product',
+                    language: 'en',
+                    permanentid: 'MASTER-red',
                     ec_product_id: 'MASTER-red',
                     ec_productid: 'legacy-id'
                 }
@@ -80,10 +90,33 @@ describe('catalogExportValidator', function () {
                 {
                     documentId: 'https://example.com/product/red?pid=sSKU-1',
                     objecttype: 'Variant',
+                    language: 'en',
+                    permanentid: 'SKU-1',
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }
             ]);
         }, /references missing parent ec_product_id/);
+    });
+
+    it('rejects items that are missing language or mismatched permanentid values', function () {
+        assert.throws(function () {
+            validator.buildAddOrUpdatePayload([
+                {
+                    documentId: 'https://example.com/product/red',
+                    objecttype: 'Product',
+                    permanentid: 'WRONG',
+                    ec_product_id: 'MASTER-red'
+                },
+                {
+                    documentId: 'https://example.com/product/red?pid=sSKU-1',
+                    objecttype: 'Variant',
+                    language: 'en',
+                    permanentid: 'WRONG',
+                    ec_product_id: 'MASTER-red',
+                    ec_variant_id: 'SKU-1'
+                }
+            ]);
+        }, /missing language|permanentid/);
     });
 });

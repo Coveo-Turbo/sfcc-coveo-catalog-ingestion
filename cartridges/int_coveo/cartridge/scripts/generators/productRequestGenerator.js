@@ -5,6 +5,7 @@ var CatalogMgr = require('dw/catalog/CatalogMgr');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
+var Site = require('dw/system/Site');
 var ObjectAttributeDefinition = require('dw/object/ObjectAttributeDefinition');
 var URLUtils = require('dw/web/URLUtils');
 
@@ -244,6 +245,20 @@ function getCanonicalProductId(product) {
 }
 
 /**
+ * Returns the language code used for catalog exports.
+ * @returns {string} language code.
+ */
+function getExportLanguage() {
+    var defaultLocale = Site.current && Site.current.defaultLocale ? String(Site.current.defaultLocale) : '';
+
+    if (empty(defaultLocale)) {
+        return '';
+    }
+
+    return defaultLocale.split(/[-_]/)[0].toLowerCase();
+}
+
+/**
  * Get product size
  * @function getProductSize
  * @param {Object} product - product
@@ -297,6 +312,8 @@ function getProductsData(product, exportOptions) {
             ec_sgquickview: product.variant ? URLUtils.url('Product-Show', 'pid', product.masterProduct.ID, 'cgid', productCategory).toString() : URLUtils.url('Product-Show', 'pid', product.ID, 'cgid', productCategory).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             model: coveoConstant.COVEO_CONSTANTS.MODEL,
+            language: getExportLanguage(),
+            permanentid: productId,
             ec_product_id: productId,
             ec_images: productImage && productImage.httpsURL ? productImage.httpsURL.toString() : '',
             ec_swatch: swatchImage && swatchImage.httpsURL ? swatchImage.httpsURL.toString() : '',
@@ -341,6 +358,8 @@ function getVariantsData(product, productId) {
         variantObj = {
             documentId: URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
+            language: getExportLanguage(),
+            permanentid: product.ID,
             ec_sku: product.ID,
             ec_size: getProductSize(product),
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT,

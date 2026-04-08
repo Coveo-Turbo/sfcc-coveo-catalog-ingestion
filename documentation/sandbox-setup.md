@@ -112,6 +112,22 @@ Use the credential password to store the Coveo Push API key used for Stream API 
 
 The site preference `coveoApiKey` is now deprecated and should not be used for push operations.
 
+## 6a. Allow outbound connections
+
+The Stream file-container flow uses more than one outbound host:
+
+- the Coveo Push API host configured on `int.coveo.api.cred`
+- the S3 upload host returned by the file-container `uploadUri`
+
+In Business Manager under `Administration > Operations > Services > Outbound Connections`, allow:
+
+- the regional Coveo Push API host you configured on the service credential
+- the S3 upload host used by Coveo file containers, for example `https://coveo-nprod-customerdata.s3.amazonaws.com`
+
+If the `uploadUri` returned by Coveo uses a different S3 host for your environment or region, allow that exact host as well.
+
+Without these outbound-connection entries, the export can fail even when the SFCC service credential and job configuration are otherwise correct.
+
 ## 7. Configure the Coveo site preferences
 
 The metadata creates a site preference group named `Coveo Configs`.
@@ -152,7 +168,8 @@ After the first successful import, verify the catalog configuration or source ma
 - Variant identifier maps to `ec_variant_id`
 - Grouping maps to `ec_item_group_id`
 - Item type maps to `objecttype`
-- `permanentid` is sourced from the same identifier field you selected as the product identifier
+- `permanentid` maps to the `permanentid` metadata key emitted by the export
+- `language` maps to the `language` metadata key emitted by the export
 
 Remove any mapping that still uses the legacy `ec_productid` field.
 
@@ -163,6 +180,7 @@ If automatic catalog mappings do not resolve the standard field names correctly,
 - `ec_item_group_id`
 - `objecttype`
 - `permanentid`
+- `language`
 
 ## 9. Run the first product export
 
@@ -215,6 +233,9 @@ Confirm that:
 
 - `Product` items contain `ec_product_id`
 - `Variant` items contain both `ec_product_id` and `ec_variant_id`
+- `Product` items set `permanentid = ec_product_id`
+- `Variant` items set `permanentid = ec_variant_id`
+- every item contains `language`
 - standalone products export only a `Product` item
 - grouped product ids use the expected `<masterID>-<colorID>` shape
 - grouped products share `ec_item_group_id = <masterID>`

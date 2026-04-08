@@ -16,6 +16,10 @@ This refactor updates both the ingestion flow and the catalog payload to match c
   - `ec_product_id` on all `Product` and `Variant` items
   - `ec_variant_id` on all `Variant` items
   - `ec_item_group_id` for grouped master products
+  - `permanentid` aligned with the item identifier:
+    - `ec_product_id` for `Product` items
+    - `ec_variant_id` for `Variant` items
+  - `language` on every item
 - Legacy `ec_productid` is no longer emitted.
 - Exported JSON is validated before upload so malformed product/variant relationships fail early.
 - Push API credentials now come from the SFCC service credential instead of the site preference.
@@ -28,6 +32,8 @@ The current export behavior is:
 - Master products export one displayable `Product` per distinct color group.
 - Grouped product ids use the shape `<masterID>-<colorID>`.
 - Variant items point back to their parent grouped product through `ec_product_id` and carry their own `ec_variant_id = variant.ID`.
+- Product items set `permanentid = ec_product_id`, while Variant items set `permanentid = ec_variant_id`.
+- Every exported item includes the site language derived from the default locale.
 - Grouped product families share `ec_item_group_id = master.ID`.
 
 ## Key Files
@@ -58,7 +64,9 @@ These tests cover:
 
 - Import [metadata/metadata.zip](/Users/jfallaire/Sources/PSInternal/sfcc-cartridge/metadata/metadata.zip) after uploading the cartridges.
 - Configure `int.coveo.api.cred` with the real Push API URL and secret.
+- Allow outbound connections for both the configured Coveo Push API host and the S3 host returned by file-container `uploadUri` values, such as `https://coveo-nprod-customerdata.s3.amazonaws.com`.
 - Verify the Coveo catalog mappings use `ec_product_id`, `ec_variant_id`, `ec_item_group_id`, and `objecttype`.
+- Verify the source mappings also map `permanentid` and `language`.
 - Run a full export before trusting any delta export.
 
 See [sandbox-setup.md](/Users/jfallaire/Sources/PSInternal/sfcc-cartridge/documentation/sandbox-setup.md) for the full deployment and validation sequence.
