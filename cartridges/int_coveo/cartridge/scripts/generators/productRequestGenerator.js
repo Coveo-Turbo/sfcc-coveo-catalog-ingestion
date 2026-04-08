@@ -218,6 +218,32 @@ function getProductColor(product) {
 }
 
 /**
+ * Returns the color-group key used to build display-product identifiers.
+ * @param {Object} product - product
+ * @returns {string} color group key
+ */
+function getColorGroupKey(product) {
+    if (!empty(product) && product.variant && 'color' in product.custom && !empty(product.custom.color)) {
+        return product.custom.color;
+    }
+
+    return !empty(product) ? product.ID : '';
+}
+
+/**
+ * Builds the canonical product identifier used by Commerce mappings.
+ * @param {Object} product - product
+ * @returns {string} product identifier
+ */
+function getCanonicalProductId(product) {
+    if (!empty(product) && product.variant && !empty(product.masterProduct)) {
+        return product.masterProduct.ID + '-' + getColorGroupKey(product);
+    }
+
+    return !empty(product) ? product.ID : '';
+}
+
+/**
  * Get product size
  * @function getProductSize
  * @param {Object} product - product
@@ -244,12 +270,14 @@ function getProductSize(product) {
  * Get Product Data
  * @function getProductsData
  * @param {Object} product - product
- * @param {boolean} isVariant - isVariant
+ * @param {Object} exportOptions - export options
  * @returns {Object} - Object
  */
-function getProductsData(product, isVariant) {
+function getProductsData(product, exportOptions) {
     var prdObj = null;
     try {
+        var productId = exportOptions && exportOptions.productId ? exportOptions.productId : getCanonicalProductId(product);
+        var itemGroupId = exportOptions && exportOptions.itemGroupId ? exportOptions.itemGroupId : null;
         var coveoProductAttribute = getAttributeValue(product);
         var coveoProductCategory = getAllCategories(product, null, []);
         var productImage = product.getImage('large');
@@ -264,12 +292,12 @@ function getProductsData(product, isVariant) {
             productCategory = product.primaryCategory ? product.primaryCategory.ID : '';
         }
         prdObj = {
-            DocumentId: URLUtils.abs('Product-Show', 'pid', product.ID).toString(),
+            documentId: URLUtils.abs('Product-Show', 'pid', product.ID).toString(),
             ec_sfraquickview: product.variant ? URLUtils.url('Product-ShowQuickView', 'pid', product.masterProduct.ID).toString() : URLUtils.url('Product-ShowQuickView', 'pid', product.ID).toString(),
             ec_sgquickview: product.variant ? URLUtils.url('Product-Show', 'pid', product.masterProduct.ID, 'cgid', productCategory).toString() : URLUtils.url('Product-Show', 'pid', product.ID, 'cgid', productCategory).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             model: coveoConstant.COVEO_CONSTANTS.MODEL,
-            ec_productid: product.ID,
+            ec_product_id: productId,
             ec_images: productImage && productImage.httpsURL ? productImage.httpsURL.toString() : '',
             ec_swatch: swatchImage && swatchImage.httpsURL ? swatchImage.httpsURL.toString() : '',
             ec_price: product.priceModel.maxPrice.value,
@@ -290,11 +318,8 @@ function getProductsData(product, isVariant) {
         if (product.variant && 'size' in product.custom && !empty(product.custom.size)) {
             prdObj.ec_size = getProductSize(product);
         }
-        const hasMultipleColors = product.variant ? product.masterProduct.variants.toArray().filter(
-            (product, index, self) => self.findIndex(p => p.custom.color === product.custom.color) === index // eslint-disable-line
-        ) : [];
-        if ((product.variant && product.custom.color && (!empty(hasMultipleColors) && hasMultipleColors.length > 1)) || isVariant) {
-            prdObj.ec_item_group_id = product.variant ? 'P' + product.masterProduct.ID : 'P' + product.ID;
+        if (!empty(itemGroupId)) {
+            prdObj.ec_item_group_id = itemGroupId;
         }
     } catch (ex) {
         Logger.error('(productRequestGenerator-getProductsData) -> Error occured while generating products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
@@ -311,16 +336,16 @@ function getProductsData(product, isVariant) {
  */
 function getVariantsData(product, productId) {
     var variantObj = null;
-    var variantUrl = product.bundle === true || product.productSet === true || product.optionProduct === true || product.productSetProduct === true;
     try {
         var coveoProductAttribute = getAttributeValue(product);
         variantObj = {
-            DocumentId: variantUrl ? URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString() : URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString(),
+            documentId: URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
-            ec_sku: 'S' + product.ID,
+            ec_sku: product.ID,
             ec_size: getProductSize(product),
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT,
-            ec_productid: productId
+            ec_product_id: productId,
+            ec_variant_id: product.ID
         };
         coveoProductAttribute.forEach(field => {
             if (!empty(field) && field.key !== "ec_color") {
@@ -342,35 +367,48 @@ function getVariantsData(product, productId) {
  */
 function processProducts(product, isDelta) {
     var coveoProducts = [];
-    var color = [];
 
     try {
         var coveoPrd = ProductMgr.getProduct(product);
 
         if (coveoPrd.master) {
-            var productVariant = coveoPrd.variants && coveoPrd.variants.length > 0 ? coveoPrd.variants.iterator() : null;
             var variants = coveoPrd.variants.toArray();
-            if (productVariant) {
-                var variant = null;
-                while (productVariant.hasNext()) {
-                    variant = productVariant.next();
-                    if (color.indexOf(variant.custom.color) === -1) {
-                        coveoProducts.push(getProductsData(variant));
-                        var currentProductVariants = variants.filter(function (pvariant) { // eslint-disable-line
-                            return pvariant.custom.color === variant.custom.color;
-                        });
-                        currentProductVariants.forEach(element => { // eslint-disable-line
-                            coveoProducts.push(getVariantsData(element, variant.ID));
-                        });
-                        color.push(variant.custom.color);
-                    } else {
-                        continue; // eslint-disable-line
-                    }
+            var groupedVariants = {};
+
+            variants.forEach(function (variant) {
+                var colorKey = getColorGroupKey(variant);
+                if (!groupedVariants[colorKey]) {
+                    groupedVariants[colorKey] = [];
                 }
-            }
+
+                groupedVariants[colorKey].push(variant);
+            });
+
+            Object.keys(groupedVariants).forEach(function (colorKey) {
+                var currentProductVariants = groupedVariants[colorKey];
+                var representativeVariant = currentProductVariants[0];
+                var parentProductId = getCanonicalProductId(representativeVariant);
+
+                coveoProducts.push(getProductsData(representativeVariant, {
+                    productId: parentProductId,
+                    itemGroupId: coveoPrd.ID
+                }));
+
+                currentProductVariants.forEach(function (element) {
+                    coveoProducts.push(getVariantsData(element, parentProductId));
+                });
+            });
+        } else if (coveoPrd.variant && !empty(coveoPrd.masterProduct)) {
+            var groupedProductId = getCanonicalProductId(coveoPrd);
+            coveoProducts.push(getProductsData(coveoPrd, {
+                productId: groupedProductId,
+                itemGroupId: coveoPrd.masterProduct.ID
+            }));
+            coveoProducts.push(getVariantsData(coveoPrd, groupedProductId));
         } else {
-            coveoProducts.push(getProductsData(coveoPrd, coveoPrd.variant));
-            coveoProducts.push(getVariantsData(coveoPrd, coveoPrd.ID));
+            coveoProducts.push(getProductsData(coveoPrd, {
+                productId: coveoPrd.ID
+            }));
         }
     } catch (ex) {
         Logger.error('(productRequestGenerator-processProducts) -> Error occured while processing products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);

@@ -5,6 +5,55 @@ var Logger = require('dw/system/Logger').getLogger('Coveo');
 var FileReader = require('dw/io/FileReader');
 
 /**
+ * Returns the configured service credential password.
+ * @param {Object} svc - Service instance.
+ * @returns {string|null} password or null.
+ */
+function getServiceCredentialPassword(svc) {
+    var configuration = svc.getConfiguration ? svc.getConfiguration() : svc.configuration;
+    var credential = configuration && configuration.getCredential ? configuration.getCredential() : configuration && configuration.credential;
+    if (!credential) {
+        return null;
+    }
+
+    return credential.getPassword ? credential.getPassword() : credential.password;
+}
+
+/**
+ * Applies request headers to the service.
+ * @param {Object} svc - Service instance.
+ * @param {Object} httpHeaders - Headers to apply.
+ */
+function applyHeaders(svc, httpHeaders) {
+    var requestHeaders = httpHeaders || {};
+    var useCredentialAuth = !!requestHeaders.useCredentialAuth;
+    var accessToken = null;
+
+    Object.keys(requestHeaders).forEach(function (key) {
+        var value = requestHeaders[key];
+        if (key === 'useCredentialAuth') {
+            return;
+        }
+
+        if (value instanceof Array) {
+            value.forEach(function (entry) {
+                svc.addHeader(key, entry);
+            });
+            return;
+        }
+
+        svc.addHeader(key, value);
+    });
+
+    if (useCredentialAuth) {
+        accessToken = getServiceCredentialPassword(svc);
+        if (!empty(accessToken)) {
+            svc.addHeader('Authorization', 'Bearer ' + accessToken);
+        }
+    }
+}
+
+/**
  * This function is used to create stream service request
  * @function createStreamRequest
  * @param {string} method - method
@@ -18,28 +67,38 @@ function createStreamRequest(method, endPoint, httpHeaders, uploadURL) {
     var httpRequest = LocalServiceRegistry.createService(coveoConstant.SERVICE_ID.COVEO_STREAM, {
         createRequest: function (svc, args) {
             if (empty(uploadURL)) {
-                var url = svc.URL.replace('{coveoConstant.COVEO_CONSTANTS.ORGANIZATION_ID}');
-                url.replace('{coveoConstant.COVEO_CONSTANTS.SOURCE_ID}');
-                svc.URL = url + endPoint;
+                svc.URL = svc.URL + endPoint;
             } else {
                 svc.URL = uploadURL;
             }
             var fileContent = null;
-            var header = JSON.stringify(httpHeaders);
-            var coveoHeader = JSON.parse(header);
-            Object.keys(coveoHeader).forEach(function (key) {
-                svc.addHeader(key, coveoHeader[key]);
-            });
+            applyHeaders(svc, httpHeaders);
             svc.setRequestMethod(method);
             if (args) {
-                var fileReaders = new FileReader(args);
-                fileContent = fileReaders.getString();
-                fileReaders.close();
+                if (typeof args === 'string') {
+                    fileContent = args;
+                } else if (typeof args === 'object' && args.path) {
+                    var fileReaders = new FileReader(args);
+                    fileContent = fileReaders.getString();
+                    fileReaders.close();
+                } else {
+                    fileContent = JSON.stringify(args);
+                }
             }
             return fileContent;
         },
         parseResponse: function (svc, client) {
-            return JSON.parse(client.text);
+            if (empty(client.text)) {
+                return {};
+            }
+
+            try {
+                return JSON.parse(client.text);
+            } catch (ex) {
+                return {
+                    text: client.text
+                };
+            }
         },
         getRequestLogMessage: function (serviceRequest) {
             return serviceRequest;

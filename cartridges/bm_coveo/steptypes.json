@@ -4,7 +4,7 @@
         {
           "@type-id":"custom.coveo.coveoProductExportFull",
           "@supports-organization-context": false,
-          "description": "Exports all products to coveo via stream APIs",
+          "description": "Performs a full Coveo catalog reconcile using Stream update operations",
           "module": "bm_coveo/cartridge/scripts/jobs/exportProducts.js",
           "before-step-function":"beforeStep",
           "read-function":"read",
@@ -55,7 +55,7 @@
         {
           "@type-id":"custom.coveo.coveoProductExportDelta",
           "@supports-organization-context": false,
-          "description": "Exports delta products to coveo via stream api",
+          "description": "Exports products changed since the last successful Coveo catalog sync",
           "module": "bm_coveo/cartridge/scripts/jobs/exportProductsDelta.js",
           "before-step-function":"beforeStep",
           "read-function":"read",

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<services xmlns="http://www.demandware.com/xml/impex/services/2014-09-26">
+    <service-credential service-credential-id="int.coveo.api.cred">
+        <!-- Update the credential URL to the regional Push API host for your Coveo organization if needed. -->
+        <url>https://api.cloud.coveo.com/push/v1/organizations/</url>
+        <user-id/>
+        <password masked="true">********</password>
+    </service-credential>
+
+    <service-profile service-profile-id="int.coveo.api.profile">
+        <timeout-millis>3000</timeout-millis>
+        <rate-limit-enabled>false</rate-limit-enabled>
+        <rate-limit-calls>0</rate-limit-calls>
+        <rate-limit-millis>0</rate-limit-millis>
+        <cb-enabled>true</cb-enabled>
+        <cb-calls>0</cb-calls>
+        <cb-millis>0</cb-millis>
+    </service-profile>
+
+    <service service-id="int.coveo.http.api">
+        <service-type>HTTP</service-type>
+        <enabled>true</enabled>
+        <log-prefix>coveo-service</log-prefix>
+        <comm-log-enabled>true</comm-log-enabled>
+        <force-prd-enabled>false</force-prd-enabled>
+        <mock-mode-enabled>false</mock-mode-enabled>
+        <profile-id>int.coveo.api.profile</profile-id>
+        <credential-id>int.coveo.api.cred</credential-id>
+    </service>
+
+</services>

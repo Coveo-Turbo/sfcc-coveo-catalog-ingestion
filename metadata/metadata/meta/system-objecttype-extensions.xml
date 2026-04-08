@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://www.demandware.com/xml/impex/metadata/2006-10-31">
+
+    <type-extension type-id="SitePreferences">
+        <custom-attribute-definitions>
+            <attribute-definition attribute-id="coveoEnabled">
+                <display-name xml:lang="x-default">Coveo Enabled</display-name>
+                <description xml:lang="x-default">Coveo Cartridge Enabled</description>
+                <type>boolean</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>false</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoSearchEnabled">
+                <display-name xml:lang="x-default">Coveo Search Enabled</display-name>
+                <description xml:lang="x-default">Coveo Search Enabled (it will override the default search)</description>
+                <type>boolean</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>false</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoChunkModeEnabled">
+                <display-name xml:lang="x-default">Coveo Chunk Mode Enabled</display-name>
+                <description xml:lang="x-default">Coveo Chunk Mode Enabled (enable this to flow to let steams work with chunk mode. Only enable it when you have large number of products)</description>
+                <type>boolean</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>false</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoApiKey">
+                <display-name xml:lang="x-default">Coveo Api Key (Deprecated)</display-name>
+                <description xml:lang="x-default">Deprecated. Store the Coveo Push API key in the int.coveo.api.cred service credential password instead.</description>
+                <type>password</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoSearchApiKey">
+                <display-name xml:lang="x-default">Coveo Search Api Key</display-name>
+                <description xml:lang="x-default">Coveo Search Api Key</description>
+                <type>password</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoOrganizationId">
+                <display-name xml:lang="x-default">Coveo Organization Id</display-name>
+                <description xml:lang="x-default">Coveo Organization Id</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoSourceId">
+                <display-name xml:lang="x-default">Coveo Source ID</display-name>
+                <description xml:lang="x-default">Coveo Source ID (it will use to sync the catalog)</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoAtomicCSSURL">
+                <display-name xml:lang="x-default">Coveo Atomic CSS URL</display-name>
+                <description xml:lang="x-default">Coveo Atomic Library CSS URL</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+                <default-value>https://static.cloud.coveo.com/atomic/v2/themes/coveo.css</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoAtomicJSURL">
+                <display-name xml:lang="x-default">Coveo Atomic JS URL</display-name>
+                <description xml:lang="x-default">Coveo Atomic Library JS URL</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+                <default-value>https://static.cloud.coveo.com/atomic/v2/atomic.esm.js</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoCatalogLastSync">
+                <display-name xml:lang="x-default">Coveo Catalog Last Sync</display-name>
+                <description xml:lang="x-default">Coveo Catalog Last Sync Date and Time</description>
+                <type>datetime</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoSearchResponseFields">
+                <display-name xml:lang="x-default">Coveo Search Response Fields</display-name>
+                <type>set-of-string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoSearchHub">
+                <display-name xml:lang="x-default">Coveo Search Hub</display-name>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+        </custom-attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="Coveo Configs">
+                <display-name xml:lang="x-default">Coveo Configurations</display-name>
+                <attribute attribute-id="coveoEnabled"/>
+                <attribute attribute-id="coveoSearchEnabled"/>
+                <attribute attribute-id="coveoChunkModeEnabled"/>
+                <attribute attribute-id="coveoApiKey"/>
+                <attribute attribute-id="coveoSearchApiKey"/>
+                <attribute attribute-id="coveoOrganizationId"/>
+                <attribute attribute-id="coveoSourceId"/>
+                <attribute attribute-id="coveoAtomicCSSURL"/>
+                <attribute attribute-id="coveoAtomicJSURL"/>
+                <attribute attribute-id="coveoCatalogLastSync"/>
+                <attribute attribute-id="coveoSearchResponseFields"/>
+                <attribute attribute-id="coveoSearchHub"/>
+            </attribute-group>
+        </group-definitions>
+    </type-extension>
+    <type-extension type-id="TrackingRef"/>
+
+</metadata>

@@ -9,8 +9,9 @@ exports.SERVICE_ID = {
 
 exports.COVEO_API_ENDPOINT = {
     STREAM: sitePrefs.coveoOrganizationId + '/sources/' + sitePrefs.coveoSourceId + '/stream/',
-    FILECONTAINER: sitePrefs.coveoOrganizationId + '/files?useVirtualHostedStyleUrl=true',
+    FILECONTAINER: sitePrefs.coveoOrganizationId + '/files',
     UPDATEFILE: sitePrefs.coveoOrganizationId + '/sources/' + sitePrefs.coveoSourceId + '/stream/update?fileId=<fileId>',
+    DELETEOLDERTHAN: sitePrefs.coveoOrganizationId + '/sources/' + sitePrefs.coveoSourceId + '/stream/deleteolderthan/<orderingId>',
     CHUNK: '/chunk',
     CLOSE: '/close',
     OPEN: 'open'
@@ -23,7 +24,6 @@ exports.COVEO_HTTP_METHOD = {
 
 exports.COVEO_CONSTANTS = {
     CHUNK_MODE_ENABLED: sitePrefs.coveoChunkModeEnabled,
-    API_KEY: sitePrefs.coveoApiKey,
     ORGANIZATION_ID: sitePrefs.coveoOrganizationId,
     SOURCE_ID: sitePrefs.coveoSourceId,
     CATALOG_LAST_SYNC: sitePrefs.coveoCatalogLastSync,
