@@ -33,6 +33,14 @@ Update the placeholders in `dw.json`:
 
 ## 2. Upload the cartridges
 
+Before uploading, it is worth running the export-focused unit tests locally:
+
+```sh
+./node_modules/.bin/mocha 'test/unit/**/*.js'
+```
+
+These tests cover the Stream update flow, JSON validation, Commerce identifiers, and the full-export reconcile behavior.
+
 From the repo root:
 
 ```sh
@@ -207,6 +215,8 @@ Confirm that:
 
 - `Product` items contain `ec_product_id`
 - `Variant` items contain both `ec_product_id` and `ec_variant_id`
+- standalone products export only a `Product` item
+- grouped product ids use the expected `<masterID>-<colorID>` shape
 - grouped products share `ec_item_group_id = <masterID>`
 - no item contains `ec_productid`
 - the storefront still links product and swatch results correctly
