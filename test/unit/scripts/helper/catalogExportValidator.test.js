@@ -2,10 +2,33 @@
 
 var path = require('path');
 var assert = require('chai').assert;
+var proxyquire = require('proxyquire').noCallThru();
 
-var validator = require(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/catalogExportValidator'));
+function createHashSet() {
+    function HashSet() {
+        this.values = {};
+    }
+
+    HashSet.prototype.add = function (value) {
+        this.values[value] = true;
+    };
+
+    HashSet.prototype.contains = function (value) {
+        return !!this.values[value];
+    };
+
+    return HashSet;
+}
 
 describe('catalogExportValidator', function () {
+    var validator;
+
+    beforeEach(function () {
+        validator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/catalogExportValidator'), {
+            'dw/util/HashSet': createHashSet()
+        });
+    });
+
     it('builds an addOrUpdate payload for valid product and variant items', function () {
         var payload = validator.buildAddOrUpdatePayload([
             {

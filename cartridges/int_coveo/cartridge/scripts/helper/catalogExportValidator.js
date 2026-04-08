@@ -1,5 +1,7 @@
 'use strict';
 
+var HashSet = require('dw/util/HashSet');
+
 /**
  * Checks whether a value should be treated as missing in the export payload.
  * @param {*} value - Value to validate.
@@ -16,8 +18,8 @@ function isMissing(value) {
  */
 function validateCatalogItems(items) {
     var errors = [];
-    var productIds = {};
-    var variantIds = {};
+    var productIds = new HashSet();
+    var variantIds = new HashSet();
 
     items.forEach(function (item, index) {
         if (!item || typeof item !== 'object') {
@@ -37,7 +39,7 @@ function validateCatalogItems(items) {
             if (isMissing(item.ec_product_id)) {
                 errors.push('Product item at index ' + index + ' is missing ec_product_id.');
             } else {
-                productIds[item.ec_product_id] = true;
+                productIds.add(item.ec_product_id);
             }
         }
 
@@ -48,16 +50,16 @@ function validateCatalogItems(items) {
 
             if (isMissing(item.ec_variant_id)) {
                 errors.push('Variant item at index ' + index + ' is missing ec_variant_id.');
-            } else if (variantIds[item.ec_variant_id]) {
+            } else if (variantIds.contains(item.ec_variant_id)) {
                 errors.push('Variant item at index ' + index + ' duplicates ec_variant_id ' + item.ec_variant_id + '.');
             } else {
-                variantIds[item.ec_variant_id] = true;
+                variantIds.add(item.ec_variant_id);
             }
         }
     });
 
     items.forEach(function (item, index) {
-        if (item && item.objecttype === 'Variant' && !isMissing(item.ec_product_id) && !productIds[item.ec_product_id]) {
+        if (item && item.objecttype === 'Variant' && !isMissing(item.ec_product_id) && !productIds.contains(item.ec_product_id)) {
             errors.push('Variant item at index ' + index + ' references missing parent ec_product_id ' + item.ec_product_id + '.');
         }
     });
