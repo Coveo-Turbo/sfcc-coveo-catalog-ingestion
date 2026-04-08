@@ -158,4 +158,199 @@ describe('exportProducts job', function () {
         assert.instanceOf(sitePreferences.coveoCatalogLastSync, Date);
         assert.isTrue(iteratorClosed);
     });
+
+    it('includes service failure details when file container creation fails', function () {
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/exportProducts'), {
+            'dw/util/ArrayList': function ArrayList(values) {
+                return {
+                    toArray: function () {
+                        return values;
+                    }
+                };
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    preferences: {
+                        custom: {
+                            coveoCatalogLastSync: null
+                        }
+                    }
+                }
+            },
+            'dw/system/Transaction': {
+                wrap: function (callback) {
+                    callback();
+                }
+            },
+            '*/cartridge/scripts/helper/coveoHelper': {
+                buildProductQuery: function () {
+                    return {
+                        hasNext: function () {
+                            return false;
+                        },
+                        close: function () {}
+                    };
+                },
+                writeProductFile: function () {
+                    return {
+                        path: '/tmp/feed.json',
+                        remove: function () {},
+                        name: 'feed.json'
+                    };
+                },
+                archiveFeedFile: function () {}
+            },
+            '*/cartridge/scripts/generators/productRequestGenerator': {
+                processProducts: function () {
+                    return [];
+                }
+            },
+            '*/cartridge/scripts/helper/streamHelper': {
+                createFileContainer: function () {
+                    return {
+                        ok: false,
+                        status: 'ERROR_RESPONSE',
+                        errorMessage: '401 Unauthorized'
+                    };
+                }
+            }
+        });
+
+        var parameters = {
+            get: function (name) {
+                var values = {
+                    srcFolder: '/src/coveo/feeds/products/',
+                    archivePath: '/src/coveo/feeds/products/archive',
+                    deleteFile: false
+                };
+
+                return values[name];
+            }
+        };
+
+        job.beforeStep(parameters);
+        job.write([[{ red: { id: 'red' } }]]);
+
+        assert.throws(function () {
+            job.afterChunk(null, parameters);
+        }, /401 Unauthorized/);
+    });
+
+    it('does not retry uploads in afterStep when a previous chunk failed', function () {
+        var uploadAttempts = 0;
+
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/exportProducts'), {
+            'dw/util/ArrayList': function ArrayList(values) {
+                return {
+                    toArray: function () {
+                        return values;
+                    }
+                };
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    preferences: {
+                        custom: {
+                            coveoCatalogLastSync: null
+                        }
+                    }
+                }
+            },
+            'dw/system/Transaction': {
+                wrap: function (callback) {
+                    callback();
+                }
+            },
+            '*/cartridge/scripts/helper/coveoHelper': {
+                buildProductQuery: function () {
+                    return {
+                        hasNext: function () {
+                            return false;
+                        },
+                        close: function () {}
+                    };
+                },
+                writeProductFile: function () {
+                    uploadAttempts += 1;
+                    return {
+                        path: '/tmp/feed.json',
+                        remove: function () {},
+                        name: 'feed.json'
+                    };
+                },
+                archiveFeedFile: function () {}
+            },
+            '*/cartridge/scripts/generators/productRequestGenerator': {
+                processProducts: function () {
+                    return [];
+                }
+            },
+            '*/cartridge/scripts/helper/streamHelper': {
+                createFileContainer: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            uploadUri: 'https://upload.example.com',
+                            requiredHeaders: {},
+                            fileId: 'file-1'
+                        }
+                    };
+                },
+                uploadStreamService: function () {
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                },
+                sendFileContainer: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            orderingId: 101
+                        }
+                    };
+                },
+                deleteOlderThan: function () {
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                }
+            }
+        });
+
+        var parameters = {
+            get: function (name) {
+                var values = {
+                    srcFolder: '/src/coveo/feeds/products/',
+                    archivePath: '/src/coveo/feeds/products/archive',
+                    deleteFile: false
+                };
+
+                return values[name];
+            }
+        };
+
+        job.beforeStep(parameters);
+        job.write([[{ red: { id: 'red' } }]]);
+        job.afterStep(false, parameters);
+
+        assert.strictEqual(uploadAttempts, 0);
+    });
 });

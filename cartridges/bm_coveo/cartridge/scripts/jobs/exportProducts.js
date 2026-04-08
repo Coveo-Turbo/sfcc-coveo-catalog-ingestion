@@ -16,6 +16,40 @@ var streamHelper = null;
 var firstOrderingId = null;
 
 /**
+ * Formats service failure details for logs and thrown errors.
+ * @param {Object} response - Service response.
+ * @returns {string} formatted detail string.
+ */
+function formatFailureDetails(response) {
+    var details = [];
+    var responseObject = response && response.object;
+
+    if (!empty(response) && !empty(response.status)) {
+        details.push('status=' + response.status);
+    }
+
+    if (!empty(response) && !empty(response.error)) {
+        details.push('error=' + response.error);
+    }
+
+    if (!empty(response) && !empty(response.errorMessage)) {
+        details.push('errorMessage=' + response.errorMessage);
+    }
+
+    if (!empty(response) && !empty(response.msg)) {
+        details.push('message=' + response.msg);
+    }
+
+    if (!empty(responseObject) && !empty(responseObject.message)) {
+        details.push('responseMessage=' + responseObject.message);
+    } else if (!empty(responseObject) && !empty(responseObject.text)) {
+        details.push('responseBody=' + responseObject.text);
+    }
+
+    return details.join(', ');
+}
+
+/**
  * Throws when a service call failed.
  * @param {Object} response - Service response.
  * @param {string} operation - Operation name.
@@ -23,6 +57,13 @@ var firstOrderingId = null;
  */
 function ensureSuccessfulResponse(response, operation) {
     if (empty(response) || !response.ok) {
+        var detail = formatFailureDetails(response);
+
+        if (!empty(detail)) {
+            Logger.error('Coveo {0} request failed. {1}', operation, detail);
+            throw new Error('Coveo ' + operation + ' request failed. ' + detail);
+        }
+
         throw new Error('Coveo ' + operation + ' request failed.');
     }
 
@@ -121,6 +162,11 @@ exports.afterChunk = function (stepExecution, parameters) {
 
 exports.afterStep = function (success, parameters) {
     try {
+        if (success === false) {
+            Logger.error('Skipping final Coveo full export upload and reconciliation because a previous chunk already failed.');
+            return;
+        }
+
         uploadPendingProducts(parameters);
 
         if (empty(firstOrderingId)) {

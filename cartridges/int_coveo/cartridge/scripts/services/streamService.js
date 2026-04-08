@@ -47,9 +47,11 @@ function applyHeaders(svc, httpHeaders) {
 
     if (useCredentialAuth) {
         accessToken = getServiceCredentialPassword(svc);
-        if (!empty(accessToken)) {
-            svc.addHeader('Authorization', 'Bearer ' + accessToken);
+        if (empty(accessToken)) {
+            throw new Error('The Coveo Push API credential password is empty. Set the Push API key on service credential int.coveo.api.cred.');
         }
+
+        svc.addHeader('Authorization', 'Bearer ' + accessToken);
     }
 }
 

@@ -28,7 +28,7 @@ function createFileContainer() {
     var endPoint = coveoConstant.COVEO_API_ENDPOINT.FILECONTAINER;
     var httpHeaders = coveoHelper.getStreamAPIHeaders();
     var coveoOpenFileContainer = coveoStreamService.createStreamRequest(coveoConstant.COVEO_HTTP_METHOD.POST, endPoint, httpHeaders);
-    var fileContainer = coveoOpenFileContainer.call();
+    var fileContainer = coveoOpenFileContainer.call({});
     return fileContainer;
 }
 
