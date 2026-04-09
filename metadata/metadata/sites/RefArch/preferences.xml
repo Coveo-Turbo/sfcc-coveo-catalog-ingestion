@@ -2,25 +2,9 @@
 <preferences xmlns="http://www.demandware.com/xml/impex/preferences/2007-03-31">
     <custom-preferences>
         <development>
-            <preference preference-id="coveoApiKey">DEPRECATED_USE_SERVICE_CREDENTIAL</preference>
-            <preference preference-id="coveoSearchApiKey">SET_REAL_SEARCH_API_KEY</preference>
-            <preference preference-id="coveoAtomicCSSURL">https://static.cloud.coveo.com/atomic/v2/themes/coveo.css</preference>
-            <preference preference-id="coveoAtomicJSURL">https://static.cloud.coveo.com/atomic/v2/atomic.esm.js</preference>
             <preference preference-id="coveoCatalogLastSync">1970-01-01T00:00:00.000+0000</preference>
-            <preference preference-id="coveoChunkModeEnabled">false</preference>
-            <preference preference-id="coveoEnabled">false</preference>
             <preference preference-id="coveoOrganizationId">SET_REAL_ORGANIZATION_ID</preference>
-            <preference preference-id="coveoSearchEnabled">false</preference>
             <preference preference-id="coveoSourceId">SET_REAL_SOURCE_ID</preference>
-            <preference preference-id="coveoSearchHub">SFRA-SearchHub</preference>
-            <preference preference-id="coveoSearchResponseFields">
-                <value>ec_product_id</value>
-                <value>ec_thumbnails</value>
-                <value>ec_sfraquickview</value>
-                <value>ec_rating</value>
-                <value>ec_swatch</value>
-                <value>ec_color</value>
-            </preference>
         </development>
     </custom-preferences>
 </preferences>

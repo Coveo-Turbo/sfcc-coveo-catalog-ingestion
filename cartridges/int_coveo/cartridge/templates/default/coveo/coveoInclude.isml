@@ -1,3 +1,0 @@
-<script type="module" src="${dw.system.Site.current.preferences.custom.coveoAtomicJSURL}">
-</script>
-<link rel="stylesheet" href="${dw.system.Site.current.preferences.custom.coveoAtomicCSSURL}"/>

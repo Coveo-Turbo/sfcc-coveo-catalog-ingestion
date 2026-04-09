@@ -23,7 +23,6 @@ exports.COVEO_HTTP_METHOD = {
 };
 
 exports.COVEO_CONSTANTS = {
-    CHUNK_MODE_ENABLED: sitePrefs.coveoChunkModeEnabled,
     ORGANIZATION_ID: sitePrefs.coveoOrganizationId,
     SOURCE_ID: sitePrefs.coveoSourceId,
     CATALOG_LAST_SYNC: sitePrefs.coveoCatalogLastSync,

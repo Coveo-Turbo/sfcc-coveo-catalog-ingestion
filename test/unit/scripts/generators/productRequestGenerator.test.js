@@ -208,6 +208,8 @@ describe('productRequestGenerator', function () {
             'https://example.com/images/SKU-1/large-2.jpg'
         ]);
         assert.deepEqual(exports[0].ec_thumbnails, []);
+        assert.notProperty(exports[0], 'ec_sfraquickview');
+        assert.notProperty(exports[0], 'ec_sgquickview');
         assert.notProperty(exports[0], 'ec_variant_id');
     });
 
@@ -328,6 +330,8 @@ describe('productRequestGenerator', function () {
                 && item.permanentid === 'MASTER-1-red'
                 && item.language === 'en'
                 && item.ec_thumbnails[0] === 'https://example.com/images/MASTER-1-RED-S/medium-1.jpg'
+                && !('ec_sfraquickview' in item)
+                && !('ec_sgquickview' in item)
                 && item.ec_item_group_id === 'MASTER-1';
         }));
         assert.isDefined(variants.find(function (item) {

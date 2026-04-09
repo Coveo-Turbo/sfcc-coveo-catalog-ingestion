@@ -343,17 +343,8 @@ function getProductsData(product, exportOptions) {
         var swatchImage = product.getImage('swatch');
         var productRating = getProductRating(product);
         var productColor = getProductColor(product);
-
-        var productCategory = null;
-        if (product.variant) {
-            productCategory = product.masterProduct && product.masterProduct.primaryCategory ? product.masterProduct.primaryCategory.ID : '';
-        } else {
-            productCategory = product.primaryCategory ? product.primaryCategory.ID : '';
-        }
         prdObj = {
             documentId: URLUtils.abs('Product-Show', 'pid', product.ID).toString(),
-            ec_sfraquickview: product.variant ? URLUtils.url('Product-ShowQuickView', 'pid', product.masterProduct.ID).toString() : URLUtils.url('Product-ShowQuickView', 'pid', product.ID).toString(),
-            ec_sgquickview: product.variant ? URLUtils.url('Product-Show', 'pid', product.masterProduct.ID, 'cgid', productCategory).toString() : URLUtils.url('Product-Show', 'pid', product.ID, 'cgid', productCategory).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             model: coveoConstant.COVEO_CONSTANTS.MODEL,
             language: getExportLanguage(),
