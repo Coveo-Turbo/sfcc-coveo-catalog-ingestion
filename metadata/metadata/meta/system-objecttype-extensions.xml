@@ -13,7 +13,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="coveoSourceId">
                 <display-name xml:lang="x-default">Coveo Source ID</display-name>
-                <description xml:lang="x-default">Coveo source id targeted by the catalog export jobs</description>
+                <description xml:lang="x-default">Legacy single-target Coveo source id used when no export targets are configured</description>
                 <type>string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
@@ -21,7 +21,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="coveoCatalogLastSync">
                 <display-name xml:lang="x-default">Coveo Catalog Last Sync</display-name>
-                <description xml:lang="x-default">Date and time of the last successful catalog sync for the current site</description>
+                <description xml:lang="x-default">Legacy single-target last sync used when no export targets are configured</description>
                 <type>datetime</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>

@@ -2,10 +2,9 @@
 
 var ArrayList = require('dw/util/ArrayList');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
-var Site = require('dw/system/Site');
-var Transaction = require('dw/system/Transaction');
 
 var coveoHelper = null;
+var exportTargetHelper = null;
 var isDelta = false;
 var products = null;
 var productFile = null;
@@ -14,6 +13,8 @@ var productsToExport = [];
 var sourceFolder = null;
 var streamHelper = null;
 var firstOrderingId = null;
+var exportContext = null;
+var previousLocale = null;
 
 /**
  * Formats service failure details for logs and thrown errors.
@@ -93,15 +94,15 @@ function uploadPendingProducts(parameters) {
         return;
     }
 
-    productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport);
+    productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
     Logger.info('exportProducts-write - Total products Exported: {0}', productsToExport.length);
 
-    var fileContainer = ensureSuccessfulResponse(streamHelper.createFileContainer(), 'file container creation');
+    var fileContainer = ensureSuccessfulResponse(streamHelper.createFileContainer(exportContext), 'file container creation');
     var uploadUri = fileContainer.object.uploadUri;
     var requiredHeaders = fileContainer.object.requiredHeaders || {};
     ensureSuccessfulResponse(streamHelper.uploadStreamService(productFile, uploadUri, requiredHeaders), 'file upload');
 
-    var updateResponse = ensureSuccessfulResponse(streamHelper.sendFileContainer(fileContainer.object.fileId), 'stream update');
+    var updateResponse = ensureSuccessfulResponse(streamHelper.sendFileContainer(fileContainer.object.fileId, exportContext), 'stream update');
     if (empty(firstOrderingId)) {
         firstOrderingId = updateResponse.object.orderingId;
     }
@@ -126,12 +127,25 @@ function closeProductsIterator() {
  */
 exports.beforeStep = function (parameters, stepExecution) {
     coveoHelper = require('*/cartridge/scripts/helper/coveoHelper');
+    exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
     productRequestGenerator = require('*/cartridge/scripts/generators/productRequestGenerator');
     streamHelper = require('*/cartridge/scripts/helper/streamHelper');
     sourceFolder = parameters.get('srcFolder');
     firstOrderingId = null;
     productsToExport = [];
-    products = coveoHelper.buildProductQuery(isDelta);
+    exportContext = exportTargetHelper.resolveExportContext(parameters);
+    previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
+    Logger.info(
+        'Resolved Coveo full export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, legacyMode={6}',
+        exportContext.siteId,
+        exportContext.targetId || '[single target]',
+        exportContext.locale,
+        exportContext.language,
+        exportContext.coveoSourceId,
+        exportContext.catalogId || '[site catalog]',
+        exportContext.legacyMode
+    );
+    products = coveoHelper.buildProductQuery(isDelta, exportContext);
 };
 
 exports.read = function (parameters, stepExecution) { // eslint-disable-line
@@ -141,7 +155,7 @@ exports.read = function (parameters, stepExecution) { // eslint-disable-line
 };
 
 exports.process = function (product, parameters, stepExecution) {
-    return productRequestGenerator.processProducts(product, isDelta);
+    return productRequestGenerator.processProducts(product, isDelta, exportContext);
 };
 
 exports.write = function (lines, parameters, stepExecution) {
@@ -173,12 +187,10 @@ exports.afterStep = function (success, parameters) {
             throw new Error('The Coveo full export did not upload any catalog payload.');
         }
 
-        ensureSuccessfulResponse(streamHelper.deleteOlderThan(firstOrderingId), 'delete older than');
-        Transaction.wrap(function () {
-            var lastRunTime = new Date();
-            Site.current.preferences.custom.coveoCatalogLastSync = lastRunTime;
-        });
+        ensureSuccessfulResponse(streamHelper.deleteOlderThan(firstOrderingId, exportContext), 'delete older than');
+        exportTargetHelper.updateLastSync(exportContext, new Date());
     } finally {
         closeProductsIterator();
+        exportTargetHelper.restoreRequestLocale(previousLocale);
     }
 };

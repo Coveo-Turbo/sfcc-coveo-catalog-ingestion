@@ -119,4 +119,20 @@ describe('catalogExportValidator', function () {
             ]);
         }, /missing language|permanentid/);
     });
+
+    it('rejects items whose language does not match the target export language', function () {
+        assert.throws(function () {
+            validator.buildAddOrUpdatePayload([
+                {
+                    documentId: 'https://example.com/product/red',
+                    objecttype: 'Product',
+                    language: 'fr',
+                    permanentid: 'MASTER-red',
+                    ec_product_id: 'MASTER-red'
+                }
+            ], {
+                expectedLanguage: 'en'
+            });
+        }, /expects en/);
+    });
 });

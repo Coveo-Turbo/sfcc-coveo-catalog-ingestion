@@ -174,6 +174,11 @@ describe('productRequestGenerator', function () {
                 },
                 COVEO_FIELD_MAPPER: {}
             },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
@@ -288,6 +293,11 @@ describe('productRequestGenerator', function () {
                 },
                 COVEO_FIELD_MAPPER: {}
             },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
@@ -350,5 +360,74 @@ describe('productRequestGenerator', function () {
                 && item.language === 'en'
                 && item.ec_sku === 'MASTER-1-BLUE-S';
         }));
+    });
+
+    it('uses the explicit target language when a multi-target export context is provided', function () {
+        var standaloneProduct = createProduct({
+            ID: 'SKU-1'
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/util/ArrayList': function ArrayList(values) {
+                return {
+                    toArray: function () {
+                        return values;
+                    }
+                };
+            },
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return standaloneProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                },
+                COVEO_FIELD_MAPPER: {}
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/object/ObjectAttributeDefinition': {},
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('SKU-1', false, {
+            locale: 'fr_CA',
+            language: 'fr'
+        });
+
+        assert.lengthOf(exports, 1);
+        assert.strictEqual(exports[0].language, 'fr');
     });
 });

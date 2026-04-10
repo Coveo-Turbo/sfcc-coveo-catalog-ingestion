@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://www.demandware.com/xml/impex/metadata/2006-10-31">
+    <custom-type type-id="CoveoCatalogExportTarget">
+        <display-name xml:lang="x-default">Coveo Catalog Export Target</display-name>
+        <description xml:lang="x-default">Defines a locale-aware Coveo catalog export target for a site.</description>
+        <staging-mode>source-to-target</staging-mode>
+        <storage-scope>site</storage-scope>
+        <key-definition attribute-id="targetId">
+            <display-name xml:lang="x-default">Target ID</display-name>
+            <description xml:lang="x-default">Unique identifier used to run a specific Coveo export target.</description>
+            <type>string</type>
+            <min-length>1</min-length>
+        </key-definition>
+        <attribute-definitions>
+            <attribute-definition attribute-id="targetId">
+                <display-name xml:lang="x-default">Target ID</display-name>
+                <description xml:lang="x-default">Unique identifier used to run a specific Coveo export target.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="siteId">
+                <display-name xml:lang="x-default">Site ID</display-name>
+                <description xml:lang="x-default">Site that owns this export target.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="locale">
+                <display-name xml:lang="x-default">Locale</display-name>
+                <description xml:lang="x-default">Locale used to resolve localized product and category values.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="language">
+                <display-name xml:lang="x-default">Language</display-name>
+                <description xml:lang="x-default">Explicit Coveo language emitted on every exported item.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoSourceId">
+                <display-name xml:lang="x-default">Coveo Source ID</display-name>
+                <description xml:lang="x-default">Target Coveo source for this locale export.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="catalogId">
+                <display-name xml:lang="x-default">Catalog ID</display-name>
+                <description xml:lang="x-default">Optional catalog scope for locale-specific or market-specific exports.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="enabled">
+                <display-name xml:lang="x-default">Enabled</display-name>
+                <description xml:lang="x-default">Determines whether this export target can be executed.</description>
+                <type>boolean</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>true</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="lastSync">
+                <display-name xml:lang="x-default">Last Sync</display-name>
+                <description xml:lang="x-default">Date and time of the last successful export for this target.</description>
+                <type>datetime</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+            <attribute-definition attribute-id="label">
+                <display-name xml:lang="x-default">Label</display-name>
+                <description xml:lang="x-default">Optional operator-facing label for the target.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="notes">
+                <display-name xml:lang="x-default">Notes</display-name>
+                <description xml:lang="x-default">Optional operational notes for this export target.</description>
+                <type>text</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+        </attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="CoveoCatalogExportTarget">
+                <display-name xml:lang="x-default">Coveo Catalog Export Target</display-name>
+                <attribute attribute-id="targetId"/>
+                <attribute attribute-id="siteId"/>
+                <attribute attribute-id="locale"/>
+                <attribute attribute-id="language"/>
+                <attribute attribute-id="coveoSourceId"/>
+                <attribute attribute-id="catalogId"/>
+                <attribute attribute-id="enabled"/>
+                <attribute attribute-id="lastSync"/>
+                <attribute attribute-id="label"/>
+                <attribute attribute-id="notes"/>
+            </attribute-group>
+        </group-definitions>
+    </custom-type>
+</metadata>
