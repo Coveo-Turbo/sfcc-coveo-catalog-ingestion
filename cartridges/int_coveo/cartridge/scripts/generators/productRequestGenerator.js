@@ -1,138 +1,13 @@
 'use strict';
 
-var ArrayList = require('dw/util/ArrayList');
 var CatalogMgr = require('dw/catalog/CatalogMgr');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
+var fieldMappingHelper = require('*/cartridge/scripts/helper/fieldMappingHelper');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 var Site = require('dw/system/Site');
-var ObjectAttributeDefinition = require('dw/object/ObjectAttributeDefinition');
 var URLUtils = require('dw/web/URLUtils');
-
-var attribute = null;
-var coveoField = null;
-var coveoFieldKey = null;
-var coveoFieldValue = null;
-
-/**
- * Get Additional Attribute
- * @function getAdditionalAttribute
- * @param {Object} object - product
- * @param {Object} coveoFieldMapper - product
- * @param {string} key - product
- * @returns {Object} - Object
- */
-function getAdditionalAttribute(object, coveoFieldMapper, key) {
-    try {
-        if (!empty(object) && !coveoFieldMapper[key].hasOwnProperty('fieldName')) { // eslint-disable-line
-            var nextKey = Object.keys(coveoFieldMapper[key]);
-            getAdditionalAttribute(object[key], coveoFieldMapper[key], nextKey);
-        } else if (!empty(object)) {
-            coveoFieldKey = coveoFieldMapper[key];
-            coveoFieldValue = object[key];
-            attribute = {
-                key: coveoFieldKey.fieldName,
-                value: coveoFieldValue || ''
-            };
-        }
-    } catch (ex) {
-        Logger.error('(productRequestGenerator-getAdditionalAttribute) -> Error occured while processing attributes and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
-    }
-    return attribute;
-}
-
-/**
- * Get Coveo Field
- * @function getCoveoField
- * @param {Object} object - product
- * @param {Object} coveoFieldMapper - product
- * @param {string} key - product
- * @returns {Array} - array
- */
-function getCoveoField(object, coveoFieldMapper, key) {
-    var attributes = [];
-    try {
-        coveoField = coveoFieldMapper[key];
-        if (!empty(object) && coveoFieldMapper[key].hasOwnProperty('fieldName')) { // eslint-disable-line
-            coveoFieldKey = coveoFieldMapper[key];
-            coveoFieldValue = object[key];
-            attribute = {
-                key: coveoFieldKey.fieldName,
-                value: coveoFieldValue || ''
-            };
-            attributes.push(attribute);
-        } else {
-            Object.keys(coveoField).forEach(function (Akey) {
-                attributes.push(getAdditionalAttribute(object[key], coveoField, Akey));
-            });
-        }
-    } catch (ex) {
-        Logger.error('(productRequestGenerator-getCoveoField) -> Error occured while getting product fields and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
-    }
-    return attributes;
-}
-
-/**
- * Get Attribute Value
- * @function getAttributeValue
- * @param {Object} product - product
- * @returns {Array} - array
- */
-function getAttributeValue(product) {
-    try {
-        var additionalFields = [];
-        var coveoFieldMapper = coveoConstant.COVEO_FIELD_MAPPER;
-        Object.keys(coveoFieldMapper).forEach(function (key) {
-            var coveoAttribute = coveoFieldMapper[key];
-            var attributeModel = product.getAttributeModel();
-            var attributeDefinition = attributeModel.getAttributeDefinition(key);
-            var attributeTypeCode = attributeDefinition ? attributeDefinition.valueTypeCode : '';
-            var attributeValue = null;
-            if (attributeTypeCode) {
-                if (attributeDefinition.system) {
-                    attributeValue = product[key];
-                } else {
-                    attributeValue = product.custom[key];
-                }
-            } else if (empty(attributeDefinition)) {
-                coveoAttribute = getCoveoField(product, coveoFieldMapper, key);
-                additionalFields = additionalFields.concat(coveoAttribute);
-            } else {
-                Logger.error('(productRequestGenerator-getAttributeValue) -> Attribute Type Code does not match');
-            }
-            if (!empty(attributeTypeCode)) {
-                var coveoValue = [];
-                switch (attributeTypeCode) {
-                    case ObjectAttributeDefinition.VALUE_TYPE_ENUM_OF_STRING:
-                    case ObjectAttributeDefinition.VALUE_TYPE_ENUM_OF_INT:
-                    case ObjectAttributeDefinition.VALUE_TYPE_SET_OF_NUMBER:
-                    case ObjectAttributeDefinition.VALUE_TYPE_SET_OF_STRING:
-                    case ObjectAttributeDefinition.VALUE_TYPE_SET_OF_INT:
-                        var attributes = new ArrayList(attributeValue).toArray();
-                        attributes.forEach(element => {
-                            coveoValue.push(element.displayValue);
-                        });
-                        additionalFields.push({
-                            key: coveoAttribute.fieldName,
-                            value: coveoValue
-                        });
-                        break;
-                    default:
-                        additionalFields.push({
-                            key: coveoAttribute.fieldName,
-                            value: attributeValue
-                        });
-                        break;
-                }
-            }
-        });
-        return additionalFields;
-    } catch (ex) {
-        Logger.error('(productRequestGenerator-getAttributeValue) -> AttributeId is not system or custom Product Attribute and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
-        return [];
-    }
-}
 
 /**
  * Get Product Catagegories
@@ -331,6 +206,129 @@ function getThumbnailUrls(product) {
 }
 
 /**
+ * Returns the numeric value of a money object when available.
+ * @param {Object} money - SFCC money object.
+ * @returns {number|null} numeric value.
+ */
+function getMoneyValue(money) {
+    if (empty(money)) {
+        return null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(money, 'available') && money.available === false) {
+        return null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(money, 'valueOrNull') && money.valueOrNull === null) {
+        return null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(money, 'value') && money.value !== null && money.value !== undefined) {
+        return money.value;
+    }
+
+    return null;
+}
+
+/**
+ * Returns the root price book for the provided price book chain.
+ * @param {Object} priceBook - Current price book.
+ * @returns {Object|null} root price book.
+ */
+function getRootPriceBook(priceBook) {
+    var currentPriceBook = priceBook || null;
+
+    while (!empty(currentPriceBook) && !empty(currentPriceBook.parentPriceBook)) {
+        currentPriceBook = currentPriceBook.parentPriceBook;
+    }
+
+    return currentPriceBook;
+}
+
+/**
+ * Returns the current effective sales price.
+ * @param {Object} priceModel - Product price model.
+ * @returns {number|null} effective sales price.
+ */
+function getCurrentSalesPrice(priceModel) {
+    var salesPrice = null;
+
+    if (empty(priceModel)) {
+        return null;
+    }
+
+    salesPrice = getMoneyValue(priceModel.price);
+
+    if (salesPrice === null) {
+        salesPrice = getMoneyValue(priceModel.minPrice);
+    }
+
+    if (salesPrice === null) {
+        salesPrice = getMoneyValue(priceModel.maxPrice);
+    }
+
+    return salesPrice;
+}
+
+/**
+ * Returns the root price-book price when available.
+ * @param {Object} priceModel - Product price model.
+ * @returns {number|null} root price-book price.
+ */
+function getBasePrice(priceModel) {
+    if (empty(priceModel)) {
+        return null;
+    }
+
+    var priceInfo = priceModel.priceInfo;
+    var currentPriceBook = priceInfo && priceInfo.priceBook ? priceInfo.priceBook : null;
+    var rootPriceBook = getRootPriceBook(currentPriceBook);
+
+    if (!empty(rootPriceBook) && typeof priceModel.getPriceBookPrice === 'function') {
+        var rootPrice = getMoneyValue(priceModel.getPriceBookPrice(rootPriceBook.ID));
+        if (rootPrice !== null) {
+            return rootPrice;
+        }
+    }
+
+    return getMoneyValue(priceModel.maxPrice);
+}
+
+/**
+ * Returns the exported base and promotional pricing values for a product.
+ * @param {Object} product - Product to inspect.
+ * @returns {Object} price data.
+ */
+function getExportPrices(product) {
+    var priceModel = product && product.priceModel ? product.priceModel : null;
+    var basePrice = getBasePrice(priceModel);
+    var salesPrice = getCurrentSalesPrice(priceModel);
+
+    if (basePrice === null && salesPrice === null) {
+        return {
+            price: null,
+            promoPrice: null
+        };
+    }
+
+    if (basePrice === null) {
+        basePrice = salesPrice;
+    }
+
+    if (salesPrice !== null && basePrice !== null && salesPrice < basePrice) {
+        return {
+            price: basePrice,
+            promoPrice: salesPrice
+        };
+    }
+
+    return {
+        price: basePrice,
+        promoPrice: null
+    };
+}
+
+/**
  * Get Product Data
  * @function getProductsData
  * @param {Object} product - product
@@ -343,13 +341,13 @@ function getProductsData(product, exportOptions, exportContext) {
     try {
         var productId = exportOptions && exportOptions.productId ? exportOptions.productId : getCanonicalProductId(product);
         var itemGroupId = exportOptions && exportOptions.itemGroupId ? exportOptions.itemGroupId : null;
-        var coveoProductAttribute = getAttributeValue(product);
         var coveoProductCategory = getAllCategories(product, null, []);
         var productImages = getImageUrls(product, 'large');
         var productThumbnails = getThumbnailUrls(product);
         var swatchImage = product.getImage('swatch');
         var productRating = getProductRating(product);
         var productColor = getProductColor(product);
+        var exportPrices = getExportPrices(product);
         prdObj = {
             documentId: URLUtils.abs('Product-Show', 'pid', product.ID).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
@@ -360,18 +358,17 @@ function getProductsData(product, exportOptions, exportContext) {
             ec_images: productImages,
             ec_thumbnails: productThumbnails,
             ec_swatch: swatchImage && swatchImage.httpsURL ? swatchImage.httpsURL.toString() : '',
-            ec_price: product.priceModel.maxPrice.value,
+            ec_price: exportPrices.price,
             ec_category: coveoProductCategory,
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
             ec_rating: productRating,
             ec_brand: product.brand,
             ec_description: product.shortDescription ? product.shortDescription.source : ''
         };
-        coveoProductAttribute.forEach(field => {
-            if (!empty(field) && field.key !== "ec_color") {
-                prdObj[field.key] = field.value;
-            }
-        });
+        if (exportPrices.promoPrice !== null) {
+            prdObj.ec_promo_price = exportPrices.promoPrice;
+        }
+        fieldMappingHelper.applyFieldMappings(prdObj, product, coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT, exportContext);
         if (product.variant && 'color' in product.custom && !empty(product.custom.color)) {
             prdObj.ec_color = productColor;
         }
@@ -398,23 +395,18 @@ function getProductsData(product, exportOptions, exportContext) {
 function getVariantsData(product, productId, exportContext) {
     var variantObj = null;
     try {
-        var coveoProductAttribute = getAttributeValue(product);
         variantObj = {
             documentId: URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             language: getExportLanguage(exportContext),
-            permanentid: product.ID,
+            permanentid: productId,
             ec_sku: product.ID,
             ec_size: getProductSize(product),
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT,
             ec_product_id: productId,
             ec_variant_id: product.ID
         };
-        coveoProductAttribute.forEach(field => {
-            if (!empty(field) && field.key !== "ec_color") {
-                variantObj[field.key] = field.value;
-            }
-        });
+        fieldMappingHelper.applyFieldMappings(variantObj, product, coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT, exportContext);
     } catch (ex) {
         Logger.error('(productRequestGenerator-getVariantsData) -> Error occured while generating Product variants and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
     }

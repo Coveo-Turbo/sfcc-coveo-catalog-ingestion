@@ -60,6 +60,14 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
+            <attribute-definition attribute-id="mappingProfileId">
+                <display-name xml:lang="x-default">Mapping Profile ID</display-name>
+                <description xml:lang="x-default">Optional field-mapping profile applied to this export target.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
             <attribute-definition attribute-id="enabled">
                 <display-name xml:lang="x-default">Enabled</display-name>
                 <description xml:lang="x-default">Determines whether this export target can be executed.</description>
@@ -100,10 +108,192 @@
                 <attribute attribute-id="language"/>
                 <attribute attribute-id="coveoSourceId"/>
                 <attribute attribute-id="catalogId"/>
+                <attribute attribute-id="mappingProfileId"/>
                 <attribute attribute-id="enabled"/>
                 <attribute attribute-id="lastSync"/>
                 <attribute attribute-id="label"/>
                 <attribute attribute-id="notes"/>
+            </attribute-group>
+        </group-definitions>
+    </custom-type>
+    <custom-type type-id="CoveoCatalogFieldMappingProfile">
+        <display-name xml:lang="x-default">Coveo Catalog Field Mapping Profile</display-name>
+        <description xml:lang="x-default">Defines an operator-managed profile of additive catalog field mappings.</description>
+        <staging-mode>source-to-target</staging-mode>
+        <storage-scope>site</storage-scope>
+        <key-definition attribute-id="profileId">
+            <display-name xml:lang="x-default">Profile ID</display-name>
+            <description xml:lang="x-default">Unique identifier used to assign a field-mapping profile to an export target.</description>
+            <type>string</type>
+            <min-length>1</min-length>
+        </key-definition>
+        <attribute-definitions>
+            <attribute-definition attribute-id="profileId">
+                <display-name xml:lang="x-default">Profile ID</display-name>
+                <description xml:lang="x-default">Unique identifier used to assign a field-mapping profile to an export target.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="siteId">
+                <display-name xml:lang="x-default">Site ID</display-name>
+                <description xml:lang="x-default">Site that owns this mapping profile.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="label">
+                <display-name xml:lang="x-default">Label</display-name>
+                <description xml:lang="x-default">Optional operator-facing label for the mapping profile.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="enabled">
+                <display-name xml:lang="x-default">Enabled</display-name>
+                <description xml:lang="x-default">Determines whether this mapping profile can be used by export targets.</description>
+                <type>boolean</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>true</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="notes">
+                <display-name xml:lang="x-default">Notes</display-name>
+                <description xml:lang="x-default">Optional operational notes for the mapping profile.</description>
+                <type>text</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
+        </attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="CoveoCatalogFieldMappingProfile">
+                <display-name xml:lang="x-default">Coveo Catalog Field Mapping Profile</display-name>
+                <attribute attribute-id="profileId"/>
+                <attribute attribute-id="siteId"/>
+                <attribute attribute-id="label"/>
+                <attribute attribute-id="enabled"/>
+                <attribute attribute-id="notes"/>
+            </attribute-group>
+        </group-definitions>
+    </custom-type>
+    <custom-type type-id="CoveoCatalogFieldMapping">
+        <display-name xml:lang="x-default">Coveo Catalog Field Mapping</display-name>
+        <description xml:lang="x-default">Defines an additive field mapping row for a Coveo catalog mapping profile.</description>
+        <staging-mode>source-to-target</staging-mode>
+        <storage-scope>site</storage-scope>
+        <key-definition attribute-id="mappingId">
+            <display-name xml:lang="x-default">Mapping ID</display-name>
+            <description xml:lang="x-default">Unique identifier for a field-mapping row.</description>
+            <type>string</type>
+            <min-length>1</min-length>
+        </key-definition>
+        <attribute-definitions>
+            <attribute-definition attribute-id="mappingId">
+                <display-name xml:lang="x-default">Mapping ID</display-name>
+                <description xml:lang="x-default">Unique identifier for a field-mapping row.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="siteId">
+                <display-name xml:lang="x-default">Site ID</display-name>
+                <description xml:lang="x-default">Site that owns this field mapping.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="profileId">
+                <display-name xml:lang="x-default">Profile ID</display-name>
+                <description xml:lang="x-default">Mapping profile that groups this row.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="enabled">
+                <display-name xml:lang="x-default">Enabled</display-name>
+                <description xml:lang="x-default">Determines whether this mapping row is active.</description>
+                <type>boolean</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <default-value>true</default-value>
+            </attribute-definition>
+            <attribute-definition attribute-id="sortOrder">
+                <display-name xml:lang="x-default">Sort Order</display-name>
+                <description xml:lang="x-default">Numeric-like string used to apply mappings in a stable order.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="appliesTo">
+                <display-name xml:lang="x-default">Applies To</display-name>
+                <description xml:lang="x-default">Supported values: Product, Variant, Both.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="sourceObject">
+                <display-name xml:lang="x-default">Source Object</display-name>
+                <description xml:lang="x-default">Supported values: product, masterProduct, primaryCategory.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="sourceScope">
+                <display-name xml:lang="x-default">Source Scope</display-name>
+                <description xml:lang="x-default">Supported values: system, custom.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="sourceAttributeId">
+                <display-name xml:lang="x-default">Source Attribute ID</display-name>
+                <description xml:lang="x-default">Attribute ID read from the configured source object.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="targetField">
+                <display-name xml:lang="x-default">Target Field</display-name>
+                <description xml:lang="x-default">Coveo field name to emit when this mapping resolves a value.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="valueMode">
+                <display-name xml:lang="x-default">Value Mode</display-name>
+                <description xml:lang="x-default">Supported values: raw, displayValue, displayValueArray.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
+        </attribute-definitions>
+        <group-definitions>
+            <attribute-group group-id="CoveoCatalogFieldMapping">
+                <display-name xml:lang="x-default">Coveo Catalog Field Mapping</display-name>
+                <attribute attribute-id="mappingId"/>
+                <attribute attribute-id="siteId"/>
+                <attribute attribute-id="profileId"/>
+                <attribute attribute-id="enabled"/>
+                <attribute attribute-id="sortOrder"/>
+                <attribute attribute-id="appliesTo"/>
+                <attribute attribute-id="sourceObject"/>
+                <attribute attribute-id="sourceScope"/>
+                <attribute attribute-id="sourceAttributeId"/>
+                <attribute attribute-id="targetField"/>
+                <attribute attribute-id="valueMode"/>
             </attribute-group>
         </group-definitions>
     </custom-type>
