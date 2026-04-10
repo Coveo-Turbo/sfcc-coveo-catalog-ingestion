@@ -1,6 +1,6 @@
 # SFCC Sandbox Setup for Coveo Catalog Ingestion
 
-This repo uploads the ingestion-only Coveo cartridges to an SFCC sandbox with `sgmf-scripts`.
+This repo documents how to upload and configure the ingestion-only cartridges from `sfcc-coveo-catalog-ingestion` in an SFCC sandbox with `sgmf-scripts`.
 
 ## 1. Local prerequisites
 
@@ -136,9 +136,9 @@ In practice, an export target is just a Business Manager custom object record th
 
 Use this Business Manager flow:
 
-1. Import [metadata.zip](/Users/jfallaire/Sources/PSInternal/sfcc-catalog-ingestion/metadata/metadata.zip) from `Administration > Site Development > Site Import & Export`.
+1. Import [`metadata/metadata.zip`](../metadata/metadata.zip) from `Administration > Site Development > Site Import & Export`.
 2. Confirm the custom object type exists under `Administration > Site Development > Custom Object Types`.
-3. Look for `CoveoCatalogExportTarget`. If it is missing, re-import the metadata or create the type manually from [custom-objecttype-definitions.xml](/Users/jfallaire/Sources/PSInternal/sfcc-catalog-ingestion/metadata/metadata/meta/custom-objecttype-definitions.xml).
+3. Look for `CoveoCatalogExportTarget`. If it is missing, re-import the metadata or create the type manually from [`metadata/metadata/meta/custom-objecttype-definitions.xml`](../metadata/metadata/meta/custom-objecttype-definitions.xml).
 4. Switch the Business Manager site selector to the site you want to export.
 5. Open the custom object editor. In most Business Manager setups this is under `Merchant Tools > Site Preferences > Custom Objects` or `Merchant Tools > Site Development > Custom Object Editor`.
 6. Create a new object of type `CoveoCatalogExportTarget`.

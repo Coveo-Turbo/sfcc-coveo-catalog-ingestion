@@ -1,6 +1,6 @@
-# SFCC Catalog Ingestion
+# SFCC Coveo Catalog Ingestion
 
-This repository contains the SFCC cartridges used to export catalog data to Coveo through the Stream API. The maintained upstream for this ingestion-only package is intended to live in `Coveo-Turbo/SFCC-Catalog-Ingestion`.
+This repository contains the SFCC cartridges used to export catalog data to Coveo through the Stream API. The maintained upstream for this ingestion-only package is intended to live in `Coveo-Turbo/sfcc-coveo-catalog-ingestion`.
 
 ## What This Repo Contains
 
@@ -48,12 +48,12 @@ These tests cover:
 ## Deployment Notes
 
 - Upload only `bm_coveo` and `int_coveo`.
-- Import [metadata/metadata.zip](/Users/jfallaire/Sources/PSInternal/sfcc-catalog-ingestion/metadata/metadata.zip).
+- Import [`metadata/metadata.zip`](metadata/metadata.zip).
 - Configure `int.coveo.api.cred` with the real Push API URL and secret.
 - Allow outbound connections for both the configured Coveo Push API host and the S3 host returned by file-container `uploadUri` values, such as `https://coveo-nprod-customerdata.s3.amazonaws.com`.
 - Set the site-level `coveoOrganizationId`.
 - Keep using site-level `coveoSourceId` and `coveoCatalogLastSync` only for the legacy single-target fallback.
-- For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target and run the jobs with the matching `targetId`. The exact Business Manager steps are documented in [sandbox-setup.md](/Users/jfallaire/Sources/PSInternal/sfcc-catalog-ingestion/documentation/sandbox-setup.md).
+- For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target and run the jobs with the matching `targetId`. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - Run a full export before trusting any delta export.
 
-See [sandbox-setup.md](/Users/jfallaire/Sources/PSInternal/sfcc-catalog-ingestion/documentation/sandbox-setup.md) for the full ingestion setup and validation flow.
+See [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md) for the full ingestion setup and validation flow.
