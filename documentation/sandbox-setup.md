@@ -55,9 +55,21 @@ The tracked `metadata/metadata` folder is the source used to build `metadata/met
 
 ## 4. Assign the cartridge path
 
-In the Business Manager site cartridge path, put these at the beginning:
+You need cartridge-path updates in two places:
+
+- on the Business Manager site, so the custom job step types are available
+- on each export site, so wildcard script resolution like `require('*/cartridge/...')` can find `int_coveo` when the job runs in that site context
+
+Recommended setup:
 
 `bm_coveo:int_coveo`
+
+Apply it like this:
+
+1. On the Business Manager site cartridge path, put `bm_coveo:int_coveo` at the beginning.
+2. On each export site cartridge path, put at least `int_coveo` at the beginning.
+
+Using `bm_coveo:int_coveo` on both the Business Manager site and the export site is acceptable and is the simplest option.
 
 ## 5. Activate the uploaded code version
 
@@ -375,7 +387,7 @@ The job metadata still ships with `RefArch` as the example site context. If your
 1. Copy `dw.example.json` to `dw.json` and fill in the real values.
 2. Run `npm run uploadCartridge`.
 3. Import `metadata/metadata.zip`.
-4. Update the Business Manager site cartridge path.
+4. Update the Business Manager site cartridge paths for both the Business Manager site and the export site.
 5. Activate the uploaded code version.
 6. Configure the `int.coveo.api.cred` service credential URL and password.
 7. Set the real Coveo org on the target site.
