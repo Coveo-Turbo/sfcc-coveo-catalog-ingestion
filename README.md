@@ -17,14 +17,20 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
   - `ec_product_id` on `Product` and `Variant`
   - `ec_variant_id` on `Variant`
   - `permanentid = ec_product_id` for `Product`
-  - `permanentid = ec_variant_id` for `Variant`
+  - `permanentid = ec_product_id` for `Variant`
 - `language` on every item
+- `ec_price` stores the base/list price.
+- `ec_promo_price` stores the effective promotional price when a discounted price is active.
 - `ec_images` contains the `large` gallery image array.
 - `ec_thumbnails` contains the `medium` image array.
 - Export scope is target-aware:
   - legacy mode uses site preferences when no export targets exist
-  - target mode uses `CoveoCatalogExportTarget` custom objects for `locale`, `language`, `coveoSourceId`, optional `catalogId`, and per-target `lastSync`
+  - target mode uses `CoveoCatalogExportTarget` custom objects for `locale`, `language`, `coveoSourceId`, optional `catalogId`, optional `mappingProfileId`, and per-target `lastSync`
   - jobs accept an optional `targetId`; if multiple targets exist and no `targetId` is provided, the job fails fast
+- Extra mapped fields can be configured in Business Manager:
+  - built-in mappings still emit `ec_name`
+  - optional mapping profiles add extra fields without code changes
+  - configured mappings are additive only and cannot override reserved export fields
 
 ## Local Verification
 
@@ -54,6 +60,7 @@ These tests cover:
 - Set the site-level `coveoOrganizationId`.
 - Keep using site-level `coveoSourceId` and `coveoCatalogLastSync` only for the legacy single-target fallback.
 - For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target and run the jobs with the matching `targetId`. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
+- If you need extra catalog fields beyond the built-in export payload, create a `CoveoCatalogFieldMappingProfile`, add `CoveoCatalogFieldMapping` rows under that profile, and assign the profile on the target `mappingProfileId`.
 - Run a full export before trusting any delta export.
 
 See [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md) for the full ingestion setup and validation flow.

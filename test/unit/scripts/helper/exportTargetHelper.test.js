@@ -36,6 +36,15 @@ describe('exportTargetHelper', function () {
 
     it('falls back to the legacy site-level export context when no targets are configured', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                buildFieldMappingContext: function () {
+                    return {
+                        mappingProfileId: '',
+                        mappingProfile: null,
+                        fieldMappings: []
+                    };
+                }
+            },
             'dw/object/CustomObjectMgr': {
                 queryCustomObjects: function () {
                     return createIterator([]);
@@ -80,10 +89,21 @@ describe('exportTargetHelper', function () {
         assert.strictEqual(context.language, 'en');
         assert.strictEqual(context.coveoOrganizationId, 'org-id');
         assert.strictEqual(context.coveoSourceId, 'source-id');
+        assert.strictEqual(context.mappingProfileId, '');
+        assert.deepEqual(context.fieldMappings, []);
     });
 
     it('throws when multiple targets exist and no targetId was provided', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                buildFieldMappingContext: function () {
+                    return {
+                        mappingProfileId: '',
+                        mappingProfile: null,
+                        fieldMappings: []
+                    };
+                }
+            },
             'dw/object/CustomObjectMgr': {
                 queryCustomObjects: function () {
                     return createIterator([
@@ -144,7 +164,7 @@ describe('exportTargetHelper', function () {
         }, /Multiple Coveo export targets/);
     });
 
-    it('resolves a specific target id and updates its last sync independently', function () {
+    it('resolves a specific target id, includes its mapping profile, and updates last sync independently', function () {
         var requestedTarget = {
             custom: {
                 siteId: 'RefArch',
@@ -152,12 +172,29 @@ describe('exportTargetHelper', function () {
                 language: 'fr',
                 coveoSourceId: 'source-fr',
                 catalogId: 'fr-catalog',
+                mappingProfileId: 'fr-profile',
                 enabled: true,
                 lastSync: null,
                 label: 'French Canada'
             }
         };
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                buildFieldMappingContext: function (exportContext) {
+                    assert.strictEqual(exportContext.mappingProfileId, 'fr-profile');
+                    return {
+                        mappingProfileId: 'fr-profile',
+                        mappingProfile: {
+                            custom: {
+                                profileId: 'fr-profile'
+                            }
+                        },
+                        fieldMappings: [{
+                            mappingId: 'material'
+                        }]
+                    };
+                }
+            },
             'dw/object/CustomObjectMgr': {
                 getCustomObject: function (typeId, targetId) {
                     assert.strictEqual(typeId, 'CoveoCatalogExportTarget');
@@ -205,6 +242,8 @@ describe('exportTargetHelper', function () {
         assert.strictEqual(context.targetId, 'fr-ca');
         assert.strictEqual(context.language, 'fr');
         assert.strictEqual(context.catalogId, 'fr-catalog');
+        assert.strictEqual(context.mappingProfileId, 'fr-profile');
+        assert.lengthOf(context.fieldMappings, 1);
         assert.strictEqual(requestedTarget.custom.lastSync, lastSync);
     });
 });

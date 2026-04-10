@@ -108,26 +108,5 @@ exports.CoveoFeedType = {
     PRODUCT_FEED: 'PRODUCT_FEED'
 };
 
-exports.COVEO_FIELD_MAPPER = {
-    primaryCategory: {
-        custom: {
-            sizeChartID: {
-                fieldName: 'gender',
-                fieldType: 'string'
-            }
-        }
-    },
-    name: {
-        fieldName: 'ec_name',
-        fieldType: 'string'
-    },
-    custom: {
-        color: {
-            fieldName: 'ec_color',
-            fieldType: 'string'
-        }
-    }
-};
-
 exports.getApiEndpoints = getApiEndpoints;
 exports.getCoveoConstants = getCoveoConstants;

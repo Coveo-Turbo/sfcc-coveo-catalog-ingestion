@@ -94,13 +94,14 @@ exports.beforeStep = function (parameters, stepExecution) {
     exportContext = exportTargetHelper.resolveExportContext(parameters);
     previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
     Logger.info(
-        'Resolved Coveo delta export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, legacyMode={6}',
+        'Resolved Coveo delta export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, legacyMode={7}',
         exportContext.siteId,
         exportContext.targetId || '[single target]',
         exportContext.locale,
         exportContext.language,
         exportContext.coveoSourceId,
         exportContext.catalogId || '[site catalog]',
+        exportContext.mappingProfileId || '[built-in only]',
         exportContext.legacyMode
     );
     products = coveoHelper.buildProductQuery(isDelta, exportContext);

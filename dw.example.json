@@ -1,0 +1,6 @@
+{
+    "hostname": "your-sandbox-hostname.demandware.net",
+    "username": "your-bm-username",
+    "password": "your-bm-password",
+    "code-version": "version1"
+}

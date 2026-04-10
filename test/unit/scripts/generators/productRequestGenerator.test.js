@@ -65,6 +65,19 @@ function createVariationModel(colorId, sizeId) {
 
 function createProduct(options) {
     var imageSets = options.images || {};
+    var listPrice = Object.prototype.hasOwnProperty.call(options, 'listPrice')
+        ? options.listPrice
+        : (Object.prototype.hasOwnProperty.call(options, 'price') ? options.price : 99);
+    var salesPrice = Object.prototype.hasOwnProperty.call(options, 'salesPrice')
+        ? options.salesPrice
+        : listPrice;
+    var activePriceBook = options.activePriceBook || {
+        ID: salesPrice < listPrice ? 'sale-book' : 'list-book',
+        parentPriceBook: salesPrice < listPrice ? {
+            ID: 'list-book',
+            parentPriceBook: null
+        } : null
+    };
 
     function createImage(url) {
         return {
@@ -78,13 +91,40 @@ function createProduct(options) {
 
     return {
         ID: options.ID,
+        name: options.name || ('Name ' + options.ID),
         master: !!options.master,
         variant: !!options.variant,
         masterProduct: options.masterProduct || null,
         primaryCategory: options.primaryCategory || createCategory('mens-shoes', 'Mens Shoes'),
         priceModel: {
+            price: {
+                value: salesPrice
+            },
+            minPrice: {
+                value: salesPrice
+            },
             maxPrice: {
-                value: options.price || 99
+                value: listPrice
+            },
+            priceInfo: {
+                priceBook: activePriceBook
+            },
+            getPriceBookPrice: function (priceBookId) {
+                if (priceBookId === 'list-book') {
+                    return {
+                        value: listPrice
+                    };
+                }
+
+                if (priceBookId === 'sale-book') {
+                    return {
+                        value: salesPrice
+                    };
+                }
+
+                return {
+                    value: listPrice
+                };
             }
         },
         brand: options.brand || 'Coveo',
@@ -171,12 +211,17 @@ describe('productRequestGenerator', function () {
                     MODEL: 'Authentic',
                     OBJECT_TYPE_PRODUCT: 'Product',
                     OBJECT_TYPE_VARIANT: 'Variant'
-                },
-                COVEO_FIELD_MAPPER: {}
+                }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 getLanguageFromLocale: function (locale) {
                     return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
                 }
             },
             'dw/system/Logger': {
@@ -208,6 +253,9 @@ describe('productRequestGenerator', function () {
         assert.strictEqual(exports[0].ec_product_id, 'SKU-1');
         assert.strictEqual(exports[0].permanentid, 'SKU-1');
         assert.strictEqual(exports[0].language, 'en');
+        assert.strictEqual(exports[0].ec_name, 'Name SKU-1');
+        assert.strictEqual(exports[0].ec_price, 99);
+        assert.notProperty(exports[0], 'ec_promo_price');
         assert.deepEqual(exports[0].ec_images, [
             'https://example.com/images/SKU-1/large-1.jpg',
             'https://example.com/images/SKU-1/large-2.jpg'
@@ -290,12 +338,17 @@ describe('productRequestGenerator', function () {
                     MODEL: 'Authentic',
                     OBJECT_TYPE_PRODUCT: 'Product',
                     OBJECT_TYPE_VARIANT: 'Variant'
-                },
-                COVEO_FIELD_MAPPER: {}
+                }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 getLanguageFromLocale: function (locale) {
                     return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
                 }
             },
             'dw/system/Logger': {
@@ -339,6 +392,8 @@ describe('productRequestGenerator', function () {
                 && item.ec_product_id === 'MASTER-1-red'
                 && item.permanentid === 'MASTER-1-red'
                 && item.language === 'en'
+                && item.ec_name === 'Name MASTER-1-RED-S'
+                && item.ec_price === 99
                 && item.ec_thumbnails[0] === 'https://example.com/images/MASTER-1-RED-S/medium-1.jpg'
                 && !('ec_sfraquickview' in item)
                 && !('ec_sgquickview' in item)
@@ -348,16 +403,18 @@ describe('productRequestGenerator', function () {
             return item.objecttype === 'Variant'
                 && item.ec_product_id === 'MASTER-1-red'
                 && item.ec_variant_id === 'MASTER-1-RED-S'
-                && item.permanentid === 'MASTER-1-RED-S'
+                && item.permanentid === 'MASTER-1-red'
                 && item.language === 'en'
+                && item.ec_name === 'Name MASTER-1-RED-S'
                 && item.ec_sku === 'MASTER-1-RED-S';
         }));
         assert.isDefined(variants.find(function (item) {
             return item.objecttype === 'Variant'
                 && item.ec_product_id === 'MASTER-1-blue'
                 && item.ec_variant_id === 'MASTER-1-BLUE-S'
-                && item.permanentid === 'MASTER-1-BLUE-S'
+                && item.permanentid === 'MASTER-1-blue'
                 && item.language === 'en'
+                && item.ec_name === 'Name MASTER-1-BLUE-S'
                 && item.ec_sku === 'MASTER-1-BLUE-S';
         }));
     });
@@ -391,12 +448,17 @@ describe('productRequestGenerator', function () {
                     MODEL: 'Authentic',
                     OBJECT_TYPE_PRODUCT: 'Product',
                     OBJECT_TYPE_VARIANT: 'Variant'
-                },
-                COVEO_FIELD_MAPPER: {}
+                }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 getLanguageFromLocale: function (locale) {
                     return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
                 }
             },
             'dw/system/Logger': {
@@ -429,5 +491,72 @@ describe('productRequestGenerator', function () {
 
         assert.lengthOf(exports, 1);
         assert.strictEqual(exports[0].language, 'fr');
+        assert.strictEqual(exports[0].ec_name, 'Name SKU-1');
+    });
+
+    it('exports base and promotional prices separately when a discounted sales price is active', function () {
+        var discountedProduct = createProduct({
+            ID: 'SKU-PROMO',
+            listPrice: 120,
+            salesPrice: 89
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return discountedProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('SKU-PROMO');
+
+        assert.lengthOf(exports, 1);
+        assert.strictEqual(exports[0].ec_price, 120);
+        assert.strictEqual(exports[0].ec_promo_price, 89);
     });
 });

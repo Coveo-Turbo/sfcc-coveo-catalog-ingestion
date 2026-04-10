@@ -1,6 +1,7 @@
 'use strict';
 
 var CustomObjectMgr = require('dw/object/CustomObjectMgr');
+var fieldMappingHelper = require('*/cartridge/scripts/helper/fieldMappingHelper');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 var Site = require('dw/system/Site');
 var Transaction = require('dw/system/Transaction');
@@ -77,6 +78,9 @@ function buildLegacyExportContext() {
         coveoOrganizationId: normalizeString(sitePreferences.coveoOrganizationId),
         coveoSourceId: normalizeString(sitePreferences.coveoSourceId),
         catalogId: '',
+        mappingProfileId: '',
+        mappingProfile: null,
+        fieldMappings: [],
         enabled: true,
         lastSync: sitePreferences.coveoCatalogLastSync || null,
         label: 'Legacy site export'
@@ -102,11 +106,29 @@ function buildTargetExportContext(targetObject, targetId) {
         coveoOrganizationId: normalizeString(Site.current.preferences.custom.coveoOrganizationId),
         coveoSourceId: normalizeString(custom.coveoSourceId),
         catalogId: normalizeString(custom.catalogId),
+        mappingProfileId: normalizeString(custom.mappingProfileId),
+        mappingProfile: null,
+        fieldMappings: [],
         enabled: toBoolean(custom.enabled),
         lastSync: custom.lastSync || null,
         label: normalizeString(custom.label),
         notes: normalizeString(custom.notes)
     };
+}
+
+/**
+ * Enriches an export context with resolved field-mapping profile data.
+ * @param {Object} exportContext - Export context.
+ * @returns {Object} enriched export context.
+ */
+function enrichExportContext(exportContext) {
+    var mappingContext = fieldMappingHelper.buildFieldMappingContext(exportContext);
+
+    exportContext.mappingProfileId = mappingContext.mappingProfileId;
+    exportContext.mappingProfile = mappingContext.mappingProfile;
+    exportContext.fieldMappings = mappingContext.fieldMappings;
+
+    return exportContext;
 }
 
 /**
@@ -195,7 +217,7 @@ function resolveExportContext(parameters) {
 
         resolvedContext = buildTargetExportContext(requestedTarget, requestedTargetId);
         validateExportContext(resolvedContext);
-        return resolvedContext;
+        return enrichExportContext(resolvedContext);
     }
 
     siteTargets = getTargetsForCurrentSite();
@@ -203,7 +225,7 @@ function resolveExportContext(parameters) {
     if (!siteTargets.length) {
         resolvedContext = buildLegacyExportContext();
         validateExportContext(resolvedContext);
-        return resolvedContext;
+        return enrichExportContext(resolvedContext);
     }
 
     if (siteTargets.length > 1) {
@@ -212,7 +234,7 @@ function resolveExportContext(parameters) {
 
     resolvedContext = buildTargetExportContext(siteTargets[0], '');
     validateExportContext(resolvedContext);
-    return resolvedContext;
+    return enrichExportContext(resolvedContext);
 }
 
 /**

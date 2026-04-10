@@ -6,7 +6,6 @@
         <split sequential="false">
             <contexts template-ref="template_79">
                 <context site-id="RefArch"/>
-                <context site-id="SiteGenesis"/>
             </contexts>
             <flow-template template-id="template_79">
                 <step step-id="ExportProductsToCoveo" type="custom.coveo.coveoProductExportFull" enforce-restart="false">
@@ -39,7 +38,6 @@
         <split sequential="false">
             <contexts template-ref="template_94">
                 <context site-id="RefArch"/>
-                <context site-id="SiteGenesis"/>
             </contexts>
             <flow-template template-id="template_94">
                 <step step-id="ExportProductsToCoveo" type="custom.coveo.coveoProductExportDelta" enforce-restart="false">
