@@ -14,12 +14,14 @@ function isMissing(value) {
 /**
  * Validates catalog items before they are uploaded to Coveo.
  * @param {Array} items - Catalog items to validate.
+ * @param {Object} options - Validation options.
  * @returns {Array} validation errors.
  */
-function validateCatalogItems(items) {
+function validateCatalogItems(items, options) {
     var errors = [];
     var productIds = new HashSet();
     var variantIds = new HashSet();
+    var expectedLanguage = options && options.expectedLanguage ? String(options.expectedLanguage).toLowerCase() : '';
 
     items.forEach(function (item, index) {
         if (!item || typeof item !== 'object') {
@@ -37,6 +39,8 @@ function validateCatalogItems(items) {
 
         if (isMissing(item.language)) {
             errors.push('Catalog item at index ' + index + ' is missing language.');
+        } else if (!isMissing(expectedLanguage) && String(item.language).toLowerCase() !== expectedLanguage) {
+            errors.push('Catalog item at index ' + index + ' has language ' + item.language + ' but the export target expects ' + expectedLanguage + '.');
         }
 
         if (item.objecttype === 'Product') {
@@ -78,9 +82,10 @@ function validateCatalogItems(items) {
 /**
  * Builds a validated addOrUpdate payload for the Stream API.
  * @param {Array} items - Catalog items to upload.
+ * @param {Object} options - Validation options.
  * @returns {Object} validated payload.
  */
-function buildAddOrUpdatePayload(items) {
+function buildAddOrUpdatePayload(items, options) {
     var addOrUpdate = (items || []).filter(function (item) {
         return !!item;
     });
@@ -89,7 +94,7 @@ function buildAddOrUpdatePayload(items) {
         throw new Error('Catalog export does not contain any valid addOrUpdate operations.');
     }
 
-    var errors = validateCatalogItems(addOrUpdate);
+    var errors = validateCatalogItems(addOrUpdate, options);
     if (errors.length) {
         throw new Error(errors.join(' '));
     }

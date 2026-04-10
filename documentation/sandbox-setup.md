@@ -93,13 +93,93 @@ If the `uploadUri` returned by Coveo uses a different S3 host for your environme
 
 The metadata creates a site preference group named `Coveo Catalog Ingestion`.
 
-Set the following values on the actual site you want to export:
+Always set the following value on the actual site you want to export:
 
 - `coveoOrganizationId`
+
+If you are staying on the legacy single-target model, also set:
+
 - `coveoSourceId`
 - `coveoCatalogLastSync`
 
+If you are using multi-target exports, create one `CoveoCatalogExportTarget` custom object per locale or market instead of relying on the site-level `coveoSourceId` and `coveoCatalogLastSync`.
+
 Leave the imported sample values only as placeholders. Override them with your real Coveo organization and source values before running an export.
+
+Each `CoveoCatalogExportTarget` should define:
+
+- `targetId`
+- `siteId`
+- `locale`
+- `language`
+- `coveoSourceId`
+- optional `catalogId`
+- `enabled`
+- per-target `lastSync`
+- optional `label` or `notes`
+
+## 7A. Create export targets in Business Manager
+
+Multi-target export setup involves three things:
+
+1. Import the latest metadata so the `CoveoCatalogExportTarget` custom object type exists.
+2. Create one custom object instance per export target for the current site.
+3. Run the full or delta job with the matching `targetId` when you want a specific target.
+
+In practice, an export target is just a Business Manager custom object record that tells the job:
+
+- which site it belongs to
+- which SFCC locale to use
+- which Coveo `language` value to emit
+- which Coveo source to push to
+- optionally which catalog to scope to
+
+Use this Business Manager flow:
+
+1. Import [metadata.zip](/Users/jfallaire/Sources/PSInternal/sfcc-catalog-ingestion/metadata/metadata.zip) from `Administration > Site Development > Site Import & Export`.
+2. Confirm the custom object type exists under `Administration > Site Development > Custom Object Types`.
+3. Look for `CoveoCatalogExportTarget`. If it is missing, re-import the metadata or create the type manually from [custom-objecttype-definitions.xml](/Users/jfallaire/Sources/PSInternal/sfcc-catalog-ingestion/metadata/metadata/meta/custom-objecttype-definitions.xml).
+4. Switch the Business Manager site selector to the site you want to export.
+5. Open the custom object editor. In most Business Manager setups this is under `Merchant Tools > Site Preferences > Custom Objects` or `Merchant Tools > Site Development > Custom Object Editor`.
+6. Create a new object of type `CoveoCatalogExportTarget`.
+7. Set the object key to the value you want to use as `targetId`, for example `refarch-en-ca`.
+8. Fill the remaining attributes on the object.
+
+Use these values when creating the object:
+
+- `targetId`: unique key for the target and the value you will pass to the job
+- `siteId`: exact SFCC site ID, for example `RefArch`
+- `locale`: exact SFCC locale ID, for example `en_CA` or `fr_CA`
+- `language`: language sent to Coveo, for example `en` or `fr`
+- `coveoSourceId`: destination Coveo source for this locale or market
+- `catalogId`: leave empty for shared-catalog mode; set it only when this target must export a specific catalog
+- `enabled`: set to `true`
+- `lastSync`: leave empty before the first successful full export
+- `label`: optional human-friendly display name
+- `notes`: optional operator notes
+
+Create one object per target. Typical examples:
+
+- shared catalog with two locales:
+  - `refarch-en-ca` with `locale=en_CA`, `language=en`, source A
+  - `refarch-fr-ca` with `locale=fr_CA`, `language=fr`, source B
+- different catalogs per market:
+  - `refarch-en-us` with `locale=en_US`, `language=en`, `catalogId=us-catalog`, source A
+  - `refarch-fr-ca` with `locale=fr_CA`, `language=fr`, `catalogId=ca-fr-catalog`, source B
+
+After the objects exist, run the jobs like this:
+
+1. Open `Administration > Operations > Jobs`.
+2. Open `coveoProductExportFull` for the first sync or `coveoProductExportDelta` for later syncs.
+3. Set the step parameter `targetId` to the object key you created, for example `refarch-fr-ca`.
+4. Run the job.
+
+Important behavior:
+
+- if no export targets exist, the jobs use the legacy site-level `coveoSourceId` and `coveoCatalogLastSync`
+- if one target exists for the site, the jobs can resolve it automatically
+- if multiple targets exist for the site, pass `targetId` explicitly or the job fails with a configuration error
+- each target maintains its own `lastSync`, so delta runs stay isolated per locale or market
 
 ## 8. Configure the Commerce catalog mappings
 
@@ -130,9 +210,15 @@ The metadata imports two jobs:
 - `coveoProductExportFull`
 - `coveoProductExportDelta`
 
-For a first test, run the full export once. The full job performs update-based uploads and finishes with `deleteolderthan` to reconcile removed items.
+Both jobs now accept an optional `targetId` parameter:
 
-Do not run the delta job before the first successful full sync because the delta export uses `coveoCatalogLastSync` as its baseline.
+- when no targets exist, the jobs use the legacy site-level source and sync state
+- when one target exists, the jobs automatically use that target
+- when multiple targets exist, pass `targetId` explicitly or the job fails fast
+
+For a first test, run the full export once. The full job performs update-based uploads and finishes with `deleteolderthan` to reconcile removed items for the resolved target source only.
+
+Do not run the delta job before the first successful full sync because the delta export uses the resolved target `lastSync` baseline.
 
 ## Important note about sample site IDs
 
@@ -151,12 +237,13 @@ These are examples only. Configure the ingestion preferences on your actual targ
 4. Update the Business Manager site cartridge path.
 5. Activate the uploaded code version.
 6. Configure the `int.coveo.api.cred` service credential URL and password.
-7. Set the real Coveo org and source on the target site.
-8. Verify the Commerce catalog mappings use `ec_product_id` and `ec_variant_id`.
-9. Run `coveoProductExportFull`.
-10. Inspect the exported JSON under IMPEX and confirm the payload uses `addOrUpdate`, `ec_product_id`, and `ec_variant_id`.
-11. Inspect the indexed content in the Coveo Content Browser and catalog inspection views.
-12. Only after the full sync validates, run `coveoProductExportDelta`.
+7. Set the real Coveo org on the target site.
+8. If you need multi-locale or market-specific exports, create the `CoveoCatalogExportTarget` objects and note their `targetId` values.
+9. Verify the Commerce catalog mappings use `ec_product_id` and `ec_variant_id`.
+10. Run `coveoProductExportFull`, adding `targetId` when you are exporting a specific target.
+11. Inspect the exported JSON under IMPEX and confirm the payload uses `addOrUpdate`, `ec_product_id`, `ec_variant_id`, and the expected `language`.
+12. Inspect the indexed content in the Coveo Content Browser and catalog inspection views.
+13. Only after the full sync validates, run `coveoProductExportDelta` for the same resolved target.
 
 ## Validation checklist
 
@@ -173,7 +260,9 @@ Confirm that:
 - `Product` items set `permanentid = ec_product_id`
 - `Variant` items set `permanentid = ec_variant_id`
 - every item contains `language`
+- `language` matches the configured export target
 - `ec_images` is an array of `large` gallery images
 - `ec_thumbnails` is an array of `medium` images
 - standalone products export only a `Product` item
 - grouped products share `ec_item_group_id = <masterID>`
+- when a target uses `catalogId`, only that catalog subset reaches the configured source

@@ -1,5 +1,6 @@
 'use strict';
 
+var CatalogMgr = require('dw/catalog/CatalogMgr');
 var Calendar = require('dw/util/Calendar');
 var File = require('dw/io/File');
 var FileWriter = require('dw/io/FileWriter');
@@ -103,17 +104,23 @@ function isModifiedSince(product, lastSync) {
 
 /**
  * Builds the delta export root ids from all site products.
+ * @param {Object} exportContext - Export context.
  * @returns {Object} iterator of root product ids.
  */
-function buildDeltaProductQuery() {
-    var lastSync = coveoConstant.COVEO_CONSTANTS.CATALOG_LAST_SYNC;
-    var products = ProductMgr.queryAllSiteProducts();
+function buildDeltaProductQuery(exportContext) {
+    var constants = typeof coveoConstant.getCoveoConstants === 'function'
+        ? coveoConstant.getCoveoConstants(exportContext)
+        : coveoConstant.COVEO_CONSTANTS;
+    var lastSync = constants.CATALOG_LAST_SYNC;
+    var products = null;
     var rootIds = [];
     var seen = new HashSet();
 
     if (empty(lastSync)) {
         throw new Error('The Coveo delta export requires a successful full catalog sync before it can run.');
     }
+
+    products = getScopedProductsIterator(exportContext) || ProductMgr.queryAllSiteProducts();
 
     try {
         while (products.hasNext()) {
@@ -134,13 +141,34 @@ function buildDeltaProductQuery() {
 
 /**
  * Builds the full export root ids from product search hits.
+ * @param {Object} exportContext - Export context.
  * @returns {Object} iterator of root product ids.
  */
-function buildFullProductQuery() {
+function buildFullProductQuery(exportContext) {
     var productSearchModel = new ProductSearchModel();
     var productSearchHitsItr = null;
+    var scopedProducts = null;
     var rootIds = [];
     var seen = new HashSet();
+
+    scopedProducts = getScopedProductsIterator(exportContext);
+    if (scopedProducts) {
+        try {
+            while (scopedProducts.hasNext()) {
+                var scopedProduct = scopedProducts.next();
+                var scopedRootId = getExportRootProductId(scopedProduct);
+
+                if (!empty(scopedRootId) && !seen.contains(scopedRootId)) {
+                    seen.add(scopedRootId);
+                    rootIds.push(scopedRootId);
+                }
+            }
+        } finally {
+            closeIterator(scopedProducts);
+        }
+
+        return createArrayIterator(rootIds);
+    }
 
     productSearchModel.setCategoryID('root');
     productSearchModel.setRecursiveCategorySearch(true);
@@ -166,19 +194,39 @@ function buildFullProductQuery() {
 }
 
 /**
+ * Returns a catalog-scoped product iterator when a target catalog is configured.
+ * @param {Object} exportContext - Export context.
+ * @returns {Object|null} scoped product iterator.
+ */
+function getScopedProductsIterator(exportContext) {
+    if (empty(exportContext) || empty(exportContext.catalogId)) {
+        return null;
+    }
+
+    var catalog = CatalogMgr.getCatalog(exportContext.catalogId);
+
+    if (empty(catalog)) {
+        throw new Error('The Coveo export target references catalog ' + exportContext.catalogId + ', but that catalog does not exist.');
+    }
+
+    return ProductMgr.queryProductsInCatalog(catalog);
+}
+
+/**
  * This function is used for delta products
  * @param {boolean} isDelta - isDelta
+ * @param {Object} exportContext - Export context.
  * @returns {Object} productSearch - productSearch
  */
-function buildProductQuery(isDelta) {
+function buildProductQuery(isDelta, exportContext) {
     try {
         Logger.info('Starting product search...');
 
         if (isDelta) {
-            return buildDeltaProductQuery();
+            return buildDeltaProductQuery(exportContext);
         }
 
-        return buildFullProductQuery();
+        return buildFullProductQuery(exportContext);
     } catch (ex) {
         Logger.error('(coveoHelper-buildProductQuery) -> Error occured while bulding the product query and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
         throw ex;
@@ -203,7 +251,11 @@ function getFormattedDate() {
  * @returns {string} filename - feed file name
  */
 function getFeedFileName(feedType) {
-    return 'coveo_catalog_export_' + getFormattedDate() + coveoConstant.COVEO_CONSTANTS.COVEO_FILE_FORMAT;
+    var constants = typeof coveoConstant.getCoveoConstants === 'function'
+        ? coveoConstant.getCoveoConstants()
+        : coveoConstant.COVEO_CONSTANTS;
+
+    return 'coveo_catalog_export_' + getFormattedDate() + constants.COVEO_FILE_FORMAT;
 }
 
 /**
@@ -238,10 +290,13 @@ function createProductFeedFile(sourcePath) {
  * @function writeProductFile
  * @param {string} source - source
  * @param {Object} products - products
+ * @param {Object} exportContext - export context
  * @returns {file} - productFile
  */
-function writeProductFile(source, products) {
-    var payload = catalogExportValidator.buildAddOrUpdatePayload(products);
+function writeProductFile(source, products, exportContext) {
+    var payload = catalogExportValidator.buildAddOrUpdatePayload(products, {
+        expectedLanguage: exportContext && exportContext.language ? exportContext.language : ''
+    });
     var productFile = createProductFeedFile(source);
     var productFileWriter = new FileWriter(productFile);
     productFileWriter.writeLine(JSON.stringify(payload));

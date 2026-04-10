@@ -52,6 +52,11 @@ describe('coveoHelper', function () {
 
     it('returns deduplicated root product ids for delta exports', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return null;
+                }
+            },
             'dw/util/Calendar': function Calendar() {},
             'dw/io/File': function File() {},
             'dw/io/FileWriter': function FileWriter() {},
@@ -94,10 +99,19 @@ describe('coveoHelper', function () {
                             lastModified: new Date('2025-12-31T00:00:00Z')
                         }
                     ]);
+                },
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
                 }
             },
             'dw/catalog/ProductSearchModel': function ProductSearchModel() {},
             '*/cartridge/scripts/utils/coveoConstant': {
+                getCoveoConstants: function () {
+                    return {
+                        CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
+                        COVEO_FILE_FORMAT: '.json'
+                    };
+                },
                 COVEO_CONSTANTS: {
                     CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
                     COVEO_FILE_FORMAT: '.json'
@@ -127,6 +141,11 @@ describe('coveoHelper', function () {
 
     it('requires a successful full sync before delta exports can run', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return null;
+                }
+            },
             'dw/util/Calendar': function Calendar() {},
             'dw/io/File': function File() {},
             'dw/io/FileWriter': function FileWriter() {},
@@ -147,10 +166,19 @@ describe('coveoHelper', function () {
             'dw/catalog/ProductMgr': {
                 queryAllSiteProducts: function () {
                     return createIterator([]);
+                },
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
                 }
             },
             'dw/catalog/ProductSearchModel': function ProductSearchModel() {},
             '*/cartridge/scripts/utils/coveoConstant': {
+                getCoveoConstants: function () {
+                    return {
+                        CATALOG_LAST_SYNC: null,
+                        COVEO_FILE_FORMAT: '.json'
+                    };
+                },
                 COVEO_CONSTANTS: {
                     CATALOG_LAST_SYNC: null,
                     COVEO_FILE_FORMAT: '.json'
@@ -175,6 +203,11 @@ describe('coveoHelper', function () {
 
     it('returns deduplicated root product ids for full exports when search hits include variants', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return null;
+                }
+            },
             'dw/util/Calendar': function Calendar() {},
             'dw/io/File': function File() {},
             'dw/io/FileWriter': function FileWriter() {},
@@ -219,6 +252,9 @@ describe('coveoHelper', function () {
                     };
 
                     return products[productId];
+                },
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
                 }
             },
             'dw/catalog/ProductSearchModel': function ProductSearchModel() {
@@ -243,6 +279,12 @@ describe('coveoHelper', function () {
                 };
             },
             '*/cartridge/scripts/utils/coveoConstant': {
+                getCoveoConstants: function () {
+                    return {
+                        CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
+                        COVEO_FILE_FORMAT: '.json'
+                    };
+                },
                 COVEO_CONSTANTS: {
                     CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
                     COVEO_FILE_FORMAT: '.json'
@@ -268,5 +310,94 @@ describe('coveoHelper', function () {
         }
 
         assert.deepEqual(values, ['MASTER-1', 'STANDALONE-1']);
+    });
+
+    it('uses the configured target catalog when a catalog-scoped export target is provided', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function (catalogId) {
+                    assert.strictEqual(catalogId, 'fr-catalog');
+                    return {
+                        ID: catalogId
+                    };
+                }
+            },
+            'dw/util/Calendar': function Calendar() {},
+            'dw/io/File': function File() {},
+            'dw/io/FileWriter': function FileWriter() {},
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/StringUtils': {
+                formatCalendar: function () {
+                    return '2026-01-01t000000.000';
+                }
+            },
+            'dw/util/HashSet': createHashSet(),
+            'dw/catalog/ProductMgr': {
+                queryProductsInCatalog: function (catalog) {
+                    assert.strictEqual(catalog.ID, 'fr-catalog');
+                    return createIterator([
+                        {
+                            ID: 'MASTER-1',
+                            master: true
+                        },
+                        {
+                            ID: 'MASTER-1-RED-S',
+                            variant: true,
+                            masterProduct: {
+                                ID: 'MASTER-1'
+                            }
+                        },
+                        {
+                            ID: 'FR-STANDALONE-1'
+                        }
+                    ]);
+                }
+            },
+            'dw/catalog/ProductSearchModel': function ProductSearchModel() {
+                this.setCategoryID = function () {
+                    throw new Error('Should not use site-wide product search for a catalog-scoped export.');
+                };
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                getCoveoConstants: function () {
+                    return {
+                        CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
+                        COVEO_FILE_FORMAT: '.json'
+                    };
+                },
+                COVEO_CONSTANTS: {
+                    CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
+                    COVEO_FILE_FORMAT: '.json'
+                },
+                CoveoFeedType: {
+                    PRODUCT_FEED: 'PRODUCT_FEED'
+                }
+            },
+            '*/cartridge/scripts/helper/catalogExportValidator': {
+                buildAddOrUpdatePayload: function (items) {
+                    return {
+                        addOrUpdate: items
+                    };
+                }
+            }
+        });
+
+        var iterator = helper.buildProductQuery(false, {
+            catalogId: 'fr-catalog'
+        });
+        var values = [];
+
+        while (iterator.hasNext()) {
+            values.push(iterator.next());
+        }
+
+        assert.deepEqual(values, ['MASTER-1', 'FR-STANDALONE-1']);
     });
 });

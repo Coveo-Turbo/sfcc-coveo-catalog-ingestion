@@ -15,6 +15,7 @@
                         <parameter name="srcFolder">/src/coveo/feeds/products/</parameter>
                         <parameter name="archivePath">/src/coveo/feeds/products/archive</parameter>
                         <parameter name="deleteFile">false</parameter>
+                        <parameter name="targetId"></parameter>
                     </parameters>
                 </step>
             </flow-template>
@@ -47,6 +48,7 @@
                         <parameter name="srcFolder">/src/coveo/feeds/products/</parameter>
                         <parameter name="archivePath">/src/coveo/feeds/products/archive</parameter>
                         <parameter name="deleteFile">false</parameter>
+                        <parameter name="targetId"></parameter>
                     </parameters>
                 </step>
             </flow-template>

@@ -4,6 +4,7 @@ var ArrayList = require('dw/util/ArrayList');
 var CatalogMgr = require('dw/catalog/CatalogMgr');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
+var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 var Site = require('dw/system/Site');
 var ObjectAttributeDefinition = require('dw/object/ObjectAttributeDefinition');
@@ -246,16 +247,21 @@ function getCanonicalProductId(product) {
 
 /**
  * Returns the language code used for catalog exports.
+ * @param {Object} exportContext - Export context.
  * @returns {string} language code.
  */
-function getExportLanguage() {
+function getExportLanguage(exportContext) {
+    if (exportContext && !empty(exportContext.language)) {
+        return String(exportContext.language).toLowerCase();
+    }
+
     var defaultLocale = Site.current && Site.current.defaultLocale ? String(Site.current.defaultLocale) : '';
 
     if (empty(defaultLocale)) {
         return '';
     }
 
-    return defaultLocale.split(/[-_]/)[0].toLowerCase();
+    return exportTargetHelper.getLanguageFromLocale(defaultLocale);
 }
 
 /**
@@ -329,9 +335,10 @@ function getThumbnailUrls(product) {
  * @function getProductsData
  * @param {Object} product - product
  * @param {Object} exportOptions - export options
+ * @param {Object} exportContext - export context
  * @returns {Object} - Object
  */
-function getProductsData(product, exportOptions) {
+function getProductsData(product, exportOptions, exportContext) {
     var prdObj = null;
     try {
         var productId = exportOptions && exportOptions.productId ? exportOptions.productId : getCanonicalProductId(product);
@@ -347,7 +354,7 @@ function getProductsData(product, exportOptions) {
             documentId: URLUtils.abs('Product-Show', 'pid', product.ID).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             model: coveoConstant.COVEO_CONSTANTS.MODEL,
-            language: getExportLanguage(),
+            language: getExportLanguage(exportContext),
             permanentid: productId,
             ec_product_id: productId,
             ec_images: productImages,
@@ -385,16 +392,17 @@ function getProductsData(product, exportOptions) {
  * @function getVariantsData
  * @param {Object} product - product
  * @param {string} productId - productId
+ * @param {Object} exportContext - export context
  * @returns {Object} - Object
  */
-function getVariantsData(product, productId) {
+function getVariantsData(product, productId, exportContext) {
     var variantObj = null;
     try {
         var coveoProductAttribute = getAttributeValue(product);
         variantObj = {
             documentId: URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
-            language: getExportLanguage(),
+            language: getExportLanguage(exportContext),
             permanentid: product.ID,
             ec_sku: product.ID,
             ec_size: getProductSize(product),
@@ -418,9 +426,10 @@ function getVariantsData(product, productId) {
  * @function processProducts
  * @param {Object} product - product
  * @param {boolean} isDelta - isDelta
+ * @param {Object} exportContext - export context
  * @returns {Object} - product object
  */
-function processProducts(product, isDelta) {
+function processProducts(product, isDelta, exportContext) {
     var coveoProducts = [];
 
     try {
@@ -447,10 +456,10 @@ function processProducts(product, isDelta) {
                 coveoProducts.push(getProductsData(representativeVariant, {
                     productId: parentProductId,
                     itemGroupId: coveoPrd.ID
-                }));
+                }, exportContext));
 
                 currentProductVariants.forEach(function (element) {
-                    coveoProducts.push(getVariantsData(element, parentProductId));
+                    coveoProducts.push(getVariantsData(element, parentProductId, exportContext));
                 });
             });
         } else if (coveoPrd.variant && !empty(coveoPrd.masterProduct)) {
@@ -458,12 +467,12 @@ function processProducts(product, isDelta) {
             coveoProducts.push(getProductsData(coveoPrd, {
                 productId: groupedProductId,
                 itemGroupId: coveoPrd.masterProduct.ID
-            }));
-            coveoProducts.push(getVariantsData(coveoPrd, groupedProductId));
+            }, exportContext));
+            coveoProducts.push(getVariantsData(coveoPrd, groupedProductId, exportContext));
         } else {
             coveoProducts.push(getProductsData(coveoPrd, {
                 productId: coveoPrd.ID
-            }));
+            }, exportContext));
         }
     } catch (ex) {
         Logger.error('(productRequestGenerator-processProducts) -> Error occured while processing products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);

@@ -95,6 +95,24 @@ describe('exportProducts job', function () {
                     return [];
                 }
             },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveExportContext: function () {
+                    return {
+                        legacyMode: true,
+                        siteId: 'RefArch',
+                        locale: 'en_CA',
+                        language: 'en',
+                        coveoSourceId: 'source-id'
+                    };
+                },
+                applyRequestLocale: function () {
+                    return '';
+                },
+                restoreRequestLocale: function () {},
+                updateLastSync: function () {
+                    sitePreferences.coveoCatalogLastSync = new Date();
+                }
+            },
             '*/cartridge/scripts/helper/streamHelper': {
                 createFileContainer: function () {
                     return {
@@ -213,6 +231,22 @@ describe('exportProducts job', function () {
                     return [];
                 }
             },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveExportContext: function () {
+                    return {
+                        legacyMode: true,
+                        siteId: 'RefArch',
+                        locale: 'en_CA',
+                        language: 'en',
+                        coveoSourceId: 'source-id'
+                    };
+                },
+                applyRequestLocale: function () {
+                    return '';
+                },
+                restoreRequestLocale: function () {},
+                updateLastSync: function () {}
+            },
             '*/cartridge/scripts/helper/streamHelper': {
                 createFileContainer: function () {
                     return {
@@ -300,6 +334,22 @@ describe('exportProducts job', function () {
                 processProducts: function () {
                     return [];
                 }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveExportContext: function () {
+                    return {
+                        legacyMode: true,
+                        siteId: 'RefArch',
+                        locale: 'en_CA',
+                        language: 'en',
+                        coveoSourceId: 'source-id'
+                    };
+                },
+                applyRequestLocale: function () {
+                    return '';
+                },
+                restoreRequestLocale: function () {},
+                updateLastSync: function () {}
             },
             '*/cartridge/scripts/helper/streamHelper': {
                 createFileContainer: function () {

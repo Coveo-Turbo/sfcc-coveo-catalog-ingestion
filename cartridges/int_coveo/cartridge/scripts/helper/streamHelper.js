@@ -22,10 +22,13 @@ function uploadStreamService(productFile, uploadUri, requiredHeaders) {
 /**
  * Get Open File Container
  * @function createFileContainer
+ * @param {Object} exportContext - Export context.
  * @returns {Object}-fileContainer
  */
-function createFileContainer() {
-    var endPoint = coveoConstant.COVEO_API_ENDPOINT.FILECONTAINER;
+function createFileContainer(exportContext) {
+    var endPoint = typeof coveoConstant.getApiEndpoints === 'function'
+        ? coveoConstant.getApiEndpoints(exportContext).FILECONTAINER
+        : coveoConstant.COVEO_API_ENDPOINT.FILECONTAINER;
     var httpHeaders = coveoHelper.getStreamAPIHeaders();
     var coveoOpenFileContainer = coveoStreamService.createStreamRequest(coveoConstant.COVEO_HTTP_METHOD.POST, endPoint, httpHeaders);
     var fileContainer = coveoOpenFileContainer.call({});
@@ -36,10 +39,13 @@ function createFileContainer() {
  * Get Send File Container
  * @function sendFileContainer
  * @param {string} fileId - fileId
+ * @param {Object} exportContext - Export context.
  * @returns {Object}-fileContainer
  */
-function sendFileContainer(fileId) {
-    var endPoint = coveoConstant.COVEO_API_ENDPOINT.UPDATEFILE;
+function sendFileContainer(fileId, exportContext) {
+    var endPoint = typeof coveoConstant.getApiEndpoints === 'function'
+        ? coveoConstant.getApiEndpoints(exportContext).UPDATEFILE
+        : coveoConstant.COVEO_API_ENDPOINT.UPDATEFILE;
     endPoint = endPoint.replace('<fileId>', fileId);
     var httpHeaders = coveoHelper.getStreamAPIHeaders();
     var coveSendFileContainer = coveoStreamService.createStreamRequest(coveoConstant.COVEO_HTTP_METHOD.PUT, endPoint, httpHeaders);
@@ -50,10 +56,13 @@ function sendFileContainer(fileId) {
 /**
  * Deletes items that are older than the first full-update ordering id.
  * @param {string|number} orderingId - Ordering id returned by the first full update request.
+ * @param {Object} exportContext - Export context.
  * @returns {Object} delete older than response.
  */
-function deleteOlderThan(orderingId) {
-    var endPoint = coveoConstant.COVEO_API_ENDPOINT.DELETEOLDERTHAN;
+function deleteOlderThan(orderingId, exportContext) {
+    var endPoint = typeof coveoConstant.getApiEndpoints === 'function'
+        ? coveoConstant.getApiEndpoints(exportContext).DELETEOLDERTHAN
+        : coveoConstant.COVEO_API_ENDPOINT.DELETEOLDERTHAN;
     endPoint = endPoint.replace('<orderingId>', orderingId);
     var httpHeaders = coveoHelper.getStreamAPIHeaders();
     var deleteOlderThanRequest = coveoStreamService.createStreamRequest(coveoConstant.COVEO_HTTP_METHOD.POST, endPoint, httpHeaders);
