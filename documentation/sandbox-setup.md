@@ -147,7 +147,7 @@ Use this Business Manager flow:
 
 Use these values when creating the object:
 
-- `targetId`: unique key for the target and the value you will pass to the job
+- `targetId`: unique key for the target, shown in Business Manager as the required unique ID, and the value you will pass to the job
 - `siteId`: exact SFCC site ID, for example `RefArch`
 - `locale`: exact SFCC locale ID, for example `en_CA` or `fr_CA`
 - `language`: language sent to Coveo, for example `en` or `fr`

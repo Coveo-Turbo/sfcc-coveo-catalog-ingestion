@@ -12,6 +12,14 @@
             <min-length>1</min-length>
         </key-definition>
         <attribute-definitions>
+            <attribute-definition attribute-id="targetId">
+                <display-name xml:lang="x-default">Target ID</display-name>
+                <description xml:lang="x-default">Unique identifier used to run a specific Coveo export target.</description>
+                <type>string</type>
+                <mandatory-flag>true</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>1</min-length>
+            </attribute-definition>
             <attribute-definition attribute-id="siteId">
                 <display-name xml:lang="x-default">Site ID</display-name>
                 <description xml:lang="x-default">Site that owns this export target.</description>
@@ -86,7 +94,7 @@
         <group-definitions>
             <attribute-group group-id="CoveoCatalogExportTarget">
                 <display-name xml:lang="x-default">Coveo Catalog Export Target</display-name>
-                <attribute attribute-id="targetId" system="true"/>
+                <attribute attribute-id="targetId"/>
                 <attribute attribute-id="siteId"/>
                 <attribute attribute-id="locale"/>
                 <attribute attribute-id="language"/>
