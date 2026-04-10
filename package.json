@@ -1,7 +1,7 @@
 {
-    "name": "sfcc-catalog-ingestion",
+    "name": "sfcc-coveo-catalog-ingestion",
     "version": "23.1.0",
-    "description": "SFCC catalog ingestion cartridge for Coveo",
+    "description": "SFCC Coveo catalog ingestion cartridge",
     "main": "index.js",
     "scripts": {
         "lint": "npm run lint:js",
