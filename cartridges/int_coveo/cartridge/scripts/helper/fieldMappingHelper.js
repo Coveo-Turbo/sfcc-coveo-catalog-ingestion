@@ -122,6 +122,71 @@ function closeIterator(iterator) {
 }
 
 /**
+ * Returns whether a value exposes a callable toArray method without throwing.
+ * @param {*} value - Value to inspect.
+ * @returns {boolean} whether the value exposes toArray.
+ */
+function hasToArrayFunction(value) {
+    try {
+        return !isEmptyValue(value) && typeof value.toArray === 'function';
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * Returns whether a value behaves like an array without being a native JS array.
+ * @param {*} value - Value to inspect.
+ * @returns {boolean} whether the value is array-like.
+ */
+function isArrayLikeValue(value) {
+    try {
+        return !isEmptyValue(value)
+            && !Array.isArray(value)
+            && typeof value !== 'string'
+            && typeof value.length === 'number'
+            && value.length >= 0;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
+ * Converts an array-like value into a native array.
+ * @param {*} value - Value to convert.
+ * @returns {Array} native array.
+ */
+function arrayLikeToArray(value) {
+    var arrayValues = [];
+    var index;
+
+    for (index = 0; index < value.length; index += 1) {
+        arrayValues.push(value[index]);
+    }
+
+    return arrayValues;
+}
+
+/**
+ * Safely returns a callable method from a source object when available.
+ * Some SFCC script objects throw when reading unknown properties directly.
+ * @param {Object} sourceObject - Source object to inspect.
+ * @param {string} methodName - Method name to resolve.
+ * @returns {Function|null} bound method when available.
+ */
+function getCallableMethod(sourceObject, methodName) {
+    try {
+        if (!isEmptyValue(sourceObject) && typeof sourceObject[methodName] === 'function') {
+            return sourceObject[methodName].bind(sourceObject);
+        }
+    } catch (error) {
+        return null;
+    }
+
+    return null;
+}
+
+/**
  * Parses a sort order into a stable integer value.
  * @param {*} value - Value to parse.
  * @returns {number} parsed sort order.
@@ -357,20 +422,40 @@ function resolveSourceObject(product, sourceObject) {
 /**
  * Returns the attribute definition for a mapped attribute when supported.
  * @param {Object} sourceObject - Resolved source object.
- * @param {string} sourceAttributeId - Attribute id.
+ * @param {Object} mapping - Mapping row.
  * @returns {Object|null} attribute definition.
  */
-function getAttributeDefinition(sourceObject, sourceAttributeId) {
-    if (isEmptyValue(sourceObject) || typeof sourceObject.getAttributeModel !== 'function') {
+function getAttributeDefinition(sourceObject, mapping) {
+    if (isEmptyValue(sourceObject) || isEmptyValue(mapping)) {
         return null;
     }
 
+    var getAttributeModel = getCallableMethod(sourceObject, 'getAttributeModel');
+    var getProductAttributeModel = getCallableMethod(sourceObject, 'getProductAttributeModel');
+    var describe = getCallableMethod(sourceObject, 'describe');
+
     try {
-        return sourceObject.getAttributeModel().getAttributeDefinition(sourceAttributeId);
+        if (mapping.sourceScope === 'custom' && describe) {
+            var typeDefinition = describe();
+
+            if (!isEmptyValue(typeDefinition) && typeof typeDefinition.getCustomAttributeDefinition === 'function') {
+                return typeDefinition.getCustomAttributeDefinition(mapping.sourceAttributeId);
+            }
+        }
+
+        if (getAttributeModel) {
+            return getAttributeModel().getAttributeDefinition(mapping.sourceAttributeId);
+        }
+
+        if (getProductAttributeModel) {
+            return getProductAttributeModel().getAttributeDefinition(mapping.sourceAttributeId);
+        }
     } catch (error) {
-        Logger.warn('Unable to resolve attribute definition for {0}. {1}', sourceAttributeId, error.message || error);
+        Logger.warn('Unable to resolve attribute definition for {0}. {1}', mapping.sourceAttributeId, error.message || error);
         return null;
     }
+
+    return null;
 }
 
 /**
@@ -398,7 +483,7 @@ function getSourceValue(sourceObject, mapping) {
  * @returns {boolean} whether the value should be normalized as an array.
  */
 function shouldNormalizeAsArray(value, attributeDefinition) {
-    if (Array.isArray(value) || (!isEmptyValue(value) && typeof value.toArray === 'function')) {
+    if (Array.isArray(value) || hasToArrayFunction(value) || isArrayLikeValue(value)) {
         return true;
     }
 
@@ -425,8 +510,12 @@ function toValueArray(value) {
         return value;
     }
 
-    if (typeof value.toArray === 'function') {
+    if (hasToArrayFunction(value)) {
         return value.toArray();
+    }
+
+    if (isArrayLikeValue(value)) {
+        return arrayLikeToArray(value);
     }
 
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -454,8 +543,12 @@ function toSerializableRawValue(value) {
         return value.map(toSerializableRawValue);
     }
 
-    if (typeof value.toArray === 'function') {
+    if (hasToArrayFunction(value)) {
         return value.toArray().map(toSerializableRawValue);
+    }
+
+    if (isArrayLikeValue(value)) {
+        return arrayLikeToArray(value).map(toSerializableRawValue);
     }
 
     if (typeof value === 'object') {
@@ -566,6 +659,19 @@ function shouldWriteValue(value) {
 }
 
 /**
+ * Returns a stable product identifier for mapping diagnostics.
+ * @param {Object} product - Exported product object.
+ * @returns {string} product identifier.
+ */
+function getProductIdentifier(product) {
+    if (product && product.ID) {
+        return String(product.ID);
+    }
+
+    return '[unknown product]';
+}
+
+/**
  * Applies the built-in and configured mappings to a product payload.
  * @param {Object} payload - Export payload.
  * @param {Object} product - Exported product object.
@@ -575,19 +681,29 @@ function shouldWriteValue(value) {
  */
 function applyFieldMappings(payload, product, objectType, exportContext) {
     getResolvedMappings(exportContext).forEach(function (mapping) {
-        if (!mappingAppliesTo(mapping.appliesTo, objectType)) {
-            return;
+        try {
+            if (!mappingAppliesTo(mapping.appliesTo, objectType)) {
+                return;
+            }
+
+            var sourceObject = resolveSourceObject(product, mapping.sourceObject);
+            var attributeDefinition = getAttributeDefinition(sourceObject, mapping);
+            var mappedValue = convertValue(getSourceValue(sourceObject, mapping), mapping, attributeDefinition);
+
+            if (!shouldWriteValue(mappedValue)) {
+                return;
+            }
+
+            payload[mapping.targetField] = mappedValue;
+        } catch (error) {
+            Logger.error(
+                '(fieldMappingHelper-applyFieldMappings) -> Skipping mapping {0} for {1} {2}. {3}',
+                mapping.mappingId || mapping.targetField || '[unknown mapping]',
+                objectType || '[unknown object type]',
+                getProductIdentifier(product),
+                error.message || error
+            );
         }
-
-        var sourceObject = resolveSourceObject(product, mapping.sourceObject);
-        var attributeDefinition = getAttributeDefinition(sourceObject, mapping.sourceAttributeId);
-        var mappedValue = convertValue(getSourceValue(sourceObject, mapping), mapping, attributeDefinition);
-
-        if (!shouldWriteValue(mappedValue)) {
-            return;
-        }
-
-        payload[mapping.targetField] = mappedValue;
     });
 
     return payload;
