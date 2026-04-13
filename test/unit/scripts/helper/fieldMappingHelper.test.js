@@ -30,6 +30,16 @@ function createAttributeModel(definitions) {
     };
 }
 
+function createTypeDefinition(customDefinitions) {
+    return {
+        getCustomAttributeDefinition: function (attributeId) {
+            return Object.prototype.hasOwnProperty.call(customDefinitions, attributeId)
+                ? customDefinitions[attributeId]
+                : null;
+        }
+    };
+}
+
 function createHelper(customObjectMgrStub) {
     return proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/fieldMappingHelper'), {
         'dw/util/ArrayList': function ArrayList(values) {
@@ -45,6 +55,29 @@ function createHelper(customObjectMgrStub) {
                 return {
                     warn: function () {}
                 };
+            }
+        },
+        'dw/object/ObjectAttributeDefinition': {
+            VALUE_TYPE_SET_OF_NUMBER: 'set-of-number',
+            VALUE_TYPE_SET_OF_STRING: 'set-of-string',
+            VALUE_TYPE_SET_OF_INT: 'set-of-int'
+        }
+    });
+}
+
+function createHelperWithLogger(customObjectMgrStub, logger) {
+    return proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/fieldMappingHelper'), {
+        'dw/util/ArrayList': function ArrayList(values) {
+            return {
+                toArray: function () {
+                    return Array.isArray(values) ? values : [values];
+                }
+            };
+        },
+        'dw/object/CustomObjectMgr': customObjectMgrStub,
+        'dw/system/Logger': {
+            getLogger: function () {
+                return logger;
             }
         },
         'dw/object/ObjectAttributeDefinition': {
@@ -337,8 +370,11 @@ describe('fieldMappingHelper', function () {
                 sizeChartID: 'unisex',
                 departmentCode: 'footwear'
             },
-            getAttributeModel: function () {
-                return createAttributeModel({});
+            describe: function () {
+                return createTypeDefinition({
+                    sizeChartID: {},
+                    departmentCode: {}
+                });
             }
         };
         var masterProduct = {
@@ -398,5 +434,161 @@ describe('fieldMappingHelper', function () {
         assert.strictEqual(variantPayload.ec_collection, 'spring-drop');
         assert.strictEqual(variantPayload.ec_department, 'footwear');
         assert.notProperty(variantPayload, 'ec_finish_label');
+    });
+
+    it('skips a failing custom mapping without preventing later payload fields', function () {
+        var logger = {
+            warn: function () {},
+            errorCalls: [],
+            error: function () {
+                this.errorCalls.push(Array.prototype.slice.call(arguments));
+            }
+        };
+        var helper = createHelperWithLogger({
+            getCustomObject: function () {
+                return {
+                    custom: {
+                        siteId: 'RefArch',
+                        enabled: true
+                    }
+                };
+            },
+            queryCustomObjects: function () {
+                return createIterator([
+                    {
+                        custom: {
+                            mappingId: 'broken-material',
+                            siteId: 'RefArch',
+                            profileId: 'default-profile',
+                            enabled: true,
+                            sortOrder: '10',
+                            appliesTo: 'Both',
+                            sourceObject: 'product',
+                            sourceScope: 'custom',
+                            sourceAttributeId: 'materialTest',
+                            targetField: 'ec_material',
+                            valueMode: 'displayValueArray'
+                        }
+                    },
+                    {
+                        custom: {
+                            mappingId: 'department',
+                            siteId: 'RefArch',
+                            profileId: 'default-profile',
+                            enabled: true,
+                            sortOrder: '20',
+                            appliesTo: 'Both',
+                            sourceObject: 'primaryCategory',
+                            sourceScope: 'custom',
+                            sourceAttributeId: 'departmentCode',
+                            targetField: 'ec_department',
+                            valueMode: 'raw'
+                        }
+                    }
+                ]);
+            }
+        }, logger);
+        var exportContext = helper.buildFieldMappingContext({
+            siteId: 'RefArch',
+            mappingProfileId: 'default-profile'
+        });
+        var category = {
+            custom: {
+                departmentCode: 'footwear'
+            },
+            describe: function () {
+                return createTypeDefinition({
+                    departmentCode: {}
+                });
+            }
+        };
+        var product = {
+            ID: 'SKU-1',
+            name: 'Chaussure FR',
+            primaryCategory: category,
+            custom: {}
+        };
+
+        Object.defineProperty(product.custom, 'materialTest', {
+            enumerable: true,
+            get: function () {
+                throw new Error('Broken attribute access');
+            }
+        });
+
+        product.getAttributeModel = function () {
+            return createAttributeModel({});
+        };
+
+        var payload = helper.applyFieldMappings({}, product, 'Product', exportContext);
+
+        assert.strictEqual(payload.ec_name, 'Chaussure FR');
+        assert.strictEqual(payload.ec_department, 'footwear');
+        assert.notProperty(payload, 'ec_material');
+        assert.lengthOf(logger.errorCalls, 1);
+        assert.match(logger.errorCalls[0][0], /fieldMappingHelper-applyFieldMappings/);
+    });
+
+    it('supports array-like enum values for displayValueArray mappings', function () {
+        var helper = createHelper({
+            getCustomObject: function () {
+                return {
+                    custom: {
+                        siteId: 'RefArch',
+                        enabled: true
+                    }
+                };
+            },
+            queryCustomObjects: function () {
+                return createIterator([
+                    {
+                        custom: {
+                            mappingId: 'material',
+                            siteId: 'RefArch',
+                            profileId: 'default-profile',
+                            enabled: true,
+                            sortOrder: '10',
+                            appliesTo: 'Both',
+                            sourceObject: 'product',
+                            sourceScope: 'custom',
+                            sourceAttributeId: 'materialTest',
+                            targetField: 'ec_material',
+                            valueMode: 'displayValueArray'
+                        }
+                    }
+                ]);
+            }
+        });
+        var exportContext = helper.buildFieldMappingContext({
+            siteId: 'RefArch',
+            mappingProfileId: 'default-profile'
+        });
+        var materialValues = {
+            0: {
+                displayValue: 'Leather'
+            },
+            1: {
+                displayValue: 'Canvas'
+            },
+            length: 2
+        };
+        var product = {
+            ID: 'SKU-1',
+            name: 'Chaussure FR',
+            custom: {
+                materialTest: materialValues
+            },
+            getAttributeModel: function () {
+                return createAttributeModel({
+                    materialTest: {
+                        valueTypeCode: 'set-of-string'
+                    }
+                });
+            }
+        };
+
+        var payload = helper.applyFieldMappings({}, product, 'Product', exportContext);
+
+        assert.deepEqual(payload.ec_material, ['Leather', 'Canvas']);
     });
 });
