@@ -141,6 +141,13 @@ If you are staying on the legacy single-target model, also set:
 - `coveoSourceId`
 - `coveoCatalogLastSync`
 
+Optional image fallbacks:
+
+- `coveoProductImagePlaceholderUrl`
+- `coveoProductThumbnailPlaceholderUrl`
+
+Use absolute `https://...` URLs for those placeholder preferences. The export uses real catalog media first, falls back to the other view type when available, and only emits the placeholder when no usable image is available for that field. If `coveoProductThumbnailPlaceholderUrl` is empty, thumbnails reuse `coveoProductImagePlaceholderUrl`.
+
 If you are using multi-target exports, create one `CoveoCatalogExportTarget` custom object per locale or market instead of relying on the site-level `coveoSourceId` and `coveoCatalogLastSync`.
 
 Leave the imported sample values only as placeholders. Override them with your real Coveo organization and source values before running an export.
@@ -608,6 +615,7 @@ Confirm that:
 - `ec_promo_price` is present only when the current sell price is lower than the base price
 - `ec_images` is an array of `large` gallery images
 - `ec_thumbnails` is an array of `medium` images
+- products without catalog media fall back to the configured placeholder URL when one is set
 - standalone products export only a `Product` item
 - grouped products share `ec_item_group_id = <masterID>`
 - when a target uses `catalogId`, only that catalog subset reaches the configured source

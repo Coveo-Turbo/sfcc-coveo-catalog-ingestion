@@ -63,6 +63,15 @@ function createVariationModel(colorId, sizeId) {
     };
 }
 
+function createSiteCurrent(customPreferences) {
+    return {
+        defaultLocale: 'en_CA',
+        preferences: {
+            custom: customPreferences || {}
+        }
+    };
+}
+
 function createProduct(options) {
     var imageSets = options.images || {};
     var listPrice = Object.prototype.hasOwnProperty.call(options, 'listPrice')
@@ -265,10 +274,82 @@ describe('productRequestGenerator', function () {
             'https://example.com/images/SKU-1/large-1.jpg',
             'https://example.com/images/SKU-1/large-2.jpg'
         ]);
-        assert.deepEqual(exports[0].ec_thumbnails, []);
+        assert.deepEqual(exports[0].ec_thumbnails, [
+            'https://example.com/images/SKU-1/large-1.jpg',
+            'https://example.com/images/SKU-1/large-2.jpg'
+        ]);
         assert.notProperty(exports[0], 'ec_sfraquickview');
         assert.notProperty(exports[0], 'ec_sgquickview');
         assert.notProperty(exports[0], 'ec_variant_id');
+    });
+
+    it('uses configured placeholder URLs when the catalog has no product media', function () {
+        var placeholderProduct = createProduct({
+            ID: 'SKU-NO-IMAGE'
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return placeholderProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: createSiteCurrent({
+                    coveoProductImagePlaceholderUrl: 'https://example.com/images/placeholder-product.jpg',
+                    coveoProductThumbnailPlaceholderUrl: 'https://example.com/images/placeholder-thumb.jpg'
+                })
+            },
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('SKU-NO-IMAGE');
+
+        assert.lengthOf(exports, 1);
+        assert.deepEqual(exports[0].ec_images, [
+            'https://example.com/images/placeholder-product.jpg'
+        ]);
+        assert.deepEqual(exports[0].ec_thumbnails, [
+            'https://example.com/images/placeholder-thumb.jpg'
+        ]);
     });
 
     it('exports grouped products and variants with modern commerce identifiers', function () {
