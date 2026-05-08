@@ -7,6 +7,13 @@
         <password masked="true">********</password>
     </service-credential>
 
+    <service-credential service-credential-id="int.coveo.platform.api.cred">
+        <!-- Update the credential URL if your organization requires a different regional Platform API host. -->
+        <url>https://platform.cloud.coveo.com/rest/organizations/</url>
+        <user-id/>
+        <password masked="true">********</password>
+    </service-credential>
+
     <service-profile service-profile-id="int.coveo.api.profile">
         <timeout-millis>3000</timeout-millis>
         <rate-limit-enabled>false</rate-limit-enabled>
@@ -26,6 +33,17 @@
         <mock-mode-enabled>false</mock-mode-enabled>
         <profile-id>int.coveo.api.profile</profile-id>
         <credential-id>int.coveo.api.cred</credential-id>
+    </service>
+
+    <service service-id="int.coveo.platform.http.api">
+        <service-type>HTTP</service-type>
+        <enabled>true</enabled>
+        <log-prefix>coveo-platform-service</log-prefix>
+        <comm-log-enabled>true</comm-log-enabled>
+        <force-prd-enabled>false</force-prd-enabled>
+        <mock-mode-enabled>false</mock-mode-enabled>
+        <profile-id>int.coveo.api.profile</profile-id>
+        <credential-id>int.coveo.platform.api.cred</credential-id>
     </service>
 
 </services>

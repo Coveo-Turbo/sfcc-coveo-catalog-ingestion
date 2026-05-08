@@ -591,4 +591,132 @@ describe('fieldMappingHelper', function () {
 
         assert.deepEqual(payload.ec_material, ['Leather', 'Canvas']);
     });
+
+    it('supports displayValue mappings when enum values throw on unknown ID access', function () {
+        var helper = createHelper({
+            getCustomObject: function () {
+                return {
+                    custom: {
+                        siteId: 'RefArch',
+                        enabled: true
+                    }
+                };
+            },
+            queryCustomObjects: function () {
+                return createIterator([
+                    {
+                        custom: {
+                            mappingId: 'animal-type',
+                            siteId: 'RefArch',
+                            profileId: 'default-profile',
+                            enabled: true,
+                            sortOrder: '10',
+                            appliesTo: 'Both',
+                            sourceObject: 'product',
+                            sourceScope: 'custom',
+                            sourceAttributeId: 'animalType',
+                            targetField: 'ec_animal_type',
+                            valueMode: 'displayValue'
+                        }
+                    }
+                ]);
+            }
+        });
+        var exportContext = helper.buildFieldMappingContext({
+            siteId: 'RefArch',
+            mappingProfileId: 'default-profile'
+        });
+        var enumValue = {};
+        var product = {
+            ID: 'SKU-1',
+            name: 'Chaussure FR',
+            custom: {
+                animalType: enumValue
+            },
+            getAttributeModel: function () {
+                return createAttributeModel({});
+            }
+        };
+
+        Object.defineProperty(enumValue, 'displayValue', {
+            enumerable: true,
+            get: function () {
+                return 'Bird';
+            }
+        });
+        Object.defineProperty(enumValue, 'ID', {
+            enumerable: true,
+            get: function () {
+                throw new Error("Unknown property 'ID' for class 'class dw.value.EnumValue'.");
+            }
+        });
+
+        var payload = helper.applyFieldMappings({}, product, 'Product', exportContext);
+
+        assert.strictEqual(payload.ec_animal_type, 'Bird');
+    });
+
+    it('supports raw mappings when enum values throw on unknown ID access', function () {
+        var helper = createHelper({
+            getCustomObject: function () {
+                return {
+                    custom: {
+                        siteId: 'RefArch',
+                        enabled: true
+                    }
+                };
+            },
+            queryCustomObjects: function () {
+                return createIterator([
+                    {
+                        custom: {
+                            mappingId: 'animal-type',
+                            siteId: 'RefArch',
+                            profileId: 'default-profile',
+                            enabled: true,
+                            sortOrder: '10',
+                            appliesTo: 'Both',
+                            sourceObject: 'product',
+                            sourceScope: 'custom',
+                            sourceAttributeId: 'animalType',
+                            targetField: 'ec_animal_type',
+                            valueMode: 'raw'
+                        }
+                    }
+                ]);
+            }
+        });
+        var exportContext = helper.buildFieldMappingContext({
+            siteId: 'RefArch',
+            mappingProfileId: 'default-profile'
+        });
+        var enumValue = {};
+        var product = {
+            ID: 'SKU-1',
+            name: 'Chaussure FR',
+            custom: {
+                animalType: enumValue
+            },
+            getAttributeModel: function () {
+                return createAttributeModel({});
+            }
+        };
+
+        Object.defineProperty(enumValue, 'value', {
+            enumerable: true,
+            get: function () {
+                return 'bird';
+            }
+        });
+        Object.defineProperty(enumValue, 'ID', {
+            enumerable: true,
+            get: function () {
+                throw new Error("Unknown property 'ID' for class 'class dw.value.EnumValue'.");
+            }
+        });
+
+        var payload = helper.applyFieldMappings({}, product, 'Product', exportContext);
+
+        assert.strictEqual(payload.ec_animal_type, 'bird');
+    });
 });

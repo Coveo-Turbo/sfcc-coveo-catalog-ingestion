@@ -129,7 +129,10 @@ function createProduct(options) {
         },
         brand: options.brand || 'Coveo',
         shortDescription: {
-            source: options.description || 'Description'
+            source: options.shortDescription || 'Short Description'
+        },
+        longDescription: {
+            source: options.longDescription || 'Long Description'
         },
         custom: options.custom || {},
         variationModel: createVariationModel(options.custom && options.custom.color, options.custom && options.custom.size),
@@ -255,6 +258,8 @@ describe('productRequestGenerator', function () {
         assert.strictEqual(exports[0].language, 'en');
         assert.strictEqual(exports[0].ec_name, 'Name SKU-1');
         assert.strictEqual(exports[0].ec_price, 99);
+        assert.strictEqual(exports[0].ec_description, 'Long Description');
+        assert.strictEqual(exports[0].ec_shortdesc, 'Short Description');
         assert.notProperty(exports[0], 'ec_promo_price');
         assert.deepEqual(exports[0].ec_images, [
             'https://example.com/images/SKU-1/large-1.jpg',
@@ -393,6 +398,8 @@ describe('productRequestGenerator', function () {
                 && item.permanentid === 'MASTER-1-red'
                 && item.language === 'en'
                 && item.ec_name === 'Name MASTER-1-RED-S'
+                && item.ec_description === 'Long Description'
+                && item.ec_shortdesc === 'Short Description'
                 && item.ec_price === 99
                 && item.ec_thumbnails[0] === 'https://example.com/images/MASTER-1-RED-S/medium-1.jpg'
                 && !('ec_sfraquickview' in item)

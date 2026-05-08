@@ -48,7 +48,7 @@ This archive creates:
 
 - custom site preferences for ingestion
 - the custom object types used for export targets and field mappings
-- the `int.coveo.http.api` service definition
+- the `int.coveo.http.api` and `int.coveo.platform.http.api` service definitions
 - the product export jobs
 
 The tracked `metadata/metadata` folder is the source used to build `metadata/metadata.zip`, so it stays in source control on purpose.
@@ -94,7 +94,23 @@ The imported default base URL is:
 
 Use the credential password to store the Coveo Push API key used for Stream API updates.
 
-## 6a. Allow outbound connections
+## 6a. Configure the Coveo Platform Field API credential
+
+If you want SFCC to create missing Coveo fields directly from your mapping JSON, also configure:
+
+- service ID: `int.coveo.platform.http.api`
+- credential ID: `int.coveo.platform.api.cred`
+
+The imported default base URL is:
+
+`https://platform.cloud.coveo.com/rest/organizations/`
+
+Use the credential password to store a Coveo Platform API key that grants:
+
+- `Organization > Edit`
+- `Fields > Edit`
+
+## 6b. Allow outbound connections
 
 The Stream file-container flow uses more than one outbound host:
 
@@ -107,6 +123,10 @@ In Business Manager under `Administration > Operations > Services > Outbound Con
 - the S3 upload host used by Coveo file containers, for example `https://coveo-nprod-customerdata.s3.amazonaws.com`
 
 If the `uploadUri` returned by Coveo uses a different S3 host for your environment or region, allow that exact host as well.
+
+If you plan to use the platform field creation job, also allow:
+
+- `https://platform.cloud.coveo.com`
 
 ## 7. Configure the Coveo site preferences
 
@@ -332,6 +352,175 @@ Important behavior:
 - only enabled mapping rows for the current site and selected profile are applied
 - duplicate `targetField` values in one profile are rejected
 - reserved export fields cannot be overridden from configuration
+
+## 7C. Bulk import field mappings from JSON
+
+Use this option when you have many mapping rows and do not want to create them one by one in the Custom Object Editor.
+
+The cartridge now includes a task-oriented job step named `custom.coveo.coveoFieldMappingImport` and a sample job `coveoFieldMappingImport`. The step reads a JSON file from IMPEX, upserts one `CoveoCatalogFieldMappingProfile`, upserts the listed `CoveoCatalogFieldMapping` rows, and can optionally delete existing rows for that same profile that are not present in the file.
+
+Recommended flow:
+
+1. Copy [`examples/default-commerce-fields.sample.json`](examples/default-commerce-fields.sample.json) and adapt it to your site and attributes.
+2. Upload the JSON file to WebDAV under IMPEX, for example `/src/coveo/config/field-mappings/default-commerce-fields.json`.
+   You can do that from the repo root with:
+
+```sh
+npm run uploadFieldMappingsJson -- documentation/examples/default-commerce-fields.sample.json --remote-name default-commerce-fields.json
+```
+
+3. Open `Administration > Operations > Jobs`.
+4. Open `coveoFieldMappingImport`.
+5. Set `sourceFile` to the IMPEX-relative JSON path.
+6. Set `replaceExistingMappings` to `true` only when the JSON file should be the full source of truth for that profile.
+7. Run the job.
+
+The JSON file format is:
+
+```json
+{
+  "profile": {
+    "profileId": "default-commerce-fields",
+    "siteId": "RefArch",
+    "enabled": true,
+    "label": "Default commerce fields",
+    "notes": "Optional operator notes"
+  },
+  "mappings": [
+    {
+      "mappingId": "material",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "material",
+      "targetField": "ec_material",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true,
+        "useCacheForNestedQuery": true
+      },
+      "enabled": true,
+      "sortOrder": "10"
+    }
+  ]
+}
+```
+
+Notes about the format:
+
+- `profile.profileId` is required.
+- `profile.siteId` should match the site context where you run the job.
+- each mapping can omit `siteId` and `profileId`; the importer defaults them from `profile`
+- each mapping can also define an optional `coveoField` object if the same JSON should create the matching Coveo field in the platform
+- `replaceExistingMappings=false` means only listed rows are upserted and other rows stay in place
+- `replaceExistingMappings=true` means rows for the same `siteId` and `profileId` that are not in the file are deleted
+- enabled rows are validated with the same runtime rules as the export job, so unsupported values, duplicate `targetField` values, or attempts to target reserved fields still fail the import
+- disabled rows are stored but are ignored by export until enabled
+
+After the import succeeds:
+
+1. Open the `CoveoCatalogExportTarget` object that should use the mappings.
+2. Set `mappingProfileId` to the imported `profileId`.
+3. Run `coveoProductExportFull` for that target and inspect the output JSON.
+
+## 7D. Create matching Coveo platform fields from the same JSON
+
+Use this step when you want SFCC to ensure the target Coveo organization already contains the fields referenced by your mapping `targetField` values.
+
+The cartridge now includes a task-oriented job step named `custom.coveo.coveoPlatformFieldCreate` and a sample job `coveoPlatformFieldCreate`. The step reads the same JSON file format used by `coveoFieldMappingImport` and creates one Coveo field per enabled mapping `targetField`.
+
+Important behavior:
+
+- the job uses the site preference `coveoOrganizationId`
+- the job uses the `int.coveo.platform.api.cred` credential, not the Push API credential
+- the field name is always the mapping `targetField`
+- if the JSON omits `coveoField`, the job creates a conservative default `STRING` field with `includeInQuery=true` and `includeInResults=true`
+- if `valueMode=displayValueArray`, the job also defaults `multiValueFacet=true`
+- if the field already exists, the Coveo batch create API treats that request idempotently
+- the job is meant to create missing fields, not to fully manage later field option changes
+
+The optional `coveoField` object can set the initial Platform Field API properties for a mapping, for example:
+
+```json
+{
+  "mappingId": "animal-type",
+  "targetField": "ec_animal_type",
+  "valueMode": "displayValue",
+  "coveoField": {
+    "facet": true,
+    "useCacheForNestedQuery": true
+  }
+}
+```
+
+Supported `coveoField` properties are:
+
+- `sync`
+- `description`
+- `type`
+- `facet`
+- `includeInQuery`
+- `includeInResults`
+- `mergeWithLexicon`
+- `multiValueFacet`
+- `ranking`
+- `sort`
+- `smartDateFacet`
+- `stemming`
+- `useCacheForComputedFacet`
+- `useCacheForNestedQuery`
+- `useCacheForNumericQuery`
+- `useCacheForSort`
+
+Recommended flow:
+
+1. Upload the JSON file to IMPEX.
+2. Run `coveoFieldMappingImport` if the SFCC profile and rows are not imported yet.
+3. Run `coveoPlatformFieldCreate` with the same `sourceFile`.
+4. In Coveo, verify the new fields before running the first full export.
+
+## 7E. Audit populated catalog attributes before creating mappings
+
+Use this job when you want to know which product and primary-category attributes are actually populated in a catalog before building `CoveoCatalogFieldMapping` rows.
+
+The cartridge includes a task-oriented job named `coveoCatalogAttributeAudit`. It scans one catalog in one locale and writes:
+
+- a detailed JSON report
+- a flat CSV summary
+
+Both files are written under IMPEX, by default in `/src/coveo/reports/catalog-attributes/`.
+
+Recommended flow for the new Mondou catalog:
+
+1. Open `Administration > Operations > Jobs`.
+2. Open `coveoCatalogAttributeAudit`.
+3. Run it once with:
+   - `catalogId=mondou_CA-storefront`
+   - `locale=en_CA`
+   - `outputPath=/src/coveo/reports/catalog-attributes/`
+   - `sampleLimit=5`
+   - `maxProducts=0`
+4. Run it again with:
+   - `catalogId=mondou_CA-storefront`
+   - `locale=fr_CA`
+5. Download or inspect the generated JSON and CSV files from IMPEX.
+
+What the report includes:
+
+- system and custom product attributes that have at least one populated value
+- system and custom primary-category attributes that have at least one populated value
+- value type, localizable flag, and assigned attribute groups
+- counts of how many scanned products contain a value
+- product-type breakdowns such as master vs variant vs standard
+- sample raw values and sample display values
+- a suggested `valueMode` such as `raw`, `displayValue`, or `displayValueArray`
+
+This is especially useful before creating mapping JSON files because it helps answer:
+
+- whether a value is really populated in the imported catalog
+- whether a value mostly lives on masters or variants
+- whether an enum should probably use `displayValue`
+- whether a category attribute like `sizeChartID` is worth mapping from `primaryCategory`
 
 ## 8. Configure the Commerce catalog mappings
 

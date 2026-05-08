@@ -140,6 +140,27 @@ function getExportLanguage(exportContext) {
 }
 
 /**
+ * Returns the source text from an SFCC markup-like value when available.
+ * @param {*} markupValue - Markup or string value.
+ * @returns {string} source text.
+ */
+function getMarkupSource(markupValue) {
+    if (empty(markupValue)) {
+        return '';
+    }
+
+    try {
+        if (!empty(markupValue.source)) {
+            return String(markupValue.source);
+        }
+    } catch (error) {
+        // Fall back below when platform-backed values do not expose source directly.
+    }
+
+    return typeof markupValue === 'string' ? markupValue : '';
+}
+
+/**
  * Get product size
  * @function getProductSize
  * @param {Object} product - product
@@ -363,7 +384,8 @@ function getProductsData(product, exportOptions, exportContext) {
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
             ec_rating: productRating,
             ec_brand: product.brand,
-            ec_description: product.shortDescription ? product.shortDescription.source : ''
+            ec_description: getMarkupSource(product.longDescription),
+            ec_shortdesc: getMarkupSource(product.shortDescription)
         };
         if (exportPrices.promoPrice !== null) {
             prdObj.ec_promo_price = exportPrices.promoPrice;

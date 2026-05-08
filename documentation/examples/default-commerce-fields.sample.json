@@ -1,0 +1,48 @@
+{
+  "profile": {
+    "profileId": "default-commerce-fields",
+    "siteId": "RefArch",
+    "enabled": true,
+    "label": "Default commerce fields",
+    "notes": "Sample profile for bulk field mapping imports."
+  },
+  "mappings": [
+    {
+      "mappingId": "gender",
+      "appliesTo": "Both",
+      "sourceObject": "primaryCategory",
+      "sourceScope": "custom",
+      "sourceAttributeId": "sizeChartID",
+      "targetField": "gender",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "10"
+    },
+    {
+      "mappingId": "material",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "material",
+      "targetField": "ec_material",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true,
+        "useCacheForNestedQuery": true
+      },
+      "enabled": true,
+      "sortOrder": "20"
+    },
+    {
+      "mappingId": "collection",
+      "appliesTo": "Variant",
+      "sourceObject": "masterProduct",
+      "sourceScope": "custom",
+      "sourceAttributeId": "collection",
+      "targetField": "ec_collection",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "30"
+    }
+  ]
+}

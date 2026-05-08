@@ -56,17 +56,16 @@ function applyHeaders(svc, httpHeaders) {
 }
 
 /**
- * This function is used to create stream service request
- * @function createStreamRequest
+ * Creates a configured HTTP service request for a Coveo API.
+ * @param {string} serviceId - SFCC service id.
  * @param {string} method - method
  * @param {string} endPoint - endPoint
  * @param {Object} httpHeaders - httpHeaders
  * @param {string} uploadURL - uploadURL
  * @returns {Object}-httpRequest
  */
-function createStreamRequest(method, endPoint, httpHeaders, uploadURL) {
-    var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
-    var httpRequest = LocalServiceRegistry.createService(coveoConstant.SERVICE_ID.COVEO_STREAM, {
+function createServiceRequest(serviceId, method, endPoint, httpHeaders, uploadURL) {
+    var httpRequest = LocalServiceRegistry.createService(serviceId, {
         createRequest: function (svc, args) {
             if (empty(uploadURL)) {
                 svc.URL = svc.URL + endPoint;
@@ -119,6 +118,22 @@ function createStreamRequest(method, endPoint, httpHeaders, uploadURL) {
     return httpRequest;
 }
 
+/**
+ * This function is used to create stream service request
+ * @function createStreamRequest
+ * @param {string} method - method
+ * @param {string} endPoint - endPoint
+ * @param {Object} httpHeaders - httpHeaders
+ * @param {string} uploadURL - uploadURL
+ * @returns {Object}-httpRequest
+ */
+function createStreamRequest(method, endPoint, httpHeaders, uploadURL) {
+    var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
+
+    return createServiceRequest(coveoConstant.SERVICE_ID.COVEO_STREAM, method, endPoint, httpHeaders, uploadURL);
+}
+
 module.exports = {
+    createServiceRequest: createServiceRequest,
     createStreamRequest: createStreamRequest
 };

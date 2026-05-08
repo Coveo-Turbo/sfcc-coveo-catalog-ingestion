@@ -1,5 +1,136 @@
 {
     "step-types": {
+      "script-module-step": [
+        {
+          "@type-id":"custom.coveo.coveoFieldMappingImport",
+          "@supports-organization-context": false,
+          "description": "Imports a Coveo field mapping profile and mapping rows from a JSON file in IMPEX",
+          "module": "bm_coveo/cartridge/scripts/jobs/importFieldMappings.js",
+          "function":"execute",
+          "parameters": {
+            "parameter": [
+              {
+                "@name": "sourceFile",
+                "@type": "string",
+                "@required": "true",
+                "@trim": "true",
+                "description": "Source JSON file path (in IMPEX) that defines the field mapping profile and rows"
+              },
+              {
+                "@name": "replaceExistingMappings",
+                "description": "Remove existing mappings for the same profile and site when they are not present in the JSON file",
+                "@type": "boolean",
+                "@required": "false",
+                "@trim": "true",
+                "default-value": false
+              }
+            ]
+          },
+          "status-codes": {
+            "status": [
+              {
+                "@code": "ERROR",
+                "description": "Used when an error occurred."
+              },
+              {
+                "@code": "OK",
+                "description": "Used when everything went well."
+              }
+            ]
+          }
+        },
+        {
+          "@type-id":"custom.coveo.coveoCatalogAttributeAudit",
+          "@supports-organization-context": false,
+          "description": "Audits a catalog in a selected locale and writes populated product and category attribute reports to IMPEX",
+          "module": "bm_coveo/cartridge/scripts/jobs/auditCatalogAttributes.js",
+          "function":"execute",
+          "parameters": {
+            "parameter": [
+              {
+                "@name": "catalogId",
+                "@type": "string",
+                "@required": "true",
+                "@trim": "true",
+                "description": "Catalog id to audit, for example mondou_CA-storefront"
+              },
+              {
+                "@name": "locale",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "description": "Optional locale to apply while reading localizable product and category attributes, for example en_CA or fr_CA"
+              },
+              {
+                "@name": "outputPath",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "description": "Output folder path (in IMPEX) for the generated JSON and CSV reports",
+                "default-value": "/src/coveo/reports/catalog-attributes/"
+              },
+              {
+                "@name": "sampleLimit",
+                "@type": "long",
+                "@required": "false",
+                "@trim": "true",
+                "description": "Maximum number of unique sample values to keep per attribute",
+                "default-value": 5
+              },
+              {
+                "@name": "maxProducts",
+                "@type": "long",
+                "@required": "false",
+                "@trim": "true",
+                "description": "Optional maximum number of catalog products to scan. Use 0 to scan the full catalog",
+                "default-value": 0
+              }
+            ]
+          },
+          "status-codes": {
+            "status": [
+              {
+                "@code": "ERROR",
+                "description": "Used when an error occurred."
+              },
+              {
+                "@code": "OK",
+                "description": "Used when everything went well."
+              }
+            ]
+          }
+        },
+        {
+          "@type-id":"custom.coveo.coveoPlatformFieldCreate",
+          "@supports-organization-context": false,
+          "description": "Creates missing Coveo platform fields from the same JSON file used for SFCC field mapping imports",
+          "module": "bm_coveo/cartridge/scripts/jobs/createPlatformFields.js",
+          "function":"execute",
+          "parameters": {
+            "parameter": [
+              {
+                "@name": "sourceFile",
+                "@type": "string",
+                "@required": "true",
+                "@trim": "true",
+                "description": "Source JSON file path (in IMPEX) that defines the field mapping profile, rows, and optional coveoField settings"
+              }
+            ]
+          },
+          "status-codes": {
+            "status": [
+              {
+                "@code": "ERROR",
+                "description": "Used when an error occurred."
+              },
+              {
+                "@code": "OK",
+                "description": "Used when everything went well."
+              }
+            ]
+          }
+        }
+      ],
       "chunk-script-module-step": [
         {
           "@type-id":"custom.coveo.coveoProductExportFull",

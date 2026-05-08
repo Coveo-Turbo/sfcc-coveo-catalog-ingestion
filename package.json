@@ -7,6 +7,7 @@
         "lint": "npm run lint:js",
         "lint:js": "sgmf-scripts --lint js",
         "upload": "sgmf-scripts --upload -- ",
+        "uploadFieldMappingsJson": "node scripts/uploadFieldMappingsJson.js",
         "test": "sgmf-scripts --test test/unit/**/*.js",
         "test:integration": "sgmf-scripts --integration 'test/integration/**/*.js'",
         "cover": "sgmf-scripts --cover 'test/unit'",

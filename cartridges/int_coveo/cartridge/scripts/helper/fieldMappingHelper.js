@@ -25,6 +25,7 @@ var RESERVED_TARGET_FIELDS = [
     'ec_rating',
     'ec_brand',
     'ec_description',
+    'ec_shortdesc',
     'ec_color',
     'ec_size',
     'ec_item_group_id',
@@ -187,6 +188,25 @@ function getCallableMethod(sourceObject, methodName) {
 }
 
 /**
+ * Safely reads a property from an SFCC-backed script object.
+ * Some platform-backed values throw when an unknown property is accessed.
+ * @param {Object} sourceObject - Source object to inspect.
+ * @param {string} propertyName - Property name to read.
+ * @returns {*} resolved property value or undefined.
+ */
+function getSafeProperty(sourceObject, propertyName) {
+    if (isEmptyValue(sourceObject)) {
+        return undefined;
+    }
+
+    try {
+        return sourceObject[propertyName];
+    } catch (error) {
+        return undefined;
+    }
+}
+
+/**
  * Parses a sort order into a stable integer value.
  * @param {*} value - Value to parse.
  * @returns {number} parsed sort order.
@@ -231,6 +251,31 @@ function normalizeFieldMapping(mappingObject, index) {
         sourceAttributeId: normalizeString(custom.sourceAttributeId),
         targetField: normalizeString(custom.targetField),
         valueMode: normalizeString(custom.valueMode),
+        _creationIndex: index
+    };
+}
+
+/**
+ * Maps a plain definition to a normalized field mapping definition.
+ * @param {Object} definition - Plain mapping definition.
+ * @param {number} index - Stable fallback order.
+ * @returns {Object} normalized mapping.
+ */
+function normalizeFieldMappingDefinition(definition, index) {
+    var mapping = definition || {};
+
+    return {
+        mappingId: normalizeString(mapping.mappingId),
+        siteId: normalizeString(mapping.siteId),
+        profileId: normalizeString(mapping.profileId),
+        enabled: toBoolean(mapping.enabled),
+        sortOrder: parseSortOrder(mapping.sortOrder),
+        appliesTo: normalizeString(mapping.appliesTo),
+        sourceObject: normalizeString(mapping.sourceObject),
+        sourceScope: normalizeString(mapping.sourceScope),
+        sourceAttributeId: normalizeString(mapping.sourceAttributeId),
+        targetField: normalizeString(mapping.targetField),
+        valueMode: normalizeString(mapping.valueMode),
         _creationIndex: index
     };
 }
@@ -296,38 +341,27 @@ function validateFieldMapping(mapping, seenTargetFields) {
 }
 
 /**
- * Loads enabled field mappings for a site/profile pair.
- * @param {string} siteId - Owning site identifier.
- * @param {string} profileId - Profile identifier.
- * @returns {Array} normalized mapping rows.
+ * Validates and sorts plain field mapping definitions.
+ * Disabled mappings are ignored to match runtime export behavior.
+ * @param {Array} mappingDefinitions - Mapping definitions to validate.
+ * @returns {Array} validated enabled field mappings.
  */
-function loadFieldMappings(siteId, profileId) {
+function validateFieldMappings(mappingDefinitions) {
     var mappings = [];
     var seenTargetFields = {};
-    var mappingIterator = CustomObjectMgr.queryCustomObjects(
-        MAPPING_CUSTOM_OBJECT_TYPE,
-        'custom.siteId = {0} AND custom.profileId = {1}',
-        'creationDate asc',
-        siteId,
-        profileId
-    );
-    var index = 0;
 
-    try {
-        while (mappingIterator.hasNext()) {
-            var normalizedMapping = normalizeFieldMapping(mappingIterator.next(), index);
-            index += 1;
+    new ArrayList(mappingDefinitions || []).toArray().forEach(function (mappingDefinition, index) {
+        var normalizedMapping = mappingDefinition && Object.prototype.hasOwnProperty.call(mappingDefinition, '_creationIndex')
+            ? mappingDefinition
+            : normalizeFieldMappingDefinition(mappingDefinition, index);
 
-            if (normalizedMapping.enabled !== true) {
-                continue;
-            }
-
-            validateFieldMapping(normalizedMapping, seenTargetFields);
-            mappings.push(normalizedMapping);
+        if (normalizedMapping.enabled !== true) {
+            return;
         }
-    } finally {
-        closeIterator(mappingIterator);
-    }
+
+        validateFieldMapping(normalizedMapping, seenTargetFields);
+        mappings.push(normalizedMapping);
+    });
 
     mappings.sort(function (left, right) {
         if (left.sortOrder === right.sortOrder) {
@@ -341,6 +375,35 @@ function loadFieldMappings(siteId, profileId) {
         delete mapping._creationIndex;
         return mapping;
     });
+}
+
+/**
+ * Loads enabled field mappings for a site/profile pair.
+ * @param {string} siteId - Owning site identifier.
+ * @param {string} profileId - Profile identifier.
+ * @returns {Array} normalized mapping rows.
+ */
+function loadFieldMappings(siteId, profileId) {
+    var mappings = [];
+    var mappingIterator = CustomObjectMgr.queryCustomObjects(
+        MAPPING_CUSTOM_OBJECT_TYPE,
+        'custom.siteId = {0} AND custom.profileId = {1}',
+        'creationDate asc',
+        siteId,
+        profileId
+    );
+    var index = 0;
+
+    try {
+        while (mappingIterator.hasNext()) {
+            mappings.push(normalizeFieldMapping(mappingIterator.next(), index));
+            index += 1;
+        }
+    } finally {
+        closeIterator(mappingIterator);
+    }
+
+    return validateFieldMappings(mappings);
 }
 
 /**
@@ -535,6 +598,9 @@ function toValueArray(value) {
  * @returns {*} normalized value.
  */
 function toSerializableRawValue(value) {
+    var rawValue;
+    var valueId;
+
     if (value === null || value === undefined) {
         return value;
     }
@@ -552,12 +618,14 @@ function toSerializableRawValue(value) {
     }
 
     if (typeof value === 'object') {
-        if (!isEmptyValue(value.value)) {
-            return value.value;
+        rawValue = getSafeProperty(value, 'value');
+        if (!isEmptyValue(rawValue)) {
+            return rawValue;
         }
 
-        if (!isEmptyValue(value.ID)) {
-            return value.ID;
+        valueId = getSafeProperty(value, 'ID');
+        if (!isEmptyValue(valueId)) {
+            return valueId;
         }
     }
 
@@ -570,12 +638,18 @@ function toSerializableRawValue(value) {
  * @returns {*} display value.
  */
 function toDisplayValue(value) {
+    var displayValue;
+
     if (value === null || value === undefined) {
         return value;
     }
 
-    if (typeof value === 'object' && !isEmptyValue(value.displayValue)) {
-        return value.displayValue;
+    if (typeof value === 'object') {
+        displayValue = getSafeProperty(value, 'displayValue');
+
+        if (!isEmptyValue(displayValue)) {
+            return displayValue;
+        }
     }
 
     return toSerializableRawValue(value);
@@ -714,5 +788,6 @@ module.exports = {
     PROFILE_CUSTOM_OBJECT_TYPE: PROFILE_CUSTOM_OBJECT_TYPE,
     RESERVED_TARGET_FIELDS: RESERVED_TARGET_FIELDS,
     applyFieldMappings: applyFieldMappings,
-    buildFieldMappingContext: buildFieldMappingContext
+    buildFieldMappingContext: buildFieldMappingContext,
+    validateFieldMappings: validateFieldMappings
 };
