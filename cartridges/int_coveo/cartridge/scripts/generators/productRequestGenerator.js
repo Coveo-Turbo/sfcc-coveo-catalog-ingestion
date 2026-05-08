@@ -161,6 +161,25 @@ function getMarkupSource(markupValue) {
 }
 
 /**
+ * Returns HTML content wrapped in a minimal document so Coveo can detect it as HTML.
+ * @param {*} markupValue - Markup or string value.
+ * @returns {string} HTML document string.
+ */
+function getHtmlDocument(markupValue) {
+    var markupSource = getMarkupSource(markupValue);
+
+    if (empty(markupSource)) {
+        return '';
+    }
+
+    if (/<html[\s>]/i.test(markupSource)) {
+        return markupSource;
+    }
+
+    return '<html><body>' + markupSource + '</body></html>';
+}
+
+/**
  * Get product size
  * @function getProductSize
  * @param {Object} product - product
@@ -384,7 +403,7 @@ function getProductsData(product, exportOptions, exportContext) {
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
             ec_rating: productRating,
             ec_brand: product.brand,
-            ec_description: getMarkupSource(product.longDescription),
+            ec_description: getHtmlDocument(product.longDescription),
             ec_shortdesc: getMarkupSource(product.shortDescription)
         };
         if (exportPrices.promoPrice !== null) {

@@ -258,7 +258,7 @@ describe('productRequestGenerator', function () {
         assert.strictEqual(exports[0].language, 'en');
         assert.strictEqual(exports[0].ec_name, 'Name SKU-1');
         assert.strictEqual(exports[0].ec_price, 99);
-        assert.strictEqual(exports[0].ec_description, 'Long Description');
+        assert.strictEqual(exports[0].ec_description, '<html><body>Long Description</body></html>');
         assert.strictEqual(exports[0].ec_shortdesc, 'Short Description');
         assert.notProperty(exports[0], 'ec_promo_price');
         assert.deepEqual(exports[0].ec_images, [
@@ -398,7 +398,7 @@ describe('productRequestGenerator', function () {
                 && item.permanentid === 'MASTER-1-red'
                 && item.language === 'en'
                 && item.ec_name === 'Name MASTER-1-RED-S'
-                && item.ec_description === 'Long Description'
+                && item.ec_description === '<html><body>Long Description</body></html>'
                 && item.ec_shortdesc === 'Short Description'
                 && item.ec_price === 99
                 && item.ec_thumbnails[0] === 'https://example.com/images/MASTER-1-RED-S/medium-1.jpg'
@@ -499,6 +499,71 @@ describe('productRequestGenerator', function () {
         assert.lengthOf(exports, 1);
         assert.strictEqual(exports[0].language, 'fr');
         assert.strictEqual(exports[0].ec_name, 'Name SKU-1');
+    });
+
+    it('preserves full HTML documents in longDescription without double wrapping', function () {
+        var standaloneProduct = createProduct({
+            ID: 'SKU-HTML',
+            longDescription: '<html><body><p>HTML Description</p></body></html>'
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return standaloneProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/object/ObjectAttributeDefinition': {},
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('SKU-HTML');
+
+        assert.lengthOf(exports, 1);
+        assert.strictEqual(exports[0].ec_description, '<html><body><p>HTML Description</p></body></html>');
     });
 
     it('exports base and promotional prices separately when a discounted sales price is active', function () {
