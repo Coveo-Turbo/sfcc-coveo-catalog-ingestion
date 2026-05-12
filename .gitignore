@@ -1,4 +1,8 @@
 node_modules/
 dw.json
+dw.bgpn-002.json
+dw.blfp-001.json
 .DS_Store
 .env
+outputs/
+tmp/

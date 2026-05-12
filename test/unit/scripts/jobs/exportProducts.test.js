@@ -278,6 +278,151 @@ describe('exportProducts job', function () {
         }, /401 Unauthorized/);
     });
 
+    it('retries transient file upload failures before failing the chunk', function () {
+        var uploadAttempts = 0;
+        var deleteOlderThanCalls = [];
+        var sitePreferences = {
+            coveoCatalogLastSync: null
+        };
+
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/exportProducts'), {
+            'dw/util/ArrayList': function ArrayList(values) {
+                return {
+                    toArray: function () {
+                        return values;
+                    }
+                };
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    preferences: {
+                        custom: sitePreferences
+                    }
+                }
+            },
+            'dw/system/Transaction': {
+                wrap: function (callback) {
+                    callback();
+                }
+            },
+            '*/cartridge/scripts/helper/coveoHelper': {
+                buildProductQuery: function () {
+                    return {
+                        hasNext: function () {
+                            return false;
+                        },
+                        close: function () {}
+                    };
+                },
+                writeProductFile: function () {
+                    return {
+                        path: '/tmp/feed.json',
+                        remove: function () {},
+                        name: 'feed.json'
+                    };
+                },
+                archiveFeedFile: function () {}
+            },
+            '*/cartridge/scripts/generators/productRequestGenerator': {
+                processProducts: function () {
+                    return [];
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveExportContext: function () {
+                    return {
+                        legacyMode: true,
+                        siteId: 'RefArch',
+                        locale: 'en_CA',
+                        language: 'en',
+                        coveoSourceId: 'source-id'
+                    };
+                },
+                applyRequestLocale: function () {
+                    return '';
+                },
+                restoreRequestLocale: function () {},
+                updateLastSync: function () {
+                    sitePreferences.coveoCatalogLastSync = new Date();
+                }
+            },
+            '*/cartridge/scripts/helper/streamHelper': {
+                createFileContainer: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            uploadUri: 'https://upload.example.com',
+                            requiredHeaders: {},
+                            fileId: 'file-1'
+                        }
+                    };
+                },
+                uploadStreamService: function () {
+                    uploadAttempts += 1;
+
+                    if (uploadAttempts === 1) {
+                        return {
+                            ok: false,
+                            status: 'ERROR',
+                            error: 0,
+                            errorMessage: 'NoHttpResponseException:s3.ca-central-1.amazonaws.com:443 failed to respond',
+                            msg: 's3.ca-central-1.amazonaws.com:443 failed to respond'
+                        };
+                    }
+
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                },
+                sendFileContainer: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            orderingId: 101
+                        }
+                    };
+                },
+                deleteOlderThan: function (orderingId) {
+                    deleteOlderThanCalls.push(orderingId);
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                }
+            }
+        });
+
+        var parameters = {
+            get: function (name) {
+                var values = {
+                    srcFolder: '/src/coveo/feeds/products/',
+                    archivePath: '',
+                    deleteFile: true
+                };
+
+                return values[name];
+            }
+        };
+
+        job.beforeStep(parameters);
+        job.write([[{ red: { id: 'red' } }]]);
+        job.afterChunk(null, parameters);
+        job.afterStep(true, parameters);
+
+        assert.strictEqual(uploadAttempts, 2);
+        assert.deepEqual(deleteOlderThanCalls, [101]);
+        assert.instanceOf(sitePreferences.coveoCatalogLastSync, Date);
+    });
+
     it('does not retry uploads in afterStep when a previous chunk failed', function () {
         var uploadAttempts = 0;
 

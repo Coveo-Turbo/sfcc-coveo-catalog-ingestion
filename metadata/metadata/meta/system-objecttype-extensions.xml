@@ -26,6 +26,22 @@
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
             </attribute-definition>
+            <attribute-definition attribute-id="coveoProductImagePlaceholderUrl">
+                <display-name xml:lang="x-default">Coveo Product Image Placeholder URL</display-name>
+                <description xml:lang="x-default">Absolute fallback image URL used when the export cannot find product gallery images</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoProductThumbnailPlaceholderUrl">
+                <display-name xml:lang="x-default">Coveo Product Thumbnail Placeholder URL</display-name>
+                <description xml:lang="x-default">Absolute fallback thumbnail URL used when the export cannot find product thumbnails. Falls back to the main image placeholder when empty.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
         </custom-attribute-definitions>
         <group-definitions>
             <attribute-group group-id="Coveo Configs">
@@ -33,6 +49,8 @@
                 <attribute attribute-id="coveoOrganizationId"/>
                 <attribute attribute-id="coveoSourceId"/>
                 <attribute attribute-id="coveoCatalogLastSync"/>
+                <attribute attribute-id="coveoProductImagePlaceholderUrl"/>
+                <attribute attribute-id="coveoProductThumbnailPlaceholderUrl"/>
             </attribute-group>
         </group-definitions>
     </type-extension>

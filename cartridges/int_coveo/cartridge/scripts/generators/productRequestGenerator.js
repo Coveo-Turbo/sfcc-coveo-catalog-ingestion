@@ -140,6 +140,118 @@ function getExportLanguage(exportContext) {
 }
 
 /**
+ * Returns the source text from an SFCC markup-like value when available.
+ * @param {*} markupValue - Markup or string value.
+ * @returns {string} source text.
+ */
+function getMarkupSource(markupValue) {
+    if (empty(markupValue)) {
+        return '';
+    }
+
+    try {
+        if (!empty(markupValue.source)) {
+            return String(markupValue.source);
+        }
+    } catch (error) {
+        // Fall back below when platform-backed values do not expose source directly.
+    }
+
+    return typeof markupValue === 'string' ? markupValue : '';
+}
+
+/**
+ * Returns a normalized site preference string when configured.
+ * @param {string} preferenceId - Site preference id.
+ * @returns {string} preference value.
+ */
+function getSitePreferenceValue(preferenceId) {
+    var customPreferences = Site.current
+        && Site.current.preferences
+        && Site.current.preferences.custom
+        ? Site.current.preferences.custom
+        : null;
+
+    if (!customPreferences || empty(customPreferences[preferenceId])) {
+        return '';
+    }
+
+    return String(customPreferences[preferenceId]).trim();
+}
+
+/**
+ * Returns the configured fallback image URL for the requested view type.
+ * @param {string} viewType - image view type.
+ * @returns {string} fallback image URL.
+ */
+function getConfiguredImagePlaceholderUrl(viewType) {
+    var placeholderUrl = '';
+
+    if (viewType === 'medium') {
+        placeholderUrl = getSitePreferenceValue('coveoProductThumbnailPlaceholderUrl');
+    }
+
+    if (empty(placeholderUrl)) {
+        placeholderUrl = getSitePreferenceValue('coveoProductImagePlaceholderUrl');
+    }
+
+    if (!/^https?:\/\//i.test(placeholderUrl)) {
+        return '';
+    }
+
+    return placeholderUrl;
+}
+
+/**
+ * Collects image URLs for a given SFCC image view type.
+ * @param {Object} product - product
+ * @param {string} viewType - image view type
+ * @returns {Array} image urls
+ */
+function collectImageUrls(product, viewType) {
+    var imageUrls = [];
+
+    var images = product.getImages && product.getImages(viewType);
+    if (!empty(images) && typeof images.toArray === 'function') {
+        imageUrls = images.toArray().map(function (image) {
+            return image && image.httpsURL ? image.httpsURL.toString() : '';
+        }).filter(function (url) {
+            return !empty(url);
+        });
+    }
+
+    if (!imageUrls.length) {
+        var singleImage = product.getImage && product.getImage(viewType);
+        if (singleImage && singleImage.httpsURL) {
+            imageUrls.push(singleImage.httpsURL.toString());
+        }
+    }
+
+    return imageUrls.filter(function (url, index, urls) {
+        return urls.indexOf(url) === index;
+    });
+}
+
+/**
+ * Returns HTML content wrapped in a minimal document so Coveo can detect it as HTML.
+ * @param {*} markupValue - Markup or string value.
+ * @returns {string} HTML document string.
+ */
+function getHtmlDocument(markupValue) {
+    var markupSource = getMarkupSource(markupValue);
+
+    if (empty(markupSource)) {
+        return '';
+    }
+
+    if (/<html[\s>]/i.test(markupSource)) {
+        return markupSource;
+    }
+
+    return '<html><body>' + markupSource + '</body></html>';
+}
+
+/**
  * Get product size
  * @function getProductSize
  * @param {Object} product - product
@@ -166,25 +278,26 @@ function getProductSize(product) {
  * Returns image URLs for a given SFCC image view type.
  * @param {Object} product - product
  * @param {string} viewType - image view type
+ * @param {Array} fallbackViewTypes - alternate view types to use when none exist for the requested one
  * @returns {Array} image urls
  */
-function getImageUrls(product, viewType) {
+function getImageUrls(product, viewType, fallbackViewTypes) {
     var imageUrls = [];
 
     try {
-        var images = product.getImages && product.getImages(viewType);
-        if (!empty(images) && typeof images.toArray === 'function') {
-            imageUrls = images.toArray().map(function (image) {
-                return image && image.httpsURL ? image.httpsURL.toString() : '';
-            }).filter(function (url) {
-                return !empty(url);
+        imageUrls = collectImageUrls(product, viewType);
+
+        if (!imageUrls.length && Array.isArray(fallbackViewTypes)) {
+            fallbackViewTypes.some(function (fallbackViewType) {
+                imageUrls = collectImageUrls(product, fallbackViewType);
+                return imageUrls.length > 0;
             });
         }
 
         if (!imageUrls.length) {
-            var singleImage = product.getImage && product.getImage(viewType);
-            if (singleImage && singleImage.httpsURL) {
-                imageUrls.push(singleImage.httpsURL.toString());
+            var configuredPlaceholderUrl = getConfiguredImagePlaceholderUrl(viewType);
+            if (!empty(configuredPlaceholderUrl)) {
+                imageUrls.push(configuredPlaceholderUrl);
             }
         }
     } catch (ex) {
@@ -202,7 +315,7 @@ function getImageUrls(product, viewType) {
  * @returns {Array} thumbnail urls
  */
 function getThumbnailUrls(product) {
-    return getImageUrls(product, 'medium');
+    return getImageUrls(product, 'medium', ['large']);
 }
 
 /**
@@ -342,7 +455,7 @@ function getProductsData(product, exportOptions, exportContext) {
         var productId = exportOptions && exportOptions.productId ? exportOptions.productId : getCanonicalProductId(product);
         var itemGroupId = exportOptions && exportOptions.itemGroupId ? exportOptions.itemGroupId : null;
         var coveoProductCategory = getAllCategories(product, null, []);
-        var productImages = getImageUrls(product, 'large');
+        var productImages = getImageUrls(product, 'large', ['medium']);
         var productThumbnails = getThumbnailUrls(product);
         var swatchImage = product.getImage('swatch');
         var productRating = getProductRating(product);
@@ -363,7 +476,8 @@ function getProductsData(product, exportOptions, exportContext) {
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
             ec_rating: productRating,
             ec_brand: product.brand,
-            ec_description: product.shortDescription ? product.shortDescription.source : ''
+            ec_description: getHtmlDocument(product.longDescription) || getHtmlDocument(product.shortDescription),
+            ec_shortdesc: getMarkupSource(product.shortDescription)
         };
         if (exportPrices.promoPrice !== null) {
             prdObj.ec_promo_price = exportPrices.promoPrice;

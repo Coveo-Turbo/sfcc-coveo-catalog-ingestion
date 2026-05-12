@@ -72,6 +72,19 @@ function getApiEndpoints(exportContext) {
 }
 
 /**
+ * Builds the Platform Field API endpoints for the current organization.
+ * @param {Object} exportContext - Export context.
+ * @returns {Object} API endpoints.
+ */
+function getPlatformApiEndpoints(exportContext) {
+    var organizationId = getOrganizationId(exportContext);
+
+    return {
+        FIELDS_BATCH_CREATE: organizationId + '/indexes/fields/batch/create'
+    };
+}
+
+/**
  * Returns the shared constants for the current export context.
  * @param {Object} exportContext - Export context.
  * @returns {Object} constants.
@@ -92,10 +105,12 @@ function getCoveoConstants(exportContext) {
 }
 
 exports.SERVICE_ID = {
-    COVEO_STREAM: 'int.coveo.http.api'
+    COVEO_STREAM: 'int.coveo.http.api',
+    COVEO_PLATFORM: 'int.coveo.platform.http.api'
 };
 
 exports.COVEO_API_ENDPOINT = getApiEndpoints();
+exports.COVEO_PLATFORM_API_ENDPOINT = getPlatformApiEndpoints();
 
 exports.COVEO_HTTP_METHOD = {
     POST: 'POST',
@@ -110,3 +125,4 @@ exports.CoveoFeedType = {
 
 exports.getApiEndpoints = getApiEndpoints;
 exports.getCoveoConstants = getCoveoConstants;
+exports.getPlatformApiEndpoints = getPlatformApiEndpoints;

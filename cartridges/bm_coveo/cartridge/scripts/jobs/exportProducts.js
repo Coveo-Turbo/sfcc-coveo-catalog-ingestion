@@ -15,6 +15,7 @@ var streamHelper = null;
 var firstOrderingId = null;
 var exportContext = null;
 var previousLocale = null;
+var MAX_RETRYABLE_REQUEST_ATTEMPTS = 3;
 
 /**
  * Formats service failure details for logs and thrown errors.
@@ -72,6 +73,59 @@ function ensureSuccessfulResponse(response, operation) {
 }
 
 /**
+ * Returns whether a failed service response is likely transient.
+ * @param {Object} response - Service response.
+ * @returns {boolean} whether the operation can be retried safely.
+ */
+function isRetryableServiceFailure(response) {
+    if (empty(response) || response.ok) {
+        return false;
+    }
+
+    var detail = formatFailureDetails(response);
+
+    return response.error === 0
+        || String(response.error) === '0'
+        || /NoHttpResponseException|failed to respond|SocketTimeoutException|timed out|Connection reset|ECONNRESET|502|503|504/i.test(detail);
+}
+
+/**
+ * Calls a Coveo service request and retries transient transport failures.
+ * @param {Function} request - Request callback.
+ * @param {string} operation - Operation name.
+ * @returns {Object} successful response.
+ */
+function callCoveoRequestWithRetry(request, operation) {
+    var response = null;
+    var attempt;
+
+    for (attempt = 1; attempt <= MAX_RETRYABLE_REQUEST_ATTEMPTS; attempt += 1) {
+        response = request();
+
+        if (!empty(response) && response.ok) {
+            if (attempt > 1) {
+                Logger.info('Recovered Coveo {0} request on attempt {1}.', operation, attempt);
+            }
+
+            return response;
+        }
+
+        if (attempt >= MAX_RETRYABLE_REQUEST_ATTEMPTS || !isRetryableServiceFailure(response)) {
+            return ensureSuccessfulResponse(response, operation);
+        }
+
+        Logger.info(
+            'Retrying Coveo {0} request after transient failure on attempt {1}. {2}',
+            operation,
+            attempt,
+            formatFailureDetails(response)
+        );
+    }
+
+    return ensureSuccessfulResponse(response, operation);
+}
+
+/**
  * Removes or archives the local file based on the job parameters.
  * @param {Object} parameters - Job parameters.
  * @param {Object} file - File to cleanup.
@@ -97,14 +151,22 @@ function uploadPendingProducts(parameters) {
     productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
     Logger.info('exportProducts-write - Total products Exported: {0}', productsToExport.length);
 
-    var fileContainer = ensureSuccessfulResponse(streamHelper.createFileContainer(exportContext), 'file container creation');
+    var fileContainer = callCoveoRequestWithRetry(function () {
+        return streamHelper.createFileContainer(exportContext);
+    }, 'file container creation');
     var uploadUri = fileContainer.object.uploadUri;
     var requiredHeaders = fileContainer.object.requiredHeaders || {};
-    ensureSuccessfulResponse(streamHelper.uploadStreamService(productFile, uploadUri, requiredHeaders), 'file upload');
+    callCoveoRequestWithRetry(function () {
+        return streamHelper.uploadStreamService(productFile, uploadUri, requiredHeaders);
+    }, 'file upload');
 
-    var updateResponse = ensureSuccessfulResponse(streamHelper.sendFileContainer(fileContainer.object.fileId, exportContext), 'stream update');
+    var updateResponse = callCoveoRequestWithRetry(function () {
+        return streamHelper.sendFileContainer(fileContainer.object.fileId, exportContext);
+    }, 'stream update');
+    Logger.info('Coveo stream update accepted for fileId={0}, orderingId={1}', fileContainer.object.fileId, updateResponse.object.orderingId);
     if (empty(firstOrderingId)) {
         firstOrderingId = updateResponse.object.orderingId;
+        Logger.info('Captured first Coveo stream orderingId={0} for deleteolderthan reconciliation.', firstOrderingId);
     }
 
     cleanupProductFile(parameters, productFile);
@@ -188,7 +250,11 @@ exports.afterStep = function (success, parameters) {
             throw new Error('The Coveo full export did not upload any catalog payload.');
         }
 
-        ensureSuccessfulResponse(streamHelper.deleteOlderThan(firstOrderingId, exportContext), 'delete older than');
+        Logger.info('Submitting Coveo deleteolderthan request for source={0}, orderingId={1}', exportContext.coveoSourceId, firstOrderingId);
+        callCoveoRequestWithRetry(function () {
+            return streamHelper.deleteOlderThan(firstOrderingId, exportContext);
+        }, 'delete older than');
+        Logger.info('Coveo deleteolderthan request accepted for source={0}, orderingId={1}', exportContext.coveoSourceId, firstOrderingId);
         exportTargetHelper.updateLastSync(exportContext, new Date());
     } finally {
         closeProductsIterator();

@@ -56,13 +56,18 @@ These tests cover:
 - Upload only `bm_coveo` and `int_coveo`.
 - Import [`metadata/metadata.zip`](metadata/metadata.zip).
 - Configure `int.coveo.api.cred` with the real Push API URL and secret.
+- Configure `int.coveo.platform.api.cred` with a Coveo Platform API key that has `Organization > Edit` and `Fields > Edit` privileges if you want SFCC to create missing Coveo fields from mapping JSON.
 - Allow outbound connections for both the configured Coveo Push API host and the S3 host returned by file-container `uploadUri` values, such as `https://coveo-nprod-customerdata.s3.amazonaws.com`.
+- Allow outbound connections to `https://platform.cloud.coveo.com` if you want to use the platform field creation job.
 - Put `bm_coveo:int_coveo` on the Business Manager site cartridge path.
 - Put at least `int_coveo` on each export site cartridge path. Using `bm_coveo:int_coveo` on both the Business Manager site and the export site is the simplest setup.
 - Set the site-level `coveoOrganizationId`.
 - Keep using site-level `coveoSourceId` and `coveoCatalogLastSync` only for the legacy single-target fallback.
 - For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target and run the jobs with the matching `targetId`. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
-- If you need extra catalog fields beyond the built-in export payload, create a `CoveoCatalogFieldMappingProfile`, add `CoveoCatalogFieldMapping` rows under that profile, and assign the profile on the target `mappingProfileId`.
+- If you need extra catalog fields beyond the built-in export payload, create a `CoveoCatalogFieldMappingProfile`, add `CoveoCatalogFieldMapping` rows under that profile, and assign the profile on the target `mappingProfileId`. For larger mapping sets, you can also load the profile and rows from JSON with the `coveoFieldMappingImport` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
+- If your mapping JSON should also create the matching Coveo fields, run `coveoPlatformFieldCreate` with the same `sourceFile`. The job creates one platform field per enabled mapping `targetField`, and the optional `coveoField` block on each mapping can set the initial field type and options.
+- To upload a field-mapping JSON file to IMPEX with the credentials in `dw.json`, run `npm run uploadFieldMappingsJson -- documentation/examples/default-commerce-fields.sample.json`.
+- To inspect which catalog attributes are actually populated before you build mappings, run the `coveoCatalogAttributeAudit` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - Run a full export before trusting any delta export.
 
 See [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md) for the full ingestion setup and validation flow.

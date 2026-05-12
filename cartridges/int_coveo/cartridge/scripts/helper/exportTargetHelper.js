@@ -50,6 +50,16 @@ function toBoolean(value) {
 }
 
 /**
+ * Returns whether a Coveo organization id is structurally valid.
+ * Coveo organization ids must be strictly alphanumeric.
+ * @param {string} organizationId - Organization id to validate.
+ * @returns {boolean} whether the id is valid.
+ */
+function isValidOrganizationId(organizationId) {
+    return /^[A-Za-z0-9]+$/.test(normalizeString(organizationId));
+}
+
+/**
  * Closes iterators returned by SFCC APIs when supported.
  * @param {Object} iterator - Iterator to close.
  */
@@ -167,6 +177,16 @@ function validateExportContext(exportContext) {
 
     if (!empty(missing)) {
         throw new Error('The Coveo export ' + contextLabel + ' is missing required values: ' + missing.join(', ') + '.');
+    }
+
+    if (!isValidOrganizationId(exportContext.coveoOrganizationId)) {
+        throw new Error(
+            'The Coveo export ' + contextLabel
+            + ' has an invalid coveoOrganizationId value "'
+            + exportContext.coveoOrganizationId
+            + '". Coveo organization ids must be alphanumeric. '
+            + 'Update the site preference before running the export.'
+        );
     }
 
     if (exportContext.siteId !== normalizeString(Site.current.ID)) {

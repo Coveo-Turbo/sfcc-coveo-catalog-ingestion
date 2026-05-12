@@ -50,6 +50,62 @@ function createArrayIterator(values) {
 }
 
 /**
+ * Returns whether the product can be used as a full-export root item.
+ * @param {Object} product - Product to inspect.
+ * @returns {boolean} whether the product should be read by the full export.
+ */
+function isFullExportRootProduct(product) {
+    return !empty(product) && product.variant !== true;
+}
+
+/**
+ * Wraps a product iterator and lazily returns product ids that can be processed as export roots.
+ * @param {Object} productIterator - Product iterator.
+ * @returns {Object} iterator of root product ids.
+ */
+function createFullExportRootProductIterator(productIterator) {
+    var nextValue = null;
+    var hasBufferedValue = false;
+
+    function bufferNextValue() {
+        if (hasBufferedValue) {
+            return true;
+        }
+
+        while (!empty(productIterator) && productIterator.hasNext()) {
+            var product = productIterator.next();
+
+            if (isFullExportRootProduct(product)) {
+                nextValue = product.ID;
+                hasBufferedValue = true;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    return {
+        hasNext: function () {
+            return bufferNextValue();
+        },
+        next: function () {
+            if (!bufferNextValue()) {
+                return null;
+            }
+
+            var value = nextValue;
+            nextValue = null;
+            hasBufferedValue = false;
+            return value;
+        },
+        close: function () {
+            closeIterator(productIterator);
+        }
+    };
+}
+
+/**
  * Ensures iterators returned by SFCC APIs can be safely closed.
  * @param {Object} iterator - iterator to close.
  */
@@ -57,6 +113,83 @@ function closeIterator(iterator) {
     if (!empty(iterator) && typeof iterator.close === 'function') {
         iterator.close();
     }
+}
+
+/**
+ * Returns the presentation product id from a search hit.
+ * @param {Object} productSearchHit - Product search hit.
+ * @returns {string} product id.
+ */
+function getProductSearchHitProductId(productSearchHit) {
+    if (empty(productSearchHit)) {
+        return '';
+    }
+
+    if (!empty(productSearchHit.productID)) {
+        return productSearchHit.productID;
+    }
+
+    if (typeof productSearchHit.getProductID === 'function') {
+        return productSearchHit.getProductID();
+    }
+
+    if (typeof productSearchHit.getProduct === 'function') {
+        var product = productSearchHit.getProduct();
+        return !empty(product) && !empty(product.ID) ? product.ID : '';
+    }
+
+    return '';
+}
+
+/**
+ * Wraps a product search hit iterator and lazily returns root product ids.
+ * @param {Object} productSearchHitsIterator - Product search hit iterator.
+ * @returns {Object} iterator of root product ids.
+ */
+function createFullExportSearchHitRootIterator(productSearchHitsIterator) {
+    var nextValue = null;
+    var hasBufferedValue = false;
+    var lastRootId = null;
+
+    function bufferNextValue() {
+        if (hasBufferedValue) {
+            return true;
+        }
+
+        while (!empty(productSearchHitsIterator) && productSearchHitsIterator.hasNext()) {
+            var productSearchHit = productSearchHitsIterator.next();
+            var product = ProductMgr.getProduct(getProductSearchHitProductId(productSearchHit));
+            var rootId = getExportRootProductId(product);
+
+            if (!empty(rootId) && rootId !== lastRootId) {
+                lastRootId = rootId;
+                nextValue = rootId;
+                hasBufferedValue = true;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    return {
+        hasNext: function () {
+            return bufferNextValue();
+        },
+        next: function () {
+            if (!bufferNextValue()) {
+                return null;
+            }
+
+            var value = nextValue;
+            nextValue = null;
+            hasBufferedValue = false;
+            return value;
+        },
+        close: function () {
+            closeIterator(productSearchHitsIterator);
+        }
+    };
 }
 
 /**
@@ -148,26 +281,10 @@ function buildFullProductQuery(exportContext) {
     var productSearchModel = new ProductSearchModel();
     var productSearchHitsItr = null;
     var scopedProducts = null;
-    var rootIds = [];
-    var seen = new HashSet();
 
     scopedProducts = getScopedProductsIterator(exportContext);
     if (scopedProducts) {
-        try {
-            while (scopedProducts.hasNext()) {
-                var scopedProduct = scopedProducts.next();
-                var scopedRootId = getExportRootProductId(scopedProduct);
-
-                if (!empty(scopedRootId) && !seen.contains(scopedRootId)) {
-                    seen.add(scopedRootId);
-                    rootIds.push(scopedRootId);
-                }
-            }
-        } finally {
-            closeIterator(scopedProducts);
-        }
-
-        return createArrayIterator(rootIds);
+        return createFullExportRootProductIterator(scopedProducts);
     }
 
     productSearchModel.setCategoryID('root');
@@ -175,22 +292,7 @@ function buildFullProductQuery(exportContext) {
     productSearchModel.search();
     productSearchHitsItr = productSearchModel.getProductSearchHits();
 
-    try {
-        while (productSearchHitsItr.hasNext()) {
-            var productSearchHit = productSearchHitsItr.next();
-            var product = ProductMgr.getProduct(productSearchHit.productID);
-            var rootId = getExportRootProductId(product);
-
-            if (!empty(rootId) && !seen.contains(rootId)) {
-                seen.add(rootId);
-                rootIds.push(rootId);
-            }
-        }
-    } finally {
-        closeIterator(productSearchHitsItr);
-    }
-
-    return createArrayIterator(rootIds);
+    return createFullExportSearchHitRootIterator(productSearchHitsItr);
 }
 
 /**

@@ -64,4 +64,96 @@
         </triggers>
     </job>
 
+    <job job-id="coveoFieldMappingImport" priority="0">
+        <description>Imports a Coveo field mapping profile and mapping rows from a JSON file in IMPEX.</description>
+        <parameters/>
+        <split sequential="false">
+            <contexts template-ref="template_113">
+                <context site-id="RefArch"/>
+            </contexts>
+            <flow-template template-id="template_113">
+                <step step-id="ImportCoveoFieldMappings" type="custom.coveo.coveoFieldMappingImport" enforce-restart="false">
+                    <description>Upserts a field mapping profile and rows from a JSON file stored under IMPEX.</description>
+                    <parameters>
+                        <parameter name="sourceFile">/src/coveo/config/field-mappings/default-commerce-fields.json</parameter>
+                        <parameter name="replaceExistingMappings">false</parameter>
+                    </parameters>
+                </step>
+            </flow-template>
+        </split>
+        <rules>
+            <on-running runtime-threshold="30m" enabled="false">
+                <mark-job-as-hanging/>
+            </on-running>
+        </rules>
+        <triggers>
+            <run-once enabled="false">
+                <date>2026-05-07Z</date>
+                <time>12:00:00.000Z</time>
+            </run-once>
+        </triggers>
+    </job>
+
+    <job job-id="coveoCatalogAttributeAudit" priority="0">
+        <description>Audits a catalog in a chosen locale and writes populated attribute reports to IMPEX.</description>
+        <parameters/>
+        <split sequential="false">
+            <contexts template-ref="template_127">
+                <context site-id="RefArch"/>
+            </contexts>
+            <flow-template template-id="template_127">
+                <step step-id="AuditCatalogAttributes" type="custom.coveo.coveoCatalogAttributeAudit" enforce-restart="false">
+                    <description>Scans catalog products and primary categories, then writes JSON and CSV attribute reports.</description>
+                    <parameters>
+                        <parameter name="catalogId">mondou_CA-storefront</parameter>
+                        <parameter name="locale">en_CA</parameter>
+                        <parameter name="outputPath">/src/coveo/reports/catalog-attributes/</parameter>
+                        <parameter name="sampleLimit">5</parameter>
+                        <parameter name="maxProducts">0</parameter>
+                    </parameters>
+                </step>
+            </flow-template>
+        </split>
+        <rules>
+            <on-running runtime-threshold="60m" enabled="false">
+                <mark-job-as-hanging/>
+            </on-running>
+        </rules>
+        <triggers>
+            <run-once enabled="false">
+                <date>2026-05-07Z</date>
+                <time>12:05:00.000Z</time>
+            </run-once>
+        </triggers>
+    </job>
+
+    <job job-id="coveoPlatformFieldCreate" priority="0">
+        <description>Creates missing Coveo platform fields from the same JSON file used for SFCC field mapping imports.</description>
+        <parameters/>
+        <split sequential="false">
+            <contexts template-ref="template_141">
+                <context site-id="RefArch"/>
+            </contexts>
+            <flow-template template-id="template_141">
+                <step step-id="CreateCoveoPlatformFields" type="custom.coveo.coveoPlatformFieldCreate" enforce-restart="false">
+                    <description>Ensures all enabled mapping target fields exist in the configured Coveo organization.</description>
+                    <parameters>
+                        <parameter name="sourceFile">/src/coveo/config/field-mappings/default-commerce-fields.json</parameter>
+                    </parameters>
+                </step>
+            </flow-template>
+        </split>
+        <rules>
+            <on-running runtime-threshold="30m" enabled="false">
+                <mark-job-as-hanging/>
+            </on-running>
+        </rules>
+        <triggers>
+            <run-once enabled="false">
+                <date>2026-05-07Z</date>
+                <time>12:10:00.000Z</time>
+            </run-once>
+        </triggers>
+    </job>
+
 </jobs>

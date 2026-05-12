@@ -1,0 +1,202 @@
+{
+  "profile": {
+    "profileId": "renspets-commerce-fields",
+    "siteId": "RensPets",
+    "enabled": true,
+    "label": "RensPets commerce fields",
+    "notes": "Conservative first-pass mapping profile derived from the storefront-catalog-renspets-ca catalog audit on 2026-05-12. Focuses on availability, quantity and identifier metadata, a small set of storefront refinement fields, and primary-category context while avoiding low-signal demo attributes."
+  },
+  "mappings": [
+    {
+      "mappingId": "in-stock",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "available",
+      "targetField": "ec_in_stock",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "10"
+    },
+    {
+      "mappingId": "material",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "materialTest",
+      "targetField": "ec_material",
+      "valueMode": "displayValueArray",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "20"
+    },
+    {
+      "mappingId": "skin-concern",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "skinConcern",
+      "targetField": "ec_skin_concern",
+      "valueMode": "displayValueArray",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "30"
+    },
+    {
+      "mappingId": "refinement-color",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "refinementColor",
+      "targetField": "ec_refinement_color",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "40"
+    },
+    {
+      "mappingId": "ean",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "EAN",
+      "targetField": "ec_ean",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "50"
+    },
+    {
+      "mappingId": "upc",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "UPC",
+      "targetField": "ec_upc",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "60"
+    },
+    {
+      "mappingId": "sales-unit",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "unit",
+      "targetField": "ec_sales_unit",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "70"
+    },
+    {
+      "mappingId": "unit-quantity",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "unitQuantity",
+      "targetField": "ec_unit_quantity",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "80"
+    },
+    {
+      "mappingId": "min-order-quantity",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "minOrderQuantity",
+      "targetField": "ec_min_order_quantity",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "90"
+    },
+    {
+      "mappingId": "tax-class",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "taxClassID",
+      "targetField": "ec_tax_class",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "100"
+    },
+    {
+      "mappingId": "page-keywords",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "pageKeywords",
+      "targetField": "ec_page_keywords",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "110"
+    },
+    {
+      "mappingId": "primary-category-id",
+      "appliesTo": "Both",
+      "sourceObject": "primaryCategory",
+      "sourceScope": "system",
+      "sourceAttributeId": "ID",
+      "targetField": "ec_primary_category_id",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "120"
+    },
+    {
+      "mappingId": "primary-category-name",
+      "appliesTo": "Both",
+      "sourceObject": "primaryCategory",
+      "sourceScope": "system",
+      "sourceAttributeId": "displayName",
+      "targetField": "ec_primary_category_name",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "130"
+    },
+    {
+      "mappingId": "primary-category-description",
+      "appliesTo": "Both",
+      "sourceObject": "primaryCategory",
+      "sourceScope": "system",
+      "sourceAttributeId": "description",
+      "targetField": "ec_primary_category_description",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "140"
+    },
+    {
+      "mappingId": "primary-category-page-title",
+      "appliesTo": "Both",
+      "sourceObject": "primaryCategory",
+      "sourceScope": "system",
+      "sourceAttributeId": "pageTitle",
+      "targetField": "ec_primary_category_page_title",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "150"
+    },
+    {
+      "mappingId": "primary-category-page-description",
+      "appliesTo": "Both",
+      "sourceObject": "primaryCategory",
+      "sourceScope": "system",
+      "sourceAttributeId": "pageDescription",
+      "targetField": "ec_primary_category_page_description",
+      "valueMode": "raw",
+      "enabled": true,
+      "sortOrder": "160"
+    }
+  ]
+}
