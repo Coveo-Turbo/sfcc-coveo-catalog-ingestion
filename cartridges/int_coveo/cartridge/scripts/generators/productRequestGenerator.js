@@ -476,7 +476,7 @@ function getProductsData(product, exportOptions, exportContext) {
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
             ec_rating: productRating,
             ec_brand: product.brand,
-            ec_description: getHtmlDocument(product.longDescription),
+            ec_description: getHtmlDocument(product.longDescription) || getHtmlDocument(product.shortDescription),
             ec_shortdesc: getMarkupSource(product.shortDescription)
         };
         if (exportPrices.promoPrice !== null) {

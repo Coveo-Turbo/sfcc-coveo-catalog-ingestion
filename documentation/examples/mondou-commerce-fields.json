@@ -1,7 +1,7 @@
 {
   "profile": {
     "profileId": "mondou-commerce-fields",
-    "siteId": "RefArch",
+    "siteId": "Mondou",
     "enabled": true,
     "label": "Mondou commerce fields",
     "notes": "First-pass mapping profile derived from the mondou_CA-storefront catalog audit on 2026-05-07. Focuses on search facets, merchandising, fulfillment, packaging metadata, and primary-category context."

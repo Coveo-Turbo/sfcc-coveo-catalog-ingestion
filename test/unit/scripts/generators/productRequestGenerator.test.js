@@ -138,10 +138,10 @@ function createProduct(options) {
         },
         brand: options.brand || 'Coveo',
         shortDescription: {
-            source: options.shortDescription || 'Short Description'
+            source: Object.prototype.hasOwnProperty.call(options, 'shortDescription') ? options.shortDescription : 'Short Description'
         },
         longDescription: {
-            source: options.longDescription || 'Long Description'
+            source: Object.prototype.hasOwnProperty.call(options, 'longDescription') ? options.longDescription : 'Long Description'
         },
         custom: options.custom || {},
         variationModel: createVariationModel(options.custom && options.custom.color, options.custom && options.custom.size),
@@ -645,6 +645,73 @@ describe('productRequestGenerator', function () {
 
         assert.lengthOf(exports, 1);
         assert.strictEqual(exports[0].ec_description, '<html><body><p>HTML Description</p></body></html>');
+    });
+
+    it('uses shortDescription as the HTML body when longDescription is empty', function () {
+        var standaloneProduct = createProduct({
+            ID: 'SKU-SHORT-BODY',
+            longDescription: '',
+            shortDescription: 'Short Description Body'
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return standaloneProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/object/ObjectAttributeDefinition': {},
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('SKU-SHORT-BODY');
+
+        assert.lengthOf(exports, 1);
+        assert.strictEqual(exports[0].ec_description, '<html><body>Short Description Body</body></html>');
+        assert.strictEqual(exports[0].ec_shortdesc, 'Short Description Body');
     });
 
     it('exports base and promotional prices separately when a discounted sales price is active', function () {

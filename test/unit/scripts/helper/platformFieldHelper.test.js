@@ -181,6 +181,41 @@ describe('platformFieldHelper', function () {
         });
     });
 
+    it('converts facet intent into a valid multi-value facet definition for array mappings', function () {
+        var helper = createHelper();
+        var result = helper.buildFieldDefinitionsFromConfig({
+            profile: {
+                profileId: 'renspets-commerce-fields',
+                siteId: 'RensPets'
+            },
+            mappings: [
+                {
+                    mappingId: 'material',
+                    siteId: 'RensPets',
+                    profileId: 'renspets-commerce-fields',
+                    enabled: true,
+                    appliesTo: 'Both',
+                    sourceObject: 'product',
+                    sourceScope: 'custom',
+                    sourceAttributeId: 'materialTest',
+                    targetField: 'ec_material',
+                    valueMode: 'displayValueArray',
+                    coveoField: {
+                        facet: true
+                    }
+                }
+            ]
+        });
+
+        assert.deepEqual(result.fields[0], {
+            name: 'ec_material',
+            description: 'Generated from SFCC mapping profile renspets-commerce-fields: product.custom.materialTest -> ec_material',
+            type: 'STRING',
+            multiValueFacet: true,
+            multiValueFacetTokenizers: ';'
+        });
+    });
+
     it('creates fields through the Platform API using the site organization id', function () {
         var helper = createHelper();
         var summary = helper.createFieldsFromConfig({

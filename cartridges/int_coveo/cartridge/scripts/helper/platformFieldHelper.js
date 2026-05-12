@@ -180,8 +180,16 @@ function buildFieldDefinition(profile, mapping) {
 
     applyExplicitBooleanOptions(definition, coveoField);
 
+    if (mapping.valueMode === 'displayValueArray' && definition.facet === true && definition.multiValueFacet === undefined) {
+        definition.multiValueFacet = true;
+    }
+
     if (mapping.valueMode === 'displayValueArray' && definition.multiValueFacet === undefined) {
         definition.multiValueFacet = true;
+    }
+
+    if (definition.multiValueFacet === true && definition.facet === true) {
+        delete definition.facet;
     }
 
     if (definition.multiValueFacet === true) {

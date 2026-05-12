@@ -20,6 +20,20 @@ function createHashSet() {
     return HashSet;
 }
 
+function createFailingHashSet(message) {
+    function HashSet() {}
+
+    HashSet.prototype.add = function () {
+        throw new Error(message);
+    };
+
+    HashSet.prototype.contains = function () {
+        throw new Error(message);
+    };
+
+    return HashSet;
+}
+
 function createIterator(values) {
     var index = 0;
 
@@ -399,5 +413,107 @@ describe('coveoHelper', function () {
         }
 
         assert.deepEqual(values, ['MASTER-1', 'FR-STANDALONE-1']);
+    });
+
+    it('streams catalog-scoped full exports without a quota-limited root id set', function () {
+        var products = [];
+        var index;
+
+        for (index = 0; index < 20050; index += 1) {
+            products.push({
+                ID: 'STANDALONE-' + index
+            });
+        }
+
+        products.push({
+            ID: 'MASTER-1-RED-S',
+            variant: true,
+            masterProduct: {
+                ID: 'MASTER-1'
+            }
+        });
+
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function (catalogId) {
+                    assert.strictEqual(catalogId, 'large-catalog');
+                    return {
+                        ID: catalogId
+                    };
+                }
+            },
+            'dw/util/Calendar': function Calendar() {},
+            'dw/io/File': function File() {},
+            'dw/io/FileWriter': function FileWriter() {},
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/StringUtils': {
+                formatCalendar: function () {
+                    return '2026-01-01t000000.000';
+                }
+            },
+            'dw/util/HashSet': createFailingHashSet('Full catalog exports should not build a quota-limited HashSet.'),
+            'dw/catalog/ProductMgr': {
+                queryProductsInCatalog: function (catalog) {
+                    assert.strictEqual(catalog.ID, 'large-catalog');
+                    return createIterator(products);
+                }
+            },
+            'dw/catalog/ProductSearchModel': function ProductSearchModel() {
+                this.setCategoryID = function () {
+                    throw new Error('Should not use site-wide product search for a catalog-scoped export.');
+                };
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                getCoveoConstants: function () {
+                    return {
+                        CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
+                        COVEO_FILE_FORMAT: '.json'
+                    };
+                },
+                COVEO_CONSTANTS: {
+                    CATALOG_LAST_SYNC: new Date('2026-01-01T00:00:00Z'),
+                    COVEO_FILE_FORMAT: '.json'
+                },
+                CoveoFeedType: {
+                    PRODUCT_FEED: 'PRODUCT_FEED'
+                }
+            },
+            '*/cartridge/scripts/helper/catalogExportValidator': {
+                buildAddOrUpdatePayload: function (items) {
+                    return {
+                        addOrUpdate: items
+                    };
+                }
+            }
+        });
+
+        var iterator = helper.buildProductQuery(false, {
+            catalogId: 'large-catalog'
+        });
+        var count = 0;
+        var firstValue = null;
+        var lastValue = null;
+
+        while (iterator.hasNext()) {
+            var productId = iterator.next();
+
+            if (count === 0) {
+                firstValue = productId;
+            }
+
+            lastValue = productId;
+            count += 1;
+        }
+
+        assert.strictEqual(count, 20050);
+        assert.strictEqual(firstValue, 'STANDALONE-0');
+        assert.strictEqual(lastValue, 'STANDALONE-20049');
     });
 });
