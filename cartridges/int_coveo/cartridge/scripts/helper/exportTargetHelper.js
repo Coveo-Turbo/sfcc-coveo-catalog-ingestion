@@ -233,6 +233,129 @@ function getTargetsForCurrentSite() {
 }
 
 /**
+ * Compares two normalized string values.
+ * @param {string} left - Left-hand value.
+ * @param {string} right - Right-hand value.
+ * @returns {number} comparison result.
+ */
+function compareStrings(left, right) {
+    var leftValue = normalizeString(left);
+    var rightValue = normalizeString(right);
+
+    if (leftValue === rightValue) {
+        return 0;
+    }
+
+    return leftValue < rightValue ? -1 : 1;
+}
+
+/**
+ * Returns a normalized target context for listing sync use.
+ * @param {Object} targetObject - Custom object instance.
+ * @param {string} targetId - Explicit target identifier, when known.
+ * @returns {Object} export context.
+ */
+function buildListingSyncContext(targetObject, targetId) {
+    var exportContext = buildTargetExportContext(targetObject, targetId);
+
+    validateExportContext(exportContext);
+
+    if (empty(exportContext.coveoTrackingId)) {
+        throw new Error('The Coveo listing page sync target ' + (exportContext.targetId || exportContext.label || exportContext.locale || '[unknown]') + ' is missing required value coveoTrackingId.');
+    }
+
+    return exportContext;
+}
+
+/**
+ * Groups export contexts by tracking ID.
+ * @param {Array} exportContexts - Export contexts.
+ * @returns {Array} grouped contexts.
+ */
+function groupListingSyncContexts(exportContexts) {
+    var groupsByTrackingId = {};
+    var groups = [];
+
+    exportContexts.sort(function (left, right) {
+        var localeComparison = compareStrings(left.locale, right.locale);
+
+        if (localeComparison !== 0) {
+            return localeComparison;
+        }
+
+        return compareStrings(left.targetId, right.targetId);
+    }).forEach(function (exportContext) {
+        var trackingId = normalizeString(exportContext.coveoTrackingId);
+        var group = groupsByTrackingId[trackingId];
+
+        if (empty(group)) {
+            group = {
+                trackingId: trackingId,
+                exportContexts: [],
+                primaryContext: exportContext
+            };
+            groupsByTrackingId[trackingId] = group;
+            groups.push(group);
+        }
+
+        group.exportContexts.push(exportContext);
+    });
+
+    groups.sort(function (left, right) {
+        return compareStrings(left.trackingId, right.trackingId);
+    });
+
+    return groups;
+}
+
+/**
+ * Resolves listing-sync contexts grouped by tracking ID.
+ * @param {Object} parameters - Job parameters.
+ * @returns {Array} listing sync groups.
+ */
+function resolveListingSyncGroups(parameters) {
+    var requestedTargetId = normalizeString(parameters && typeof parameters.get === 'function' ? parameters.get('targetId') : null);
+    var targetObjects = [];
+    var exportContexts = [];
+    var requestedTrackingId = '';
+    var siteTargets = getTargetsForCurrentSite();
+
+    if (!empty(requestedTargetId)) {
+        var requestedTarget = CustomObjectMgr.getCustomObject(TARGET_CUSTOM_OBJECT_TYPE, requestedTargetId);
+
+        if (empty(requestedTarget)) {
+            throw new Error('No Coveo export target with targetId ' + requestedTargetId + ' exists.');
+        }
+
+        requestedTrackingId = normalizeString((requestedTarget.custom || {}).coveoTrackingId);
+
+        if (empty(requestedTrackingId)) {
+            throw new Error('The Coveo listing page sync target ' + requestedTargetId + ' is missing required value coveoTrackingId.');
+        }
+
+        targetObjects = siteTargets.filter(function (targetObject) {
+            return normalizeString((targetObject.custom || {}).coveoTrackingId) === requestedTrackingId;
+        });
+
+        if (!targetObjects.length) {
+            targetObjects = [requestedTarget];
+        }
+    } else {
+        targetObjects = siteTargets;
+    }
+
+    if (!targetObjects.length) {
+        throw new Error('No Coveo listing page sync targets are configured for site ' + Site.current.ID + '.');
+    }
+
+    targetObjects.forEach(function (targetObject) {
+        exportContexts.push(buildListingSyncContext(targetObject, ''));
+    });
+
+    return groupListingSyncContexts(exportContexts);
+}
+
+/**
  * Resolves the export context based on job parameters and configured targets.
  * @param {Object} parameters - Job parameters.
  * @returns {Object} export context.
@@ -345,8 +468,11 @@ module.exports = {
     TARGET_CUSTOM_OBJECT_TYPE: TARGET_CUSTOM_OBJECT_TYPE,
     applyRequestLocale: applyRequestLocale,
     buildLegacyExportContext: buildLegacyExportContext,
+    buildListingSyncContext: buildListingSyncContext,
     getLanguageFromLocale: getLanguageFromLocale,
+    getTargetsForCurrentSite: getTargetsForCurrentSite,
     resolveExportContext: resolveExportContext,
+    resolveListingSyncGroups: resolveListingSyncGroups,
     restoreRequestLocale: restoreRequestLocale,
     updateLastSync: updateLastSync,
     validateExportContext: validateExportContext
