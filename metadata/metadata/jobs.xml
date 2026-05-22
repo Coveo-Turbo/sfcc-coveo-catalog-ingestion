@@ -64,6 +64,36 @@
         </triggers>
     </job>
 
+    <job job-id="coveoListingPagesSync" priority="0">
+        <description>Creates or updates Coveo Merchandising Hub listing pages from SFCC categories and brands.</description>
+        <parameters/>
+        <split sequential="false">
+            <contexts template-ref="template_118">
+                <context site-id="RefArch"/>
+            </contexts>
+            <flow-template template-id="template_118">
+                <step step-id="SyncListingPagesToCoveo" type="custom.coveo.coveoListingPagesSync" enforce-restart="false">
+                    <description>Synchronizes CMH public listing pages for the configured target.</description>
+                    <parameters>
+                        <parameter name="targetId"></parameter>
+                        <parameter name="dryRun">false</parameter>
+                    </parameters>
+                </step>
+            </flow-template>
+        </split>
+        <rules>
+            <on-running runtime-threshold="60m" enabled="false">
+                <mark-job-as-hanging/>
+            </on-running>
+        </rules>
+        <triggers>
+            <run-once enabled="false">
+                <date>2023-05-18Z</date>
+                <time>12:17:00.000Z</time>
+            </run-once>
+        </triggers>
+    </job>
+
     <job job-id="coveoFieldMappingImport" priority="0">
         <description>Imports a Coveo field mapping profile and mapping rows from a JSON file in IMPEX.</description>
         <parameters/>

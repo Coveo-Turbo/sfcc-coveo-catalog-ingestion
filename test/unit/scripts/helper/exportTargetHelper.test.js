@@ -171,6 +171,13 @@ describe('exportTargetHelper', function () {
                 locale: 'fr_CA',
                 language: 'fr',
                 coveoSourceId: 'source-fr',
+                coveoTrackingId: 'mondou_fr_ca',
+                coveoCountry: 'ca',
+                coveoCurrency: 'cad',
+                storefrontBaseUrl: 'https://www.mondou.com',
+                listingCategoryUrlTemplate: '/{categorySlugPath}',
+                listingBrandUrlTemplate: '/marques/{brandSlug}',
+                listingSlugAmpersandToken: 'et',
                 catalogId: 'fr-catalog',
                 mappingProfileId: 'fr-profile',
                 enabled: true,
@@ -241,6 +248,13 @@ describe('exportTargetHelper', function () {
         assert.isFalse(context.legacyMode);
         assert.strictEqual(context.targetId, 'fr-ca');
         assert.strictEqual(context.language, 'fr');
+        assert.strictEqual(context.coveoTrackingId, 'mondou_fr_ca');
+        assert.strictEqual(context.coveoCountry, 'CA');
+        assert.strictEqual(context.coveoCurrency, 'CAD');
+        assert.strictEqual(context.storefrontBaseUrl, 'https://www.mondou.com');
+        assert.strictEqual(context.listingCategoryUrlTemplate, '/{categorySlugPath}');
+        assert.strictEqual(context.listingBrandUrlTemplate, '/marques/{brandSlug}');
+        assert.strictEqual(context.listingSlugAmpersandToken, 'et');
         assert.strictEqual(context.catalogId, 'fr-catalog');
         assert.strictEqual(context.mappingProfileId, 'fr-profile');
         assert.lengthOf(context.fieldMappings, 1);

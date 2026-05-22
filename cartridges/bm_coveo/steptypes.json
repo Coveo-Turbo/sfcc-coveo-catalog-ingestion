@@ -129,6 +129,45 @@
               }
             ]
           }
+        },
+        {
+          "@type-id":"custom.coveo.coveoListingPagesSync",
+          "@supports-site-context": true,
+          "@supports-organization-context": false,
+          "description": "Creates or updates Coveo Merchandising Hub listing pages from SFCC categories and brands",
+          "module": "bm_coveo/cartridge/scripts/jobs/syncListingPages.js",
+          "function": "execute",
+          "parameters": {
+            "parameter": [
+              {
+                "@name": "targetId",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "description": "Optional export target id for multi-locale or catalog-scoped listing page sync"
+              },
+              {
+                "@name": "dryRun",
+                "@type": "boolean",
+                "@required": "false",
+                "@trim": "true",
+                "default-value": false,
+                "description": "When true, calculates create/update counts without writing to CMH"
+              }
+            ]
+          },
+          "status-codes": {
+            "status": [
+              {
+                "@code": "ERROR",
+                "description": "Used when an error occurred."
+              },
+              {
+                "@code": "OK",
+                "description": "Used when everything went well."
+              }
+            ]
+          }
         }
       ],
       "chunk-script-module-step": [

@@ -106,13 +106,14 @@ function getCoveoConstants(exportContext) {
 
 exports.SERVICE_ID = {
     COVEO_STREAM: 'int.coveo.http.api',
-    COVEO_PLATFORM: 'int.coveo.platform.http.api'
+    COVEO_PLATFORM: 'int.coveo.platform.api'
 };
 
 exports.COVEO_API_ENDPOINT = getApiEndpoints();
 exports.COVEO_PLATFORM_API_ENDPOINT = getPlatformApiEndpoints();
 
 exports.COVEO_HTTP_METHOD = {
+    GET: 'GET',
     POST: 'POST',
     PUT: 'PUT'
 };
