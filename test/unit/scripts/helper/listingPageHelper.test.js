@@ -6,6 +6,44 @@ var proxyquire = require('proxyquire').noCallThru();
 
 var currentLocale = 'en_CA';
 
+function createHashSet() {
+    function HashSet() {
+        this.values = [];
+    }
+
+    HashSet.prototype.add = function (value) {
+        if (!this.contains(value)) {
+            this.values.push(value);
+        }
+    };
+
+    HashSet.prototype.contains = function (value) {
+        return this.values.indexOf(value) !== -1;
+    };
+
+    return HashSet;
+}
+
+function createHashMap() {
+    function HashMap() {
+        this.store = {};
+    }
+
+    HashMap.prototype.containsKey = function (key) {
+        return Object.prototype.hasOwnProperty.call(this.store, key);
+    };
+
+    HashMap.prototype.get = function (key) {
+        return this.store[key];
+    };
+
+    HashMap.prototype.put = function (key, value) {
+        this.store[key] = value;
+    };
+
+    return HashMap;
+}
+
 function createIterator(values, onClose) {
     var index = 0;
 
@@ -81,6 +119,8 @@ function createHelper(catalog, products) {
                 };
             }
         },
+        'dw/util/HashMap': createHashMap(),
+        'dw/util/HashSet': createHashSet(),
         '*/cartridge/scripts/helper/exportTargetHelper': {
             applyRequestLocale: function (exportContext) {
                 var previousLocale = currentLocale;
@@ -131,7 +171,12 @@ describe('listingPageHelper', function () {
 
         assert.lengthOf(listingPages, 2);
         assert.strictEqual(listingPages[0].name, 'Cat');
-        assert.strictEqual(listingPages[0].patterns[0].url, 'https://www.mondou.com/cat');
+        assert.sameMembers(listingPages[0].patterns.map(function (pattern) {
+            return pattern.url;
+        }), [
+            'https://www.mondou.com/cat',
+            '/cat'
+        ]);
         assert.deepEqual(listingPages[0].pageRules[0].filters[0], {
             fieldName: 'ec_category',
             operator: 'contains',
@@ -147,7 +192,12 @@ describe('listingPageHelper', function () {
         }]);
 
         assert.strictEqual(listingPages[1].name, 'Cat|Food & Treats');
-        assert.strictEqual(listingPages[1].patterns[0].url, 'https://www.mondou.com/cat/food-and-treats');
+        assert.sameMembers(listingPages[1].patterns.map(function (pattern) {
+            return pattern.url;
+        }), [
+            'https://www.mondou.com/cat/food-and-treats',
+            '/cat/food-and-treats'
+        ]);
         assert.deepEqual(listingPages[1].pageRules[0].filters[0].value.values, ['Cat|Food & Treats']);
     });
 
@@ -212,7 +262,9 @@ describe('listingPageHelper', function () {
             return pattern.url;
         }), [
             'https://www.mondou.com/en-CA/cat',
-            'https://www.mondou.com/fr-CA/chat'
+            '/en-CA/cat',
+            'https://www.mondou.com/fr-CA/chat',
+            '/fr-CA/chat'
         ]);
         assert.lengthOf(catPage.pageRules, 2);
         assert.sameMembers(catPage.pageRules[0].locales.concat(catPage.pageRules[1].locales).map(function (locale) {
@@ -226,7 +278,9 @@ describe('listingPageHelper', function () {
             return pattern.url;
         }), [
             'https://www.mondou.com/en-CA/cat/food-and-treats',
-            'https://www.mondou.com/fr-CA/chat/nourriture-et-friandises'
+            '/en-CA/cat/food-and-treats',
+            'https://www.mondou.com/fr-CA/chat/nourriture-et-friandises',
+            '/fr-CA/chat/nourriture-et-friandises'
         ]);
         assert.lengthOf(foodPage.pageRules, 2);
         assert.sameMembers(foodPage.pageRules.map(function (rule) {
@@ -240,7 +294,9 @@ describe('listingPageHelper', function () {
             return pattern.url;
         }), [
             'https://www.mondou.com/en-CA/brands/vetdiet',
-            'https://www.mondou.com/fr-CA/marques/vetdiet'
+            '/en-CA/brands/vetdiet',
+            'https://www.mondou.com/fr-CA/marques/vetdiet',
+            '/fr-CA/marques/vetdiet'
         ]);
         assert.lengthOf(brandPage.pageRules, 1);
         assert.lengthOf(brandPage.pageRules[0].locales, 2);
@@ -299,7 +355,12 @@ describe('listingPageHelper', function () {
         var rensPetsPage = listingPages.filter(function (listingPage) {
             return listingPage.name === "Ren's Pets";
         })[0];
-        assert.strictEqual(rensPetsPage.patterns[0].url, 'https://www.mondou.com/brands/rens-pets');
+        assert.sameMembers(rensPetsPage.patterns.map(function (pattern) {
+            return pattern.url;
+        }), [
+            'https://www.mondou.com/brands/rens-pets',
+            '/brands/rens-pets'
+        ]);
         assert.deepEqual(rensPetsPage.pageRules[0].filters[0], {
             fieldName: 'ec_brand',
             operator: 'isExactly',
@@ -395,5 +456,251 @@ describe('listingPageHelper', function () {
         assert.lengthOf(chunks[0], 100);
         assert.lengthOf(chunks[1], 100);
         assert.lengthOf(chunks[2], 5);
+    });
+
+    it('reads CMH listing page responses that use nested pagination metadata', function () {
+        var calls = [];
+        var exportContext = createExportContext();
+        var helper;
+        var pages;
+
+        helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/listingPageHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return {
+                        root: createCategory('root', 'Root', [])
+                    };
+                },
+                getSiteCatalog: function () {
+                    return {
+                        root: createCategory('root', 'Root', [])
+                    };
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        warn: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/HashMap': createHashMap(),
+            'dw/util/HashSet': createHashSet(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                applyRequestLocale: function (context) {
+                    var previousLocale = currentLocale;
+                    currentLocale = context.locale;
+                    return previousLocale;
+                },
+                restoreRequestLocale: function (previousLocale) {
+                    currentLocale = previousLocale || 'en_CA';
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                getListingPagesPage: function (context, page) {
+                    calls.push({
+                        context: context,
+                        page: page
+                    });
+
+                    if (page === 0) {
+                        return {
+                            ok: true,
+                            object: {
+                                pagination: {
+                                    page: 0,
+                                    totalPages: 2
+                                },
+                                items: [{
+                                    id: 'page-1'
+                                }]
+                            }
+                        };
+                    }
+
+                    return {
+                        ok: true,
+                        object: {
+                            pagination: {
+                                page: 1,
+                                totalPages: 2
+                            },
+                            items: [{
+                                id: 'page-2'
+                            }]
+                        }
+                    };
+                }
+            }
+        });
+
+        pages = helper.readExistingListingPages(exportContext, function (response) {
+            return response;
+        });
+
+        assert.lengthOf(pages, 2);
+        assert.deepEqual(calls.map(function (call) {
+            return call.page;
+        }), [0, 1]);
+    });
+
+    it('reads CMH listing page responses that use results arrays', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/listingPageHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return {
+                        root: createCategory('root', 'Root', [])
+                    };
+                },
+                getSiteCatalog: function () {
+                    return {
+                        root: createCategory('root', 'Root', [])
+                    };
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        warn: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/HashMap': createHashMap(),
+            'dw/util/HashSet': createHashSet(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                applyRequestLocale: function (context) {
+                    var previousLocale = currentLocale;
+                    currentLocale = context.locale;
+                    return previousLocale;
+                },
+                restoreRequestLocale: function (previousLocale) {
+                    currentLocale = previousLocale || 'en_CA';
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                getListingPagesPage: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            results: [{
+                                id: 'page-1'
+                            }]
+                        }
+                    };
+                }
+            }
+        });
+
+        var pages = helper.readExistingListingPages(createExportContext(), function (response) {
+            return response;
+        });
+
+        assert.lengthOf(pages, 1);
+        assert.strictEqual(pages[0].id, 'page-1');
+    });
+
+    it('reads CMH listing page responses that return dw.util.List-like objects', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/listingPageHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return {
+                        root: createCategory('root', 'Root', [])
+                    };
+                },
+                getSiteCatalog: function () {
+                    return {
+                        root: createCategory('root', 'Root', [])
+                    };
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        warn: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/HashMap': createHashMap(),
+            'dw/util/HashSet': createHashSet(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                applyRequestLocale: function (context) {
+                    var previousLocale = currentLocale;
+                    currentLocale = context.locale;
+                    return previousLocale;
+                },
+                restoreRequestLocale: function (previousLocale) {
+                    currentLocale = previousLocale || 'en_CA';
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                getListingPagesPage: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            toArray: function () {
+                                return [{
+                                    id: 'page-1'
+                                }];
+                            }
+                        }
+                    };
+                }
+            }
+        });
+
+        var pages = helper.readExistingListingPages(createExportContext(), function (response) {
+            return response;
+        });
+
+        assert.lengthOf(pages, 1);
+        assert.strictEqual(pages[0].id, 'page-1');
+    });
+
+    it('verifies written listing pages using the refreshed listing page indexes', function () {
+        var helper = createHelper({
+            root: createCategory('root', 'Root', [])
+        }, []);
+        var categoryPage = helper.buildCategoryListingPage(['Cat'], createExportContext());
+        var brandPage = helper.buildBrandListingPage('vetdiet', createExportContext());
+
+        assert.doesNotThrow(function () {
+            helper.verifyWrittenListingPages([categoryPage, brandPage], [
+                {
+                    id: 'category-id',
+                    name: 'Cat',
+                    patterns: [{
+                        url: 'https://www.mondou.com/cat'
+                    }]
+                },
+                {
+                    id: 'brand-id',
+                    name: 'vetdiet',
+                    patterns: [{
+                        url: 'https://www.mondou.com/brands/vetdiet'
+                    }]
+                }
+            ]);
+        });
     });
 });

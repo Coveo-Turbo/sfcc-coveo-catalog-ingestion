@@ -30,6 +30,10 @@ describe('platformService', function () {
                 capturedConfig = config;
 
                 return {
+                    URL: 'https://platform.cloud.coveo.com/rest/organizations/',
+                    getURL: function () {
+                        return this.URL;
+                    },
                     call: function (args) {
                         var serviceInstance = {
                             URL: 'https://platform.cloud.coveo.com/rest/organizations/',
@@ -95,6 +99,8 @@ describe('platformService', function () {
         assert.strictEqual(result.serviceInstance.headers.Authorization, 'Bearer api-key');
         assert.strictEqual(result.serviceInstance.headers.Accept, 'application/json');
         assert.strictEqual(result.body, '[{"name":"Cat"}]');
+        assert.strictEqual(result.requestUrl, 'https://platform.cloud.coveo.com/rest/organizations/org-id/commerce/v2/listings/pages/bulk-create');
+        assert.strictEqual(result.requestMethod, 'POST');
     });
 
     it('parses JSON responses and preserves non-JSON response text', function () {
@@ -125,5 +131,14 @@ describe('platformService', function () {
         assert.throws(function () {
             request.call();
         }, /Platform API credential password is empty/);
+    });
+
+    it('resolves absolute Platform API URLs without issuing a request', function () {
+        var platformService = createPlatformService('api-key');
+
+        assert.strictEqual(
+            platformService.resolvePlatformRequestUrl('org-id/commerce/v2/listings/pages/bulk-create'),
+            'https://platform.cloud.coveo.com/rest/organizations/org-id/commerce/v2/listings/pages/bulk-create'
+        );
     });
 });

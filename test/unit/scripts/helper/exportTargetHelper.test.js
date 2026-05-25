@@ -346,9 +346,13 @@ describe('exportTargetHelper', function () {
         assert.lengthOf(groups, 1);
         assert.strictEqual(groups[0].trackingId, 'mondou');
         assert.lengthOf(groups[0].exportContexts, 2);
+        assert.lengthOf(groups[0].existingListingReadContexts, 2);
         assert.deepEqual(groups[0].exportContexts.map(function (context) {
             return context.locale;
         }), ['en_CA', 'fr_CA']);
+        assert.deepEqual(groups[0].existingListingReadContexts.map(function (context) {
+            return context.coveoTrackingId;
+        }), ['mondou', 'mondou']);
         assert.strictEqual(groups[0].primaryContext.locale, 'en_CA');
     });
 

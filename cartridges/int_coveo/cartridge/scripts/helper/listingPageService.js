@@ -47,6 +47,33 @@ function buildListingPagesEndpoint(exportContext, suffix, query) {
 }
 
 /**
+ * Returns the absolute request URL for a listing pages endpoint.
+ * @param {Object} exportContext - Export context.
+ * @param {string} suffix - Endpoint suffix.
+ * @param {Object} query - Query parameters.
+ * @returns {string} absolute request URL.
+ */
+function buildListingPagesRequestUrl(exportContext, suffix, query) {
+    var endpoint = buildListingPagesEndpoint(exportContext, suffix, query);
+
+    return platformService.resolvePlatformRequestUrl(endpoint);
+}
+
+/**
+ * Serializes listing page definitions to a stable JSON array string.
+ * This avoids relying on platform-specific array serialization behavior.
+ * @param {Array} listingPages - Listing pages to serialize.
+ * @returns {string} serialized JSON payload.
+ */
+function serializeListingPagePayload(listingPages) {
+    var definitions = Array.isArray(listingPages) ? listingPages : [];
+
+    return '[' + definitions.map(function (listingPage) {
+        return JSON.stringify(listingPage);
+    }).join(',') + ']';
+}
+
+/**
  * Reads one page of existing CMH listing pages.
  * @param {Object} exportContext - Export context.
  * @param {number} page - Zero-based page index.
@@ -73,7 +100,7 @@ function bulkCreateListingPages(exportContext, listingPages) {
     var endpoint = buildListingPagesEndpoint(exportContext, '/bulk-create');
     var request = platformService.createPlatformRequest(coveoConstant.COVEO_HTTP_METHOD.POST, endpoint, getPlatformAPIHeaders());
 
-    return request.call(listingPages);
+    return request.call(serializeListingPagePayload(listingPages));
 }
 
 /**
@@ -86,7 +113,7 @@ function bulkUpdateListingPages(exportContext, listingPages) {
     var endpoint = buildListingPagesEndpoint(exportContext, '/bulk-update');
     var request = platformService.createPlatformRequest(coveoConstant.COVEO_HTTP_METHOD.PUT, endpoint, getPlatformAPIHeaders());
 
-    return request.call(listingPages);
+    return request.call(serializeListingPagePayload(listingPages));
 }
 
 module.exports = {
@@ -95,6 +122,8 @@ module.exports = {
     bulkCreateListingPages: bulkCreateListingPages,
     bulkUpdateListingPages: bulkUpdateListingPages,
     buildListingPagesEndpoint: buildListingPagesEndpoint,
+    buildListingPagesRequestUrl: buildListingPagesRequestUrl,
     getListingPagesPage: getListingPagesPage,
-    getPlatformAPIHeaders: getPlatformAPIHeaders
+    getPlatformAPIHeaders: getPlatformAPIHeaders,
+    serializeListingPagePayload: serializeListingPagePayload
 };

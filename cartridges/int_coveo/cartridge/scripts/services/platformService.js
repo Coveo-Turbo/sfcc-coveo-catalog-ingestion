@@ -55,6 +55,21 @@ function applyHeaders(svc, httpHeaders) {
 }
 
 /**
+ * Safely reads a property from a service result-like object.
+ * Native SFCC result objects can throw on unknown properties.
+ * @param {Object} value - Source object.
+ * @param {string} propertyName - Property to read.
+ * @returns {*} property value or undefined.
+ */
+function getOptionalProperty(value, propertyName) {
+    try {
+        return value[propertyName];
+    } catch (ex) {
+        return undefined;
+    }
+}
+
+/**
  * Creates a Coveo Platform API request.
  * @param {string} method - HTTP method.
  * @param {string} endPoint - Endpoint relative to /rest/organizations/.
@@ -63,9 +78,14 @@ function applyHeaders(svc, httpHeaders) {
  */
 function createPlatformRequest(method, endPoint, httpHeaders) {
     var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
+    var requestMetadata = {
+        url: null,
+        method: method
+    };
     var platformRequest = LocalServiceRegistry.createService(coveoConstant.SERVICE_ID.COVEO_PLATFORM, {
         createRequest: function (svc, args) {
             svc.URL += endPoint;
+            requestMetadata.url = svc.URL;
             applyHeaders(svc, httpHeaders);
             svc.setRequestMethod(method);
 
@@ -102,9 +122,74 @@ function createPlatformRequest(method, endPoint, httpHeaders) {
             return msg;
         }
     });
-    return platformRequest;
+
+    return {
+        call: function (args) {
+            var response = platformRequest.call(args);
+            var wrappedResponse = {
+                requestUrl: requestMetadata.url,
+                requestMethod: requestMetadata.method
+            };
+
+            if (response && typeof response === 'object') {
+                [
+                    'ok',
+                    'object',
+                    'status',
+                    'error',
+                    'errorMessage',
+                    'msg',
+                    'unavailableReason',
+                    'body',
+                    'serviceInstance'
+                ].forEach(function (propertyName) {
+                    var propertyValue = getOptionalProperty(response, propertyName);
+
+                    if (typeof propertyValue !== 'undefined') {
+                        wrappedResponse[propertyName] = propertyValue;
+                    }
+                });
+            } else {
+                wrappedResponse.result = response;
+            }
+
+            return wrappedResponse;
+        }
+    };
+}
+
+/**
+ * Resolves the absolute Platform API URL for an endpoint without issuing a request.
+ * @param {string} endPoint - Endpoint relative to /rest/organizations/.
+ * @returns {string} absolute URL when available.
+ */
+function resolvePlatformRequestUrl(endPoint) {
+    var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
+    var platformRequest = LocalServiceRegistry.createService(coveoConstant.SERVICE_ID.COVEO_PLATFORM, {
+        createRequest: function () {
+            return null;
+        },
+        parseResponse: function () {
+            return {};
+        },
+        filterLogMessage: function (msg) {
+            return msg;
+        }
+    });
+    var baseUrl = '';
+
+    if (platformRequest) {
+        if (typeof platformRequest.getURL === 'function') {
+            baseUrl = platformRequest.getURL();
+        } else if (platformRequest.URL) {
+            baseUrl = platformRequest.URL;
+        }
+    }
+
+    return baseUrl ? baseUrl + endPoint : endPoint;
 }
 
 module.exports = {
-    createPlatformRequest: createPlatformRequest
+    createPlatformRequest: createPlatformRequest,
+    resolvePlatformRequestUrl: resolvePlatformRequestUrl
 };

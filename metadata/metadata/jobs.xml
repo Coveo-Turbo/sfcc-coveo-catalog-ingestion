@@ -77,6 +77,7 @@
                     <parameters>
                         <parameter name="targetId"></parameter>
                         <parameter name="dryRun">false</parameter>
+                        <parameter name="existingTrackingIds"></parameter>
                     </parameters>
                 </step>
             </flow-template>

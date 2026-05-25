@@ -16,6 +16,9 @@ describe('listingPageService', function () {
                 }
             },
             '*/cartridge/scripts/services/platformService': {
+                resolvePlatformRequestUrl: function (endpoint) {
+                    return 'https://platform-ca.cloud.coveo.com/rest/organizations/' + endpoint;
+                },
                 createPlatformRequest: function (method, endpoint, headers) {
                     calls.push({
                         method: method,
@@ -54,14 +57,21 @@ describe('listingPageService', function () {
         assert.isTrue(calls[0].headers.useCredentialAuth);
         assert.strictEqual(calls[1].method, 'POST');
         assert.strictEqual(calls[1].endpoint, 'mondouorg/commerce/v2/listings/pages/bulk-create');
-        assert.deepEqual(calls[1].payload, [{
-            name: 'Cat'
-        }]);
+        assert.strictEqual(calls[1].payload, '[{"name":"Cat"}]');
         assert.strictEqual(calls[2].method, 'PUT');
         assert.strictEqual(calls[2].endpoint, 'mondouorg/commerce/v2/listings/pages/bulk-update');
-        assert.deepEqual(calls[2].payload, [{
-            id: 'page-id',
-            name: 'Dog'
-        }]);
+        assert.strictEqual(calls[2].payload, '[{"id":"page-id","name":"Dog"}]');
+        assert.strictEqual(
+            service.buildListingPagesRequestUrl(exportContext, '/bulk-create'),
+            'https://platform-ca.cloud.coveo.com/rest/organizations/mondouorg/commerce/v2/listings/pages/bulk-create'
+        );
+        assert.strictEqual(
+            service.serializeListingPagePayload([{
+                name: 'Cat'
+            }, {
+                name: 'Dog'
+            }]),
+            '[{"name":"Cat"},{"name":"Dog"}]'
+        );
     });
 });

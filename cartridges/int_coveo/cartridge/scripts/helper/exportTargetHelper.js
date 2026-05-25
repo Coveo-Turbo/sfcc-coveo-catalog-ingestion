@@ -268,6 +268,25 @@ function buildListingSyncContext(targetObject, targetId) {
 }
 
 /**
+ * Builds a minimal context used to read existing listing pages.
+ * @param {Object} targetObject - Custom object instance.
+ * @returns {Object|null} read context or null when unusable.
+ */
+function buildListingReadContext(targetObject) {
+    var exportContext = buildTargetExportContext(targetObject, '');
+
+    if (empty(exportContext.siteId)
+        || empty(exportContext.coveoOrganizationId)
+        || empty(exportContext.coveoTrackingId)
+        || exportContext.siteId !== normalizeString(Site.current.ID)
+        || !isValidOrganizationId(exportContext.coveoOrganizationId)) {
+        return null;
+    }
+
+    return exportContext;
+}
+
+/**
  * Groups export contexts by tracking ID.
  * @param {Array} exportContexts - Export contexts.
  * @returns {Array} grouped contexts.
@@ -317,6 +336,7 @@ function resolveListingSyncGroups(parameters) {
     var requestedTargetId = normalizeString(parameters && typeof parameters.get === 'function' ? parameters.get('targetId') : null);
     var targetObjects = [];
     var exportContexts = [];
+    var siteReadContexts = [];
     var requestedTrackingId = '';
     var siteTargets = getTargetsForCurrentSite();
 
@@ -352,7 +372,18 @@ function resolveListingSyncGroups(parameters) {
         exportContexts.push(buildListingSyncContext(targetObject, ''));
     });
 
-    return groupListingSyncContexts(exportContexts);
+    siteTargets.forEach(function (targetObject) {
+        var readContext = buildListingReadContext(targetObject);
+
+        if (!empty(readContext)) {
+            siteReadContexts.push(readContext);
+        }
+    });
+
+    return groupListingSyncContexts(exportContexts).map(function (group) {
+        group.existingListingReadContexts = siteReadContexts;
+        return group;
+    });
 }
 
 /**

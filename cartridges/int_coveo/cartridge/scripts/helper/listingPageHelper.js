@@ -3,6 +3,7 @@
 var CatalogMgr = require('dw/catalog/CatalogMgr');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
+var HashSet = require('dw/util/HashSet');
 
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
 var listingPageService = require('*/cartridge/scripts/helper/listingPageService');
@@ -70,6 +71,24 @@ function toArray(value) {
     }
 
     return values;
+}
+
+/**
+ * Safely reads an object property in Rhino/SFCC contexts where unsupported property access can throw.
+ * @param {Object} value - Source object.
+ * @param {string} propertyName - Property name to read.
+ * @returns {*} property value.
+ */
+function getObjectProperty(value, propertyName) {
+    if (isEmptyValue(value) || typeof value !== 'object') {
+        return undefined;
+    }
+
+    try {
+        return value[propertyName];
+    } catch (ex) {
+        return undefined;
+    }
 }
 
 /**
@@ -272,6 +291,60 @@ function buildAbsoluteUrl(baseUrl, path) {
 }
 
 /**
+ * Builds a relative URL pattern from a rendered path or absolute URL.
+ * @param {string} path - Relative path or absolute URL.
+ * @returns {string} relative URL pattern.
+ */
+function buildRelativeUrl(path) {
+    var normalizedPath = normalizeString(path);
+    var absoluteMatch = null;
+
+    if (isEmptyValue(normalizedPath)) {
+        return '';
+    }
+
+    if (/^https?:\/\//i.test(normalizedPath)) {
+        absoluteMatch = normalizedPath.match(/^https?:\/\/[^/]+(\/.*)?$/i);
+        return absoluteMatch && !isEmptyValue(absoluteMatch[1]) ? absoluteMatch[1] : '/';
+    }
+
+    if (normalizedPath.charAt(0) !== '/') {
+        normalizedPath = '/' + normalizedPath;
+    }
+
+    return normalizedPath;
+}
+
+/**
+ * Builds deduplicated listing page URL patterns.
+ * @param {string} baseUrl - Storefront base URL.
+ * @param {string} path - Relative path or absolute URL.
+ * @returns {Array} URL patterns.
+ */
+function buildListingPatterns(baseUrl, path) {
+    var seenUrls = {};
+    var urls = [
+        buildAbsoluteUrl(baseUrl, path),
+        buildRelativeUrl(path)
+    ];
+
+    return urls.filter(function (url) {
+        var normalizedUrl = normalizeString(url);
+
+        if (isEmptyValue(normalizedUrl) || seenUrls[normalizedUrl]) {
+            return false;
+        }
+
+        seenUrls[normalizedUrl] = true;
+        return true;
+    }).map(function (url) {
+        return {
+            url: url
+        };
+    });
+}
+
+/**
  * Compares two normalized string values.
  * @param {string} left - Left-hand value.
  * @param {string} right - Right-hand value.
@@ -333,13 +406,10 @@ function buildCategoryListingPage(pathNames, exportContext) {
         categorySlugPath: categorySlugPath,
         nameSlug: categorySlugPath
     });
-    var url = buildAbsoluteUrl(exportContext.storefrontBaseUrl, renderedPath);
 
     return {
         name: categoryValue,
-        patterns: [{
-            url: url
-        }],
+        patterns: buildListingPatterns(exportContext.storefrontBaseUrl, renderedPath),
         pageRules: [{
             name: 'Include ec_category contains ' + categoryValue,
             locales: [buildRuleLocale(exportContext)],
@@ -370,13 +440,10 @@ function buildBrandListingPage(brand, exportContext) {
         brandSlug: brandSlug,
         nameSlug: brandSlug
     });
-    var url = buildAbsoluteUrl(exportContext.storefrontBaseUrl, renderedPath);
 
     return {
         name: brand,
-        patterns: [{
-            url: url
-        }],
+        patterns: buildListingPatterns(exportContext.storefrontBaseUrl, renderedPath),
         pageRules: [{
             name: 'Include ec_brand isExactly ' + brand,
             locales: [buildRuleLocale(exportContext)],
@@ -406,7 +473,9 @@ function buildCategoryListingPageContribution(categoryEntry, exportContext) {
     return {
         key: 'category|' + categoryEntry.key,
         name: page.name,
-        patternUrl: getPrimaryUrl(page),
+        patternUrls: (page.patterns || []).map(function (pattern) {
+            return normalizeString(pattern.url);
+        }),
         pageRule: page.pageRules[0],
         trackingId: page.trackingId,
         generatedType: page.generatedType
@@ -425,7 +494,9 @@ function buildBrandListingPageContribution(brand, exportContext) {
     return {
         key: 'brand|' + normalizeString(brand).toLowerCase(),
         name: page.name,
-        patternUrl: getPrimaryUrl(page),
+        patternUrls: (page.patterns || []).map(function (pattern) {
+            return normalizeString(pattern.url);
+        }),
         pageRule: page.pageRules[0],
         trackingId: page.trackingId,
         generatedType: page.generatedType
@@ -562,19 +633,25 @@ function normalizeExportContexts(exportContexts) {
  * @param {Object} page - Aggregated page.
  */
 function mergeContributionIntoPage(contribution, page) {
-    var patternUrl = normalizeString(contribution.patternUrl);
+    var patternUrls = (contribution.patternUrls || []).map(function (patternUrl) {
+        return normalizeString(patternUrl);
+    }).filter(function (patternUrl) {
+        return !isEmptyValue(patternUrl);
+    });
     var rule = contribution.pageRule;
     var ruleKey = [
         normalizeString(rule.name),
         JSON.stringify(rule.filters || [])
     ].join('|');
 
-    if (!page.patternByUrl[patternUrl]) {
-        page.patternByUrl[patternUrl] = true;
-        page.patterns.push({
-            url: patternUrl
-        });
-    }
+    patternUrls.forEach(function (patternUrl) {
+        if (!page.patternByUrl[patternUrl]) {
+            page.patternByUrl[patternUrl] = true;
+            page.patterns.push({
+                url: patternUrl
+            });
+        }
+    });
 
     if (!page.pageRulesByKey[ruleKey]) {
         page.pageRulesByKey[ruleKey] = {
@@ -703,58 +780,13 @@ function getPrimaryUrl(listingPage) {
 }
 
 /**
- * Adds a map entry.
- * @param {Object} map - Target map.
- * @param {string} key - Entry key.
- * @param {Object} listingPage - Listing page.
- */
-function addMapEntry(map, key, listingPage) {
-    if (isEmptyValue(key)) {
-        return;
-    }
-
-    if (!map[key]) {
-        map[key] = [];
-    }
-
-    map[key].push(listingPage);
-}
-
-/**
- * Adds a map entry and fails when the key is ambiguous.
- * @param {Object} map - Target map.
- * @param {string} key - Entry key.
- * @param {Object} listingPage - Listing page.
- * @param {string} label - Error label.
- */
-function addUniqueMapEntry(map, key, listingPage, label) {
-    addMapEntry(map, key, listingPage);
-
-    if (!isEmptyValue(key) && map[key].length > 1) {
-        throw new Error('Duplicate CMH listing page ' + label + ' detected for ' + key + '. Resolve the duplicate before syncing listing pages.');
-    }
-}
-
-/**
- * Builds map indexes for existing listing pages.
+ * Stores existing listing pages for matching.
  * @param {Array} listingPages - Existing listing pages.
  * @returns {Object} indexes.
  */
 function indexExistingListingPages(listingPages) {
-    var byUrl = {};
-    var byName = {};
-
-    (listingPages || []).forEach(function (listingPage) {
-        (listingPage.patterns || []).forEach(function (pattern) {
-            addMapEntry(byUrl, normalizeString(pattern.url), listingPage);
-        });
-
-        addMapEntry(byName, normalizeString(listingPage.name), listingPage);
-    });
-
     return {
-        byUrl: byUrl,
-        byName: byName
+        listingPages: listingPages || []
     };
 }
 
@@ -764,8 +796,8 @@ function indexExistingListingPages(listingPages) {
  * @returns {Array} normalized listing pages.
  */
 function dedupeDesiredListingPages(desiredListingPages) {
-    var byUrl = {};
-    var byName = {};
+    var seenUrls = new HashSet();
+    var seenNames = new HashSet();
     var normalizedListingPages = [];
 
     desiredListingPages.forEach(function (listingPage) {
@@ -780,7 +812,7 @@ function dedupeDesiredListingPages(desiredListingPages) {
         });
 
         urls.some(function (patternUrl) {
-            if (!isEmptyValue(byUrl[patternUrl])) {
+            if (seenUrls.contains(patternUrl)) {
                 duplicateUrl = patternUrl;
                 return true;
             }
@@ -793,7 +825,7 @@ function dedupeDesiredListingPages(desiredListingPages) {
             return;
         }
 
-        if (!isEmptyValue(byName[name])) {
+        if (seenNames.contains(name)) {
             duplicateName = name;
         }
 
@@ -803,9 +835,9 @@ function dedupeDesiredListingPages(desiredListingPages) {
         }
 
         urls.forEach(function (patternUrl) {
-            byUrl[patternUrl] = listingPage;
+            seenUrls.add(patternUrl);
         });
-        byName[name] = listingPage;
+        seenNames.add(name);
         normalizedListingPages.push(listingPage);
     });
 
@@ -821,8 +853,24 @@ function dedupeDesiredListingPages(desiredListingPages) {
 function findExistingListingPage(desiredListingPage, indexes) {
     var url = getPrimaryUrl(desiredListingPage);
     var name = normalizeString(desiredListingPage.name);
-    var urlMatches = indexes.byUrl[url] || [];
-    var nameMatches = indexes.byName[name] || [];
+    var listingPages = indexes && indexes.listingPages ? indexes.listingPages : [];
+    var urlMatches = [];
+    var nameMatches = [];
+
+    listingPages.forEach(function (listingPage) {
+        var listingPageName = normalizeString(listingPage.name);
+        var hasUrlMatch = (listingPage.patterns || []).some(function (pattern) {
+            return normalizeString(pattern.url) === url;
+        });
+
+        if (hasUrlMatch) {
+            urlMatches.push(listingPage);
+        }
+
+        if (listingPageName === name) {
+            nameMatches.push(listingPage);
+        }
+    });
 
     if (urlMatches.length > 1) {
         throw new Error('Duplicate CMH listing page URL detected for ' + url + '. Resolve the duplicate before syncing listing pages.');
@@ -888,6 +936,68 @@ function chunk(values, size) {
 }
 
 /**
+ * Extracts listing page items from a CMH list response.
+ * @param {Object|Array} responseObject - Parsed response payload.
+ * @returns {Array} listing page items.
+ */
+function extractListingPageItems(responseObject) {
+    var items = null;
+
+    if (Array.isArray(responseObject)) {
+        return responseObject;
+    }
+
+    if (isEmptyValue(responseObject) || typeof responseObject !== 'object') {
+        return [];
+    }
+
+    if (typeof responseObject.toArray === 'function') {
+        return responseObject.toArray();
+    }
+
+    items = getObjectProperty(responseObject, 'items');
+    if (Array.isArray(items)) {
+        return items;
+    }
+
+    items = getObjectProperty(responseObject, 'results');
+    if (Array.isArray(items)) {
+        return items;
+    }
+
+    items = getObjectProperty(responseObject, 'listingPages');
+    if (Array.isArray(items)) {
+        return items;
+    }
+
+    return [];
+}
+
+/**
+ * Extracts the total page count from a CMH list response.
+ * @param {Object|Array} responseObject - Parsed response payload.
+ * @returns {number} total page count.
+ */
+function extractTotalPages(responseObject) {
+    var pagination = getObjectProperty(responseObject, 'pagination');
+    var totalPages = getObjectProperty(responseObject, 'totalPages');
+
+    if (Array.isArray(responseObject)) {
+        return 1;
+    }
+
+    if (!isEmptyValue(pagination) && !isEmptyValue(getObjectProperty(pagination, 'totalPages'))) {
+        return Number(getObjectProperty(pagination, 'totalPages')) || 1;
+    }
+
+    if (!isEmptyValue(totalPages)) {
+        return Number(totalPages) || 1;
+    }
+
+    return 1;
+}
+
+/**
  * Reads all existing listing pages for the target tracking ID.
  * @param {Object} exportContext - Export context.
  * @param {Function} ensureSuccessfulResponse - Service response validator.
@@ -901,10 +1011,10 @@ function readExistingListingPages(exportContext, ensureSuccessfulResponse) {
     while (page < totalPages) {
         var response = ensureSuccessfulResponse(listingPageService.getListingPagesPage(exportContext, page), 'listing pages read');
         var responseObject = response.object || {};
-        var items = responseObject.items || [];
+        var items = extractListingPageItems(responseObject);
 
         existingListingPages = existingListingPages.concat(items);
-        totalPages = responseObject.totalPages || 1;
+        totalPages = extractTotalPages(responseObject);
         page += 1;
     }
 
@@ -940,6 +1050,8 @@ module.exports = {
     collectCategoryEntries: collectCategoryEntries,
     collectCategoryPaths: collectCategoryPaths,
     dedupeDesiredListingPages: dedupeDesiredListingPages,
+    extractListingPageItems: extractListingPageItems,
+    extractTotalPages: extractTotalPages,
     getPrimaryUrl: getPrimaryUrl,
     mergeListingPageContributions: mergeListingPageContributions,
     planListingPageChanges: planListingPageChanges,

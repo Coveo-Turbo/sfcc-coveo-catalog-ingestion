@@ -116,6 +116,9 @@ describe('syncListingPages job', function () {
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
                 PAGE_TYPE_BRAND: 'brand',
+                getPrimaryUrl: function (listingPage) {
+                    return listingPage.patterns[0].url;
+                },
                 buildDesiredListingPages: function (exportContexts) {
                     assert.lengthOf(exportContexts, 2);
                     return desired.map(function (listingPage, index) {
@@ -153,6 +156,15 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageService': {
                 LISTING_PAGE_BULK_LIMIT: 100,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
                 bulkCreateListingPages: function (context, listingPages) {
                     assert.strictEqual(context, exportContext);
                     createChunks.push(listingPages);
@@ -189,18 +201,17 @@ describe('syncListingPages job', function () {
         assert.lengthOf(verifyCall.refreshed, 206);
     });
 
-    it('retries invalid-json bulk requests one listing page at a time', function () {
-        var bulkCreateCalls = [];
+    it('uses successful bulk response payloads for verification before falling back to a re-read', function () {
         var readCalls = 0;
-        var createdPages = [];
+        var verifyCall = null;
+        var creates = createListingPages(2, 'create-');
 
         var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
                         info: function () {},
-                        error: function () {},
-                        warn: function () {}
+                        error: function () {}
                     };
                 }
             },
@@ -218,56 +229,10 @@ describe('syncListingPages job', function () {
                 PAGE_TYPE_CATEGORY: 'category',
                 PAGE_TYPE_BRAND: 'brand',
                 buildDesiredListingPages: function () {
-                    return [
-                        {
-                            name: 'Cat',
-                            patterns: [{
-                                url: 'https://www.mondou.com/cat'
-                            }],
-                            pageRules: [{
-                                name: 'Include ec_category contains Cat',
-                                locales: [{
-                                    language: 'en',
-                                    country: 'CA',
-                                    currency: 'CAD'
-                                }],
-                                filters: [{
-                                    fieldName: 'ec_category',
-                                    operator: 'contains',
-                                    value: {
-                                        type: 'array',
-                                        values: ['Cat']
-                                    }
-                                }]
-                            }],
-                            trackingId: 'mondou_ca',
-                            generatedType: 'category'
-                        },
-                        {
-                            name: 'Dog',
-                            patterns: [{
-                                url: 'https://www.mondou.com/dog'
-                            }],
-                            pageRules: [{
-                                name: 'Include ec_category contains Dog',
-                                locales: [{
-                                    language: 'en',
-                                    country: 'CA',
-                                    currency: 'CAD'
-                                }],
-                                filters: [{
-                                    fieldName: 'ec_category',
-                                    operator: 'contains',
-                                    value: {
-                                        type: 'array',
-                                        values: ['Dog']
-                                    }
-                                }]
-                            }],
-                            trackingId: 'mondou_ca',
-                            generatedType: 'category'
-                        }
-                    ];
+                    return creates.map(function (listingPage) {
+                        listingPage.generatedType = 'category';
+                        return listingPage;
+                    });
                 },
                 readExistingListingPages: function () {
                     readCalls += 1;
@@ -275,46 +240,46 @@ describe('syncListingPages job', function () {
                 },
                 planListingPageChanges: function () {
                     return {
-                        creates: [
-                            {
-                                name: 'Cat'
-                            },
-                            {
-                                name: 'Dog'
-                            }
-                        ],
+                        creates: creates,
                         updates: []
                     };
                 },
                 chunk: function (values) {
                     return [values];
                 },
-                verifyWrittenListingPages: function () {}
+                verifyWrittenListingPages: function (written, refreshed) {
+                    verifyCall = {
+                        written: written,
+                        refreshed: refreshed
+                    };
+                }
             },
             '*/cartridge/scripts/helper/listingPageService': {
                 LISTING_PAGE_BULK_LIMIT: 100,
-                bulkCreateListingPages: function (context, listingPages) {
-                    bulkCreateCalls.push(listingPages);
+                LISTING_PAGE_LIST_LIMIT: 1000,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
 
-                    if (listingPages.length > 1) {
-                        return {
-                            ok: false,
-                            status: 400,
-                            errorMessage: '{"message":"The provided JSON has an invalid format","errorCode":"INVALID_JSON"}',
-                            msg: 'Bad Request'
-                        };
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
                     }
 
-                    createdPages = createdPages.concat(listingPages);
+                    return url;
+                },
+                bulkCreateListingPages: function () {
                     return {
                         ok: true,
-                        object: {}
+                        object: creates.map(function (listingPage, index) {
+                            return Object.assign({
+                                id: 'created-' + index
+                            }, listingPage);
+                        })
                     };
                 },
                 bulkUpdateListingPages: function () {
                     return {
                         ok: true,
-                        object: {}
+                        object: []
                     };
                 }
             }
@@ -325,12 +290,210 @@ describe('syncListingPages job', function () {
         }));
 
         assert.strictEqual(status.code, 'OK');
-        assert.strictEqual(readCalls, 2);
-        assert.lengthOf(bulkCreateCalls, 3);
-        assert.lengthOf(bulkCreateCalls[0], 2);
-        assert.lengthOf(bulkCreateCalls[1], 1);
-        assert.lengthOf(bulkCreateCalls[2], 1);
-        assert.lengthOf(createdPages, 2);
+        assert.strictEqual(readCalls, 1);
+        assert.lengthOf(verifyCall.written, 2);
+        assert.lengthOf(verifyCall.refreshed, 2);
+        assert.strictEqual(verifyCall.refreshed[0].id, 'created-0');
+    });
+
+    it('uses successful bulk response items arrays for verification before falling back to a re-read', function () {
+        var readCalls = 0;
+        var verifyCall = null;
+        var creates = createListingPages(2, 'create-');
+
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        warn: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': createStatus(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveListingSyncGroups: function () {
+                    return [{
+                        trackingId: 'mondou_ca',
+                        primaryContext: exportContext,
+                        exportContexts: [exportContext]
+                    }];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageHelper': {
+                PAGE_TYPE_CATEGORY: 'category',
+                PAGE_TYPE_BRAND: 'brand',
+                buildDesiredListingPages: function () {
+                    return creates.map(function (listingPage) {
+                        listingPage.generatedType = 'category';
+                        return listingPage;
+                    });
+                },
+                readExistingListingPages: function () {
+                    readCalls += 1;
+                    return [];
+                },
+                planListingPageChanges: function () {
+                    return {
+                        creates: creates,
+                        updates: []
+                    };
+                },
+                chunk: function (values) {
+                    return [values];
+                },
+                verifyWrittenListingPages: function (written, refreshed) {
+                    verifyCall = {
+                        written: written,
+                        refreshed: refreshed
+                    };
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                LISTING_PAGE_LIST_LIMIT: 1000,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
+                bulkCreateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            items: creates.map(function (listingPage, index) {
+                                return Object.assign({
+                                    id: 'created-' + index
+                                }, listingPage);
+                            })
+                        }
+                    };
+                },
+                bulkUpdateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: []
+                    };
+                }
+            }
+        });
+
+        var status = job.execute(createParameters({
+            dryRun: false
+        }));
+
+        assert.strictEqual(status.code, 'OK');
+        assert.strictEqual(readCalls, 1);
+        assert.lengthOf(verifyCall.written, 2);
+        assert.lengthOf(verifyCall.refreshed, 2);
+        assert.strictEqual(verifyCall.refreshed[0].id, 'created-0');
+    });
+
+    it('uses successful bulk response dw.util.List-like payloads for verification before falling back to a re-read', function () {
+        var readCalls = 0;
+        var verifyCall = null;
+        var updates = createListingPages(2, 'update-').map(function (listingPage, index) {
+            listingPage.id = 'existing-' + index;
+            return listingPage;
+        });
+
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        warn: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': createStatus(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveListingSyncGroups: function () {
+                    return [{
+                        trackingId: 'mondou_ca',
+                        primaryContext: exportContext,
+                        exportContexts: [exportContext]
+                    }];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageHelper': {
+                PAGE_TYPE_CATEGORY: 'category',
+                PAGE_TYPE_BRAND: 'brand',
+                extractListingPageItems: function (responseObject) {
+                    return typeof responseObject.toArray === 'function' ? responseObject.toArray() : [];
+                },
+                buildDesiredListingPages: function () {
+                    return updates.map(function (listingPage) {
+                        listingPage.generatedType = 'category';
+                        return listingPage;
+                    });
+                },
+                readExistingListingPages: function () {
+                    readCalls += 1;
+                    return updates;
+                },
+                planListingPageChanges: function () {
+                    return {
+                        creates: [],
+                        updates: updates
+                    };
+                },
+                chunk: function (values) {
+                    return [values];
+                },
+                verifyWrittenListingPages: function (written, refreshed) {
+                    verifyCall = {
+                        written: written,
+                        refreshed: refreshed
+                    };
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                LISTING_PAGE_LIST_LIMIT: 1000,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
+                bulkCreateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: []
+                    };
+                },
+                bulkUpdateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: {
+                            toArray: function () {
+                                return updates;
+                            }
+                        }
+                    };
+                }
+            }
+        });
+
+        var status = job.execute(createParameters({
+            dryRun: false
+        }));
+
+        assert.strictEqual(status.code, 'OK');
+        assert.strictEqual(readCalls, 1);
+        assert.lengthOf(verifyCall.written, 2);
+        assert.lengthOf(verifyCall.refreshed, 2);
+        assert.strictEqual(verifyCall.refreshed[0].id, 'existing-0');
     });
 
     it('supports dry run without calling bulk create or update', function () {
@@ -382,6 +545,9 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageService': {
                 LISTING_PAGE_BULK_LIMIT: 100,
+                buildListingPagesRequestUrl: function () {
+                    return 'https://platform-ca.cloud.coveo.com/rest/organizations/mondouorg/commerce/v2/listings/pages/bulk-create';
+                },
                 bulkCreateListingPages: function () {
                     writes += 1;
                 },
@@ -398,6 +564,256 @@ describe('syncListingPages job', function () {
         assert.strictEqual(status.code, 'OK');
         assert.strictEqual(readCalls, 1);
         assert.strictEqual(writes, 0);
+    });
+
+    it('reads existing pages from additional site tracking ids before planning creates and updates', function () {
+        var sharedContext = Object.assign({}, exportContext, {
+            coveoTrackingId: 'mondou'
+        });
+        var legacyContext = {
+            targetId: 'legacy-en-ca',
+            siteId: 'Mondou',
+            locale: 'en_CA',
+            language: 'en',
+            coveoOrganizationId: 'mondouorg',
+            coveoTrackingId: 'mondou_ca',
+            coveoCountry: 'CA',
+            coveoCurrency: 'CAD',
+            storefrontBaseUrl: 'https://www.mondou.com',
+            listingCategoryUrlTemplate: '/{categorySlugPath}',
+            listingBrandUrlTemplate: '/brands/{brandSlug}'
+        };
+        var planningInput = null;
+
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': createStatus(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveListingSyncGroups: function () {
+                    return [{
+                        trackingId: 'mondou',
+                        primaryContext: sharedContext,
+                        exportContexts: [sharedContext],
+                        existingListingReadContexts: [sharedContext, legacyContext]
+                    }];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageHelper': {
+                PAGE_TYPE_CATEGORY: 'category',
+                PAGE_TYPE_BRAND: 'brand',
+                getPrimaryUrl: function (listingPage) {
+                    return listingPage.patterns[0].url;
+                },
+                buildDesiredListingPages: function () {
+                    return [{
+                        name: 'Holiday Gift Guide',
+                        patterns: [{
+                            url: 'https://www.mondou.com/en-CA/holiday-gift-guide'
+                        }],
+                        pageRules: [],
+                        trackingId: 'mondou',
+                        generatedType: 'category'
+                    }];
+                },
+                readExistingListingPages: function (context) {
+                    if (context === sharedContext) {
+                        return [];
+                    }
+
+                    return [{
+                        id: 'legacy-page-id',
+                        name: 'Holiday Gift Guide',
+                        patterns: [{
+                            url: 'https://www.mondou.com/en-CA/holiday-gift-guide'
+                        }],
+                        pageRules: [],
+                        trackingId: 'mondou_ca'
+                    }];
+                },
+                planListingPageChanges: function (desired, existing) {
+                    planningInput = {
+                        desired: desired,
+                        existing: existing
+                    };
+
+                    return {
+                        creates: [],
+                        updates: [{
+                            id: 'legacy-page-id',
+                            name: 'Holiday Gift Guide',
+                            trackingId: 'mondou'
+                        }]
+                    };
+                },
+                chunk: function (values) {
+                    return [values];
+                },
+                verifyWrittenListingPages: function () {}
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
+                bulkCreateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                },
+                bulkUpdateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                }
+            }
+        });
+
+        var status = job.execute(createParameters({
+            dryRun: true,
+            targetId: 'en-ca'
+        }));
+
+        assert.strictEqual(status.code, 'OK');
+        assert.isOk(planningInput);
+        assert.lengthOf(planningInput.desired, 1);
+        assert.lengthOf(planningInput.existing, 1);
+        assert.strictEqual(planningInput.existing[0].id, 'legacy-page-id');
+        assert.strictEqual(planningInput.existing[0].trackingId, 'mondou_ca');
+    });
+
+    it('reads existing pages from additional tracking ids passed as a job parameter', function () {
+        var primaryContext = Object.assign({}, exportContext, {
+            coveoTrackingId: 'mondou'
+        });
+        var readTrackingIds = [];
+        var planningInput = null;
+
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': createStatus(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveListingSyncGroups: function () {
+                    return [{
+                        trackingId: 'mondou',
+                        primaryContext: primaryContext,
+                        exportContexts: [primaryContext],
+                        existingListingReadContexts: [primaryContext]
+                    }];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageHelper': {
+                PAGE_TYPE_CATEGORY: 'category',
+                PAGE_TYPE_BRAND: 'brand',
+                getPrimaryUrl: function (listingPage) {
+                    return listingPage.patterns[0].url;
+                },
+                buildDesiredListingPages: function () {
+                    return [{
+                        name: 'Holiday Gift Guide',
+                        patterns: [{
+                            url: 'https://www.mondou.com/en-CA/holiday-gift-guide'
+                        }],
+                        pageRules: [],
+                        trackingId: 'mondou',
+                        generatedType: 'category'
+                    }];
+                },
+                readExistingListingPages: function (context) {
+                    readTrackingIds.push(context.coveoTrackingId);
+
+                    if (context.coveoTrackingId === 'legacy-mondou') {
+                        return [{
+                            id: 'legacy-page-id',
+                            name: 'Holiday Gift Guide',
+                            patterns: [{
+                                url: 'https://www.mondou.com/en-CA/holiday-gift-guide'
+                            }],
+                            pageRules: [],
+                            trackingId: 'legacy-mondou'
+                        }];
+                    }
+
+                    return [];
+                },
+                planListingPageChanges: function (desired, existing) {
+                    planningInput = {
+                        desired: desired,
+                        existing: existing
+                    };
+
+                    return {
+                        creates: [],
+                        updates: [{
+                            id: 'legacy-page-id',
+                            name: 'Holiday Gift Guide',
+                            trackingId: 'mondou'
+                        }]
+                    };
+                },
+                chunk: function (values) {
+                    return [values];
+                },
+                verifyWrittenListingPages: function () {}
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
+                bulkCreateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                },
+                bulkUpdateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                }
+            }
+        });
+
+        var status = job.execute(createParameters({
+            dryRun: true,
+            existingTrackingIds: 'mondou, legacy-mondou, legacy-mondou'
+        }));
+
+        assert.strictEqual(status.code, 'OK');
+        assert.deepEqual(readTrackingIds, ['mondou', 'legacy-mondou']);
+        assert.isOk(planningInput);
+        assert.lengthOf(planningInput.existing, 1);
+        assert.strictEqual(planningInput.existing[0].id, 'legacy-page-id');
+        assert.strictEqual(planningInput.existing[0].trackingId, 'legacy-mondou');
     });
 
     it('includes CMH service failure details in thrown errors', function () {
@@ -448,6 +864,15 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageService': {
                 LISTING_PAGE_BULK_LIMIT: 100,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
                 bulkCreateListingPages: function () {
                     return {
                         ok: false,
@@ -463,5 +888,194 @@ describe('syncListingPages job', function () {
                 dryRun: false
             }));
         }, /403 Forbidden/);
+    });
+
+    it('adds a legacy tracking id hint when bulk create conflicts indicate pages already exist elsewhere', function () {
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': createStatus(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveListingSyncGroups: function () {
+                    return [{
+                        trackingId: 'mondou',
+                        primaryContext: exportContext,
+                        exportContexts: [Object.assign({}, exportContext, {
+                            coveoTrackingId: 'mondou'
+                        })]
+                    }];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageHelper': {
+                PAGE_TYPE_CATEGORY: 'category',
+                PAGE_TYPE_BRAND: 'brand',
+                buildDesiredListingPages: function () {
+                    return [{
+                        name: 'Cat',
+                        generatedType: 'category'
+                    }];
+                },
+                readExistingListingPages: function () {
+                    return [];
+                },
+                planListingPageChanges: function () {
+                    return {
+                        creates: [{
+                            name: 'Cat'
+                        }],
+                        updates: []
+                    };
+                },
+                chunk: function (values) {
+                    return [values];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
+                bulkCreateListingPages: function () {
+                    return {
+                        ok: false,
+                        requestMethod: 'POST',
+                        requestUrl: 'https://platform-ca.cloud.coveo.com/rest/organizations/mondouorg/commerce/v2/listings/pages/bulk-create',
+                        status: 'ERROR',
+                        error: 400,
+                        errorMessage: JSON.stringify({
+                            errorCode: 'BULK_LISTING_PAGE_VALIDATION_FAILED',
+                            details: [
+                                {
+                                    errorCode: 'LISTING_PAGE_NAME_ALREADY_EXISTS',
+                                    message: 'Listing page name already exists'
+                                },
+                                {
+                                    errorCode: 'LISTING_PAGE_URL_ALREADY_EXISTS',
+                                    message: 'Listing page URL already exists'
+                                }
+                            ]
+                        })
+                    };
+                }
+            }
+        });
+
+        assert.throws(function () {
+            job.execute(createParameters({
+                dryRun: false
+            }));
+        }, /existingTrackingIds=mondou[\s\S]*existingTrackingIds parameter/);
+    });
+
+    it('warns and continues when create-only verification reads lag behind successful CMH writes', function () {
+        var readCalls = 0;
+        var warnMessages = [];
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        warn: function () {
+                            warnMessages.push(Array.prototype.slice.call(arguments).join('|'));
+                        },
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': createStatus(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveListingSyncGroups: function () {
+                    return [{
+                        trackingId: 'mondou',
+                        primaryContext: Object.assign({}, exportContext, {
+                            coveoTrackingId: 'mondou'
+                        }),
+                        exportContexts: [Object.assign({}, exportContext, {
+                            coveoTrackingId: 'mondou'
+                        })]
+                    }];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageHelper': {
+                PAGE_TYPE_CATEGORY: 'category',
+                PAGE_TYPE_BRAND: 'brand',
+                buildDesiredListingPages: function () {
+                    return [{
+                        name: 'Holiday Gift Guide',
+                        generatedType: 'category',
+                        patterns: [{
+                            url: 'https://www.mondou.com/en-CA/holiday-gift-guide'
+                        }]
+                    }];
+                },
+                readExistingListingPages: function () {
+                    readCalls += 1;
+                    return [];
+                },
+                planListingPageChanges: function () {
+                    return {
+                        creates: [{
+                            name: 'Holiday Gift Guide',
+                            patterns: [{
+                                url: 'https://www.mondou.com/en-CA/holiday-gift-guide'
+                            }]
+                        }],
+                        updates: []
+                    };
+                },
+                chunk: function (values) {
+                    return [values];
+                },
+                verifyWrittenListingPages: function () {
+                    throw new Error('Unable to verify CMH listing page sync for Holiday Gift Guide.');
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                LISTING_PAGE_LIST_LIMIT: 1000,
+                buildListingPagesRequestUrl: function (context, suffix, query) {
+                    var url = 'https://platform-ca.cloud.coveo.com/rest/organizations/' + context.coveoOrganizationId + '/commerce/v2/listings/pages' + (suffix || '');
+
+                    if (query) {
+                        url += '?trackingId=' + encodeURIComponent(query.trackingId) + '&perPage=' + query.perPage + '&page=' + query.page;
+                    }
+
+                    return url;
+                },
+                bulkCreateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                },
+                bulkUpdateListingPages: function () {
+                    return {
+                        ok: true,
+                        object: []
+                    };
+                }
+            }
+        });
+
+        var status = job.execute(createParameters({
+            dryRun: false
+        }));
+
+        assert.strictEqual(status.code, 'OK');
+        assert.strictEqual(readCalls, 4);
+        assert.strictEqual(warnMessages.length, 1);
+        assert.match(warnMessages[0], /verification could not confirm/);
     });
 });
