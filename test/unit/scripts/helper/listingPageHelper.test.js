@@ -388,7 +388,7 @@ describe('listingPageHelper', function () {
             return page.patterns[0].url === 'https://www.mondou.com/brands/1st-choice';
         })[0];
 
-        assert.isOk(listingPage);
+        assert.isDefined(listingPage);
         assert.strictEqual(listingPage.name, '1st Choice');
         assert.strictEqual(listingPage.pageRules[0].name, 'Brand is `1st Choice`');
         assert.deepEqual(listingPage.pageRules[0].filters[0], {
