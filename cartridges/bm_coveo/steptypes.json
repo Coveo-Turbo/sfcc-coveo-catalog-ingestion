@@ -153,6 +153,13 @@
                 "@trim": "true",
                 "default-value": false,
                 "description": "When true, calculates create/update counts without writing to CMH"
+              },
+              {
+                "@name": "existingTrackingIds",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "description": "Optional comma-separated legacy tracking ids to include when reading existing pages"
               }
             ]
           },
