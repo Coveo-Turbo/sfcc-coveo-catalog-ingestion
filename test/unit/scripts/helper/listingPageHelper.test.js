@@ -272,7 +272,7 @@ describe('listingPageHelper', function () {
             return listingPage.name === 'Cat|Food & Treats';
         })[0];
         var brandPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === 'vetdiet';
+            return listingPage.name === 'Brands|vetdiet';
         })[0];
 
         assert.isOk(catPage);
@@ -326,7 +326,7 @@ describe('listingPageHelper', function () {
         }), ['en_CA', 'fr_CA']);
         assert.deepEqual(brandPage.pageRules[0].filters[0], {
             fieldName: 'ec_brand',
-            operator: 'is',
+            operator: 'isExactly',
             value: {
                 type: 'array',
                 values: ['vetdiet']
@@ -371,10 +371,10 @@ describe('listingPageHelper', function () {
         assert.lengthOf(listingPages, 2);
         assert.sameMembers(listingPages.map(function (listingPage) {
             return listingPage.name;
-        }), ['vetdiet', "Ren's Pets"]);
+        }), ['Brands|vetdiet', "Brands|Ren's Pets"]);
 
         var rensPetsPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === "Ren's Pets";
+            return listingPage.name === "Brands|Ren's Pets";
         })[0];
         assert.sameMembers(rensPetsPage.patterns.map(function (pattern) {
             return pattern.url;
@@ -384,7 +384,7 @@ describe('listingPageHelper', function () {
         ]);
         assert.deepEqual(rensPetsPage.pageRules[0].filters[0], {
             fieldName: 'ec_brand',
-            operator: 'is',
+            operator: 'isExactly',
             value: {
                 type: 'array',
                 values: ["Ren's Pets"]
@@ -410,11 +410,11 @@ describe('listingPageHelper', function () {
         })[0];
 
         assert.isDefined(listingPage);
-        assert.strictEqual(listingPage.name, '1st Choice');
+        assert.strictEqual(listingPage.name, 'Brands|1st Choice');
         assert.strictEqual(listingPage.pageRules[0].name, 'Brand is `1st Choice`');
         assert.deepEqual(listingPage.pageRules[0].filters[0], {
             fieldName: 'ec_brand',
-            operator: 'is',
+            operator: 'isExactly',
             value: {
                 type: 'array',
                 values: ['1st Choice']
@@ -439,7 +439,7 @@ describe('listingPageHelper', function () {
             },
             {
                 id: 'brand-id',
-                name: 'vetdiet',
+                name: 'Brands|vetdiet',
                 patterns: [{
                     url: 'https://www.mondou.com/legacy-vetdiet'
                 }]

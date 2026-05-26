@@ -461,14 +461,14 @@ function buildBrandListingPage(brand, exportContext) {
     });
 
     return {
-        name: brand,
+        name: 'Brands|' + brand,
         patterns: buildListingPatterns(exportContext.storefrontBaseUrl, renderedPath),
         pageRules: [{
             name: 'Brand is `' + brand + '`',
             locales: [buildRuleLocale(exportContext)],
             filters: [{
                 fieldName: 'ec_brand',
-                operator: 'is',
+                operator: 'isExactly',
                 value: {
                     type: 'array',
                     values: [brand]
