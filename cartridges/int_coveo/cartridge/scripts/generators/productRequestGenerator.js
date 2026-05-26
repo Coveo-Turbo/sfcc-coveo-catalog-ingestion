@@ -10,43 +10,242 @@ var Site = require('dw/system/Site');
 var URLUtils = require('dw/web/URLUtils');
 
 /**
- * Get Product Catagegories
- * @param {Object} product - product
- * @param {string} categoryid - categoryid
- * @param {Array} breadcrumbs - array of breadcrumbs object
- * @returns {string} - string
+ * Converts a collection, iterator, or array-like value to an array.
+ * @param {*} value - Value to convert.
+ * @returns {Array} array value.
  */
-function getAllCategories(product, categoryid, breadcrumbs) {
-    var categories = '';
-    try {
-        var category;
-        if (!empty(product) && empty(categoryid)) {
-            category = product.variant
-                ? product.masterProduct.primaryCategory
-                : product.primaryCategory;
-        } else if (!empty(categoryid)) {
-            category = CatalogMgr.getCategory(categoryid);
-        }
+function toArray(value) {
+    var values = [];
+    var index = 0;
 
-        if (category) {
-            breadcrumbs.push(category.displayName);
-
-            if (category.parent && category.parent.ID !== 'root') {
-                return getAllCategories(null, category.parent.ID, breadcrumbs);
-            }
-        }
-        var coveoCategory = breadcrumbs.reverse();
-
-        for (let i = 0; i < coveoCategory.length; i++) {
-            categories += coveoCategory.slice(0, i + 1).join('|');
-            categories += ';';
-        }
-
-        categories = categories.slice(0, -1);
-    } catch (ex) {
-        Logger.error('(productRequestGenerator-getAllCategories) -> Error occured while generating product categories and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+    if (empty(value)) {
+        return values;
     }
-    return categories;
+
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (typeof value.toArray === 'function') {
+        return value.toArray();
+    }
+
+    if (typeof value.hasNext === 'function' && typeof value.next === 'function') {
+        while (value.hasNext()) {
+            values.push(value.next());
+        }
+
+        return values;
+    }
+
+    if (typeof value.length === 'number' && typeof value !== 'string') {
+        for (index = 0; index < value.length; index += 1) {
+            values.push(value[index]);
+        }
+    }
+
+    return values;
+}
+
+/**
+ * Returns whether a category should be exported.
+ * @param {Object} category - Category to inspect.
+ * @returns {boolean} whether the category is online.
+ */
+function isOnlineCategory(category) {
+    if (empty(category)) {
+        return false;
+    }
+
+    if (typeof category.isOnline === 'function') {
+        return category.isOnline();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(category, 'online')) {
+        return category.online !== false;
+    }
+
+    return true;
+}
+
+/**
+ * Returns the display name used in category hierarchy exports.
+ * @param {Object} category - Category to inspect.
+ * @returns {string} category name.
+ */
+function getCategoryName(category) {
+    if (empty(category)) {
+        return '';
+    }
+
+    return category.displayName || category.name || category.ID || '';
+}
+
+/**
+ * Returns the effective primary category for a product.
+ * @param {Object} product - Product to inspect.
+ * @returns {Object|null} primary category.
+ */
+function getPrimaryCategory(product) {
+    if (empty(product)) {
+        return null;
+    }
+
+    if (product.variant && !empty(product.masterProduct) && !empty(product.masterProduct.primaryCategory)) {
+        return product.masterProduct.primaryCategory;
+    }
+
+    return product.primaryCategory || null;
+}
+
+/**
+ * Returns the assigned categories for a product when available.
+ * @param {Object} product - Product to inspect.
+ * @returns {Array} assigned categories.
+ */
+function getAssignedCategories(product) {
+    if (empty(product)) {
+        return [];
+    }
+
+    if (typeof product.getOnlineCategories === 'function') {
+        return toArray(product.getOnlineCategories());
+    }
+
+    if (!empty(product.onlineCategories)) {
+        return toArray(product.onlineCategories);
+    }
+
+    if (typeof product.getCategories === 'function') {
+        return toArray(product.getCategories());
+    }
+
+    if (!empty(product.categories)) {
+        return toArray(product.categories);
+    }
+
+    if (!empty(product.allCategories)) {
+        return toArray(product.allCategories);
+    }
+
+    return [];
+}
+
+/**
+ * Returns a category's hierarchy names when it is valid for export.
+ * @param {Object} category - Category to inspect.
+ * @returns {Array} hierarchy path names.
+ */
+function getCategoryPathNames(category) {
+    var currentCategory = category;
+    var currentCategoryName = '';
+    var currentCategoryKey = '';
+    var pathNames = [];
+    var seenCategoryKeys = {};
+
+    while (!empty(currentCategory)) {
+        currentCategoryName = getCategoryName(currentCategory);
+        currentCategoryKey = currentCategory.ID || currentCategoryName;
+
+        if (empty(currentCategoryName) || empty(currentCategoryKey) || seenCategoryKeys[currentCategoryKey] || !isOnlineCategory(currentCategory)) {
+            return [];
+        }
+
+        seenCategoryKeys[currentCategoryKey] = true;
+        pathNames.unshift(currentCategoryName);
+
+        if (empty(currentCategory.parent) || currentCategory.parent.ID === 'root') {
+            break;
+        }
+
+        currentCategory = currentCategory.parent;
+
+        if (!empty(currentCategory) && empty(getCategoryName(currentCategory)) && !empty(currentCategory.ID)) {
+            currentCategory = CatalogMgr.getCategory(currentCategory.ID);
+        }
+    }
+
+    return pathNames;
+}
+
+/**
+ * Converts a category path into Coveo hierarchical field values.
+ * @param {Array} pathNames - category path names.
+ * @returns {Array} hierarchical field values.
+ */
+function buildCategoryPathValues(pathNames) {
+    var categoryValues = [];
+    var index;
+
+    for (index = 0; index < pathNames.length; index += 1) {
+        categoryValues.push(pathNames.slice(0, index + 1).join('|'));
+    }
+
+    return categoryValues;
+}
+
+/**
+ * Adds category path values to an export array while preserving insertion order.
+ * @param {Array} categoryValues - accumulated export values.
+ * @param {Object} seenValues - seen-value map.
+ * @param {Array} pathNames - category path names.
+ */
+function appendCategoryPathValues(categoryValues, seenValues, pathNames) {
+    buildCategoryPathValues(pathNames).forEach(function (categoryValue) {
+        if (!seenValues[categoryValue]) {
+            seenValues[categoryValue] = true;
+            categoryValues.push(categoryValue);
+        }
+    });
+}
+
+/**
+ * Returns exported category values for a product.
+ * @param {Object} product - Product to inspect.
+ * @returns {Object} exported category values.
+ */
+function getCategoryExportValues(product) {
+    var primaryCategory = getPrimaryCategory(product);
+    var assignedCategories = [];
+    var categoryValues = [];
+    var seenCategoryPaths = {};
+    var seenCategoryValues = {};
+    var primaryCategoryPathNames = [];
+
+    function appendCategory(category) {
+        var pathNames = getCategoryPathNames(category);
+        var pathKey = pathNames.join('|');
+
+        if (empty(pathKey) || seenCategoryPaths[pathKey]) {
+            return;
+        }
+
+        seenCategoryPaths[pathKey] = true;
+        appendCategoryPathValues(categoryValues, seenCategoryValues, pathNames);
+    }
+
+    try {
+        primaryCategoryPathNames = getCategoryPathNames(primaryCategory);
+
+        if (product && product.variant && !empty(product.masterProduct)) {
+            assignedCategories = assignedCategories.concat(getAssignedCategories(product.masterProduct));
+        }
+
+        assignedCategories = assignedCategories.concat(getAssignedCategories(product));
+
+        if (!empty(primaryCategory)) {
+            assignedCategories.unshift(primaryCategory);
+        }
+
+        assignedCategories.forEach(appendCategory);
+    } catch (ex) {
+        Logger.error('(productRequestGenerator-getCategoryExportValues) -> Error occured while generating product categories and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+    }
+
+    return {
+        ecCategory: categoryValues.join(';'),
+        ecPrimaryCategory: buildCategoryPathValues(primaryCategoryPathNames).join(';')
+    };
 }
 
 /**
@@ -454,7 +653,7 @@ function getProductsData(product, exportOptions, exportContext) {
     try {
         var productId = exportOptions && exportOptions.productId ? exportOptions.productId : getCanonicalProductId(product);
         var itemGroupId = exportOptions && exportOptions.itemGroupId ? exportOptions.itemGroupId : null;
-        var coveoProductCategory = getAllCategories(product, null, []);
+        var categoryExportValues = getCategoryExportValues(product);
         var productImages = getImageUrls(product, 'large', ['medium']);
         var productThumbnails = getThumbnailUrls(product);
         var swatchImage = product.getImage('swatch');
@@ -472,7 +671,8 @@ function getProductsData(product, exportOptions, exportContext) {
             ec_thumbnails: productThumbnails,
             ec_swatch: swatchImage && swatchImage.httpsURL ? swatchImage.httpsURL.toString() : '',
             ec_price: exportPrices.price,
-            ec_category: coveoProductCategory,
+            ec_category: categoryExportValues.ecCategory,
+            ec_primary_category: categoryExportValues.ecPrimaryCategory,
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
             ec_rating: productRating,
             ec_brand: product.brand,

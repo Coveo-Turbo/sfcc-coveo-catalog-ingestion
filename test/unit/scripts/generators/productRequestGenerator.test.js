@@ -20,11 +20,15 @@ function createArrayWrapper(values) {
     };
 }
 
-function createCategory(id, displayName) {
+function createCategory(id, displayName, options) {
+    var categoryOptions = options || {};
+
     return {
         ID: id,
+        name: categoryOptions.name || displayName || id,
         displayName: displayName,
-        parent: {
+        online: categoryOptions.online !== false,
+        parent: categoryOptions.parent || {
             ID: 'root'
         }
     };
@@ -74,13 +78,30 @@ function createSiteCurrent(customPreferences) {
 
 function createProduct(options) {
     var imageSets = options.images || {};
-    var listPrice = Object.prototype.hasOwnProperty.call(options, 'listPrice')
-        ? options.listPrice
-        : (Object.prototype.hasOwnProperty.call(options, 'price') ? options.price : 99);
-    var salesPrice = Object.prototype.hasOwnProperty.call(options, 'salesPrice')
+    var categoryAssignments = [];
+    var listPrice = 99;
+    var primaryCategory = Object.prototype.hasOwnProperty.call(options, 'primaryCategory')
+        ? options.primaryCategory
+        : createCategory('mens-shoes', 'Mens Shoes');
+    var salesPrice;
+    var activePriceBook;
+
+    if (Object.prototype.hasOwnProperty.call(options, 'categories')) {
+        categoryAssignments = options.categories;
+    } else if (primaryCategory) {
+        categoryAssignments = [primaryCategory];
+    }
+
+    if (Object.prototype.hasOwnProperty.call(options, 'listPrice')) {
+        listPrice = options.listPrice;
+    } else if (Object.prototype.hasOwnProperty.call(options, 'price')) {
+        listPrice = options.price;
+    }
+
+    salesPrice = Object.prototype.hasOwnProperty.call(options, 'salesPrice')
         ? options.salesPrice
         : listPrice;
-    var activePriceBook = options.activePriceBook || {
+    activePriceBook = options.activePriceBook || {
         ID: salesPrice < listPrice ? 'sale-book' : 'list-book',
         parentPriceBook: salesPrice < listPrice ? {
             ID: 'list-book',
@@ -104,7 +125,8 @@ function createProduct(options) {
         master: !!options.master,
         variant: !!options.variant,
         masterProduct: options.masterProduct || null,
-        primaryCategory: options.primaryCategory || createCategory('mens-shoes', 'Mens Shoes'),
+        primaryCategory: primaryCategory,
+        categories: createArrayWrapper(categoryAssignments),
         priceModel: {
             price: {
                 value: salesPrice
@@ -170,6 +192,14 @@ function createProduct(options) {
                     return null;
                 }
             };
+        },
+        getCategories: function () {
+            return createArrayWrapper(categoryAssignments);
+        },
+        getOnlineCategories: function () {
+            return createArrayWrapper(categoryAssignments.filter(function (category) {
+                return category.online !== false;
+            }));
         }
     };
 }
@@ -505,6 +535,197 @@ describe('productRequestGenerator', function () {
                 && item.ec_name === 'Name MASTER-1-BLUE-S'
                 && item.ec_sku === 'MASTER-1-BLUE-S';
         }));
+    });
+
+    it('exports all valid category hierarchies while preserving the primary hierarchy separately', function () {
+        var menCategory = createCategory('men', 'Men');
+        var shoesCategory = createCategory('men-shoes', 'Shoes', {
+            parent: menCategory
+        });
+        var saleCategory = createCategory('sale', 'Sale');
+        var clearanceCategory = createCategory('sale-clearance', 'Clearance', {
+            parent: saleCategory
+        });
+        var offlineCategory = createCategory('offline', 'Offline', {
+            online: false
+        });
+        var standaloneProduct = createProduct({
+            ID: 'SKU-CAT',
+            primaryCategory: shoesCategory,
+            categories: [
+                clearanceCategory,
+                shoesCategory,
+                clearanceCategory,
+                offlineCategory
+            ]
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/util/ArrayList': function ArrayList(values) {
+                return {
+                    toArray: function () {
+                        return values;
+                    }
+                };
+            },
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return standaloneProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/object/ObjectAttributeDefinition': {},
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('SKU-CAT');
+
+        assert.lengthOf(exports, 1);
+        assert.strictEqual(exports[0].ec_category, 'Men;Men|Shoes;Sale;Sale|Clearance');
+        assert.strictEqual(exports[0].ec_primary_category, 'Men;Men|Shoes');
+    });
+
+    it('uses the union of variant and master category assignments for grouped product exports', function () {
+        var apparelCategory = createCategory('apparel', 'Apparel');
+        var menCategory = createCategory('apparel-men', 'Men', {
+            parent: apparelCategory
+        });
+        var jacketsCategory = createCategory('apparel-men-jackets', 'Jackets', {
+            parent: menCategory
+        });
+        var newArrivalsCategory = createCategory('new-arrivals', 'New Arrivals');
+        var rainwearCategory = createCategory('new-arrivals-rainwear', 'Rainwear', {
+            parent: newArrivalsCategory
+        });
+        var masterProduct = createProduct({
+            ID: 'MASTER-CAT',
+            master: true,
+            primaryCategory: jacketsCategory,
+            categories: [jacketsCategory]
+        });
+        var variantProduct = createProduct({
+            ID: 'MASTER-CAT-BLUE-S',
+            variant: true,
+            masterProduct: masterProduct,
+            primaryCategory: rainwearCategory,
+            categories: [rainwearCategory],
+            custom: {
+                color: 'blue',
+                size: 'small'
+            }
+        });
+
+        masterProduct.variants = createArrayWrapper([variantProduct]);
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/util/ArrayList': function ArrayList(values) {
+                return {
+                    toArray: function () {
+                        return values;
+                    }
+                };
+            },
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return masterProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/object/ObjectAttributeDefinition': {},
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('MASTER-CAT');
+        var productExport = exports.filter(function (item) {
+            return item.objecttype === 'Product';
+        })[0];
+
+        assert.strictEqual(productExport.ec_category, 'Apparel;Apparel|Men;Apparel|Men|Jackets;New Arrivals;New Arrivals|Rainwear');
+        assert.strictEqual(productExport.ec_primary_category, 'Apparel;Apparel|Men;Apparel|Men|Jackets');
     });
 
     it('uses the explicit target language when a multi-target export context is provided', function () {
