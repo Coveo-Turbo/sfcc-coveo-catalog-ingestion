@@ -305,7 +305,7 @@ describe('listingPageHelper', function () {
         }), ['en_CA', 'fr_CA']);
         assert.deepEqual(brandPage.pageRules[0].filters[0], {
             fieldName: 'ec_brand',
-            operator: 'isExactly',
+            operator: 'is',
             value: {
                 type: 'array',
                 values: ['vetdiet']
@@ -363,10 +363,40 @@ describe('listingPageHelper', function () {
         ]);
         assert.deepEqual(rensPetsPage.pageRules[0].filters[0], {
             fieldName: 'ec_brand',
-            operator: 'isExactly',
+            operator: 'is',
             value: {
                 type: 'array',
                 values: ["Ren's Pets"]
+            }
+        });
+    });
+
+    it('prefers ec_brand rules when brand and category listing URLs overlap', function () {
+        var brandsCategory = createCategory('brands', 'Brands', [
+            createCategory('1st-choice', '1st Choice', [])
+        ]);
+        var helper = createHelper({
+            root: createCategory('root', 'Root', [brandsCategory])
+        }, [{
+            ID: 'SKU-1',
+            brand: '1st Choice',
+            online: true
+        }]);
+        var desiredPages = helper.buildDesiredListingPages(createExportContext());
+        var syncPlan = helper.planListingPageChanges(desiredPages, []);
+        var listingPage = syncPlan.creates.filter(function (page) {
+            return page.patterns[0].url === 'https://www.mondou.com/brands/1st-choice';
+        })[0];
+
+        assert.isOk(listingPage);
+        assert.strictEqual(listingPage.name, '1st Choice');
+        assert.strictEqual(listingPage.pageRules[0].name, 'Brand is `1st Choice`');
+        assert.deepEqual(listingPage.pageRules[0].filters[0], {
+            fieldName: 'ec_brand',
+            operator: 'is',
+            value: {
+                type: 'array',
+                values: ['1st Choice']
             }
         });
     });

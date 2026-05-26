@@ -445,11 +445,11 @@ function buildBrandListingPage(brand, exportContext) {
         name: brand,
         patterns: buildListingPatterns(exportContext.storefrontBaseUrl, renderedPath),
         pageRules: [{
-            name: 'Include ec_brand isExactly ' + brand,
+            name: 'Brand is `' + brand + '`',
             locales: [buildRuleLocale(exportContext)],
             filters: [{
                 fieldName: 'ec_brand',
-                operator: 'isExactly',
+                operator: 'is',
                 value: {
                     type: 'array',
                     values: [brand]
@@ -601,12 +601,12 @@ function buildLocaleListingPageContributions(exportContext) {
     var catalog = getTargetCatalog(exportContext);
     var contributions = [];
 
-    collectCategoryEntries(catalog).forEach(function (categoryEntry) {
-        contributions.push(buildCategoryListingPageContribution(categoryEntry, exportContext));
-    });
-
     collectBrands(catalog).forEach(function (brand) {
         contributions.push(buildBrandListingPageContribution(brand, exportContext));
+    });
+
+    collectCategoryEntries(catalog).forEach(function (categoryEntry) {
+        contributions.push(buildCategoryListingPageContribution(categoryEntry, exportContext));
     });
 
     return contributions;
