@@ -7,6 +7,7 @@ var HashSet = require('dw/util/HashSet');
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
 var listingPageService = require('*/cartridge/scripts/helper/listingPageService');
 
+var BRAND_CATEGORY_ROOT_ID = 'brands';
 var PAGE_TYPE_CATEGORY = 'category';
 
 /**
@@ -387,18 +388,29 @@ function buildRuleLocale(exportContext) {
 }
 
 /**
+ * Normalizes a category entry or path-name array for backward-compatible helper calls.
+ * @param {Object|Array} categoryEntry - Category entry or path-name array.
+ * @returns {Object} normalized category entry.
+ */
+function normalizeCategoryEntry(categoryEntry) {
+    if (Array.isArray(categoryEntry)) {
+        return {
+            pathNames: categoryEntry,
+            keyParts: []
+        };
+    }
+
+    return categoryEntry || {};
+}
+
+/**
  * Creates a category listing payload.
- * @param {Object} categoryEntry - Category entry.
+ * @param {Object|Array} categoryEntry - Category entry or path-name array.
  * @param {Object} exportContext - Export context.
  * @returns {Object} listing page payload.
  */
 function buildCategoryListingPage(categoryEntry, exportContext) {
-    var normalizedCategoryEntry = Array.isArray(categoryEntry)
-        ? {
-            pathNames: categoryEntry,
-            keyParts: []
-        }
-        : (categoryEntry || {});
+    var normalizedCategoryEntry = normalizeCategoryEntry(categoryEntry);
     var pathNames = normalizedCategoryEntry.pathNames || [];
     var categoryValue = pathNames.join('|');
     var patterns = [];
@@ -465,8 +477,8 @@ function isLegacyBrandCategoryEntry(categoryEntry) {
 
     return pathNames.length === 2
         && (
-            normalizeString(keyParts[0]).toLowerCase() === 'brands'
-            || normalizeString(pathNames[0]).toLowerCase() === 'brands'
+            normalizeString(keyParts[0]).toLowerCase() === BRAND_CATEGORY_ROOT_ID
+            || normalizeString(pathNames[0]).toLowerCase() === BRAND_CATEGORY_ROOT_ID
         );
 }
 
