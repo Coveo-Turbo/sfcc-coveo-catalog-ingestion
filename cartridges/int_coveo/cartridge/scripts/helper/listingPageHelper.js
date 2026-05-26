@@ -464,7 +464,7 @@ function buildBrandListingPage(brand, exportContext) {
         name: 'Brands|' + brand,
         patterns: buildListingPatterns(exportContext.storefrontBaseUrl, renderedPath),
         pageRules: [{
-            name: 'Brand is `' + brand + '`',
+            name: 'Brand is ' + brand,
             locales: [buildRuleLocale(exportContext)],
             filters: [{
                 fieldName: 'ec_brand',
@@ -541,7 +541,10 @@ function collectCategoryEntries(catalog, excludedRootCategoryIds) {
             return;
         }
 
-        if (parentPath.key.length === 0 && excludedRootCategoryIdMap[normalizeString(categoryKey).toLowerCase()]) {
+        if (parentPath.key.length === 0 && (
+            excludedRootCategoryIdMap[normalizeString(categoryKey).toLowerCase()]
+            || excludedRootCategoryIdMap[normalizeString(categoryName).toLowerCase()]
+        )) {
             return;
         }
 

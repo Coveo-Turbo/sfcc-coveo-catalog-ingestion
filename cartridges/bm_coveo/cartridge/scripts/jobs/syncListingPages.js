@@ -56,7 +56,7 @@ function parseTrackingIds(value) {
 }
 
 /**
- * Parses a comma-separated list of category roots to exclude.
+ * Parses a comma-separated list of category roots to exclude (IDs or names).
  * @param {*} value - Raw job parameter value.
  * @returns {Array} unique normalized category roots.
  */

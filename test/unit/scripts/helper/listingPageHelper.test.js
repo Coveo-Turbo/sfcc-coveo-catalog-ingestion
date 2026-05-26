@@ -222,6 +222,27 @@ describe('listingPageHelper', function () {
         }), ['Brands', 'Brands|1st Choice']);
     });
 
+    it('excludes configured root categories using root category names', function () {
+        var productsRoot = createCategory('catalog-root-products', 'Products', [
+            createCategory('products-dog', 'Dog', [])
+        ]);
+        var brandsRoot = createCategory('catalog-root-brands', 'Brands', [
+            createCategory('brands-first-choice', '1st Choice', [])
+        ]);
+        var helper = createHelper({
+            root: createCategory('root', 'Root', [productsRoot, brandsRoot])
+        }, []);
+
+        var listingPages = helper.buildDesiredListingPages(createExportContext(), {
+            excludedCategoryRoots: ['products']
+        });
+
+        assert.lengthOf(listingPages, 2);
+        assert.sameMembers(listingPages.map(function (listingPage) {
+            return listingPage.name;
+        }), ['Brands', 'Brands|1st Choice']);
+    });
+
     it('merges locale-specific category and brand pages into a single CMH page per logical listing', function () {
         var food = createCategory('cat-food', {
             'en_CA': 'Food & Treats',
@@ -411,7 +432,7 @@ describe('listingPageHelper', function () {
 
         assert.isDefined(listingPage);
         assert.strictEqual(listingPage.name, 'Brands|1st Choice');
-        assert.strictEqual(listingPage.pageRules[0].name, 'Brand is `1st Choice`');
+        assert.strictEqual(listingPage.pageRules[0].name, 'Brand is 1st Choice');
         assert.deepEqual(listingPage.pageRules[0].filters[0], {
             fieldName: 'ec_brand',
             operator: 'isExactly',

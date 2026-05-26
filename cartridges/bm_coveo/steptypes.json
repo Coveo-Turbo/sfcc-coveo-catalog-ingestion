@@ -167,7 +167,7 @@
                 "@required": "false",
                 "@trim": "true",
                 "default-value": "products",
-                "description": "Optional comma-separated root category IDs excluded from generated category listing pages"
+                "description": "Optional comma-separated root category IDs or names excluded from generated category listing pages"
               }
             ]
           },
