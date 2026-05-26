@@ -201,6 +201,27 @@ describe('listingPageHelper', function () {
         assert.deepEqual(listingPages[1].pageRules[0].filters[0].value.values, ['Cat|Food & Treats']);
     });
 
+    it('excludes configured root categories from generated category listing pages', function () {
+        var productsRoot = createCategory('products', 'Products', [
+            createCategory('products-dog', 'Dog', [])
+        ]);
+        var brandsRoot = createCategory('brands', 'Brands', [
+            createCategory('brands-first-choice', '1st Choice', [])
+        ]);
+        var helper = createHelper({
+            root: createCategory('root', 'Root', [productsRoot, brandsRoot])
+        }, []);
+
+        var listingPages = helper.buildDesiredListingPages(createExportContext(), {
+            excludedCategoryRoots: ['PRODUCTS']
+        });
+
+        assert.lengthOf(listingPages, 2);
+        assert.sameMembers(listingPages.map(function (listingPage) {
+            return listingPage.name;
+        }), ['Brands', 'Brands|1st Choice']);
+    });
+
     it('merges locale-specific category and brand pages into a single CMH page per logical listing', function () {
         var food = createCategory('cat-food', {
             'en_CA': 'Food & Treats',

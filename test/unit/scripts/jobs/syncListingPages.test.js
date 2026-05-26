@@ -119,8 +119,11 @@ describe('syncListingPages job', function () {
                 getPrimaryUrl: function (listingPage) {
                     return listingPage.patterns[0].url;
                 },
-                buildDesiredListingPages: function (exportContexts) {
+                buildDesiredListingPages: function (exportContexts, options) {
                     assert.lengthOf(exportContexts, 2);
+                    assert.deepEqual(options, {
+                        excludedCategoryRoots: ['products']
+                    });
                     return desired.map(function (listingPage, index) {
                         listingPage.generatedType = index % 2 ? 'brand' : 'category';
                         return listingPage;
@@ -611,7 +614,11 @@ describe('syncListingPages job', function () {
                 getPrimaryUrl: function (listingPage) {
                     return listingPage.patterns[0].url;
                 },
-                buildDesiredListingPages: function () {
+                buildDesiredListingPages: function (exportContexts, options) {
+                    assert.lengthOf(exportContexts, 1);
+                    assert.deepEqual(options, {
+                        excludedCategoryRoots: ['products']
+                    });
                     return [{
                         name: 'Holiday Gift Guide',
                         patterns: [{
@@ -729,7 +736,11 @@ describe('syncListingPages job', function () {
                 getPrimaryUrl: function (listingPage) {
                     return listingPage.patterns[0].url;
                 },
-                buildDesiredListingPages: function () {
+                buildDesiredListingPages: function (exportContexts, options) {
+                    assert.lengthOf(exportContexts, 1);
+                    assert.deepEqual(options, {
+                        excludedCategoryRoots: ['products', 'seasonal']
+                    });
                     return [{
                         name: 'Holiday Gift Guide',
                         patterns: [{
@@ -805,7 +816,8 @@ describe('syncListingPages job', function () {
 
         var status = job.execute(createParameters({
             dryRun: true,
-            existingTrackingIds: 'mondou, legacy-mondou, legacy-mondou'
+            existingTrackingIds: 'mondou, legacy-mondou, legacy-mondou',
+            excludedCategoryRoots: 'products, seasonal, PRODUCTS'
         }));
 
         assert.strictEqual(status.code, 'OK');

@@ -362,6 +362,25 @@ function compareStrings(left, right) {
 }
 
 /**
+ * Builds a normalized set of excluded root category IDs.
+ * @param {Array} excludedRootCategoryIds - Category roots to exclude.
+ * @returns {Object} lookup map by lowercase category ID.
+ */
+function buildExcludedRootCategoryIdMap(excludedRootCategoryIds) {
+    var excludedRootCategoryIdMap = {};
+
+    toArray(excludedRootCategoryIds).forEach(function (categoryId) {
+        var normalizedCategoryId = normalizeString(categoryId).toLowerCase();
+
+        if (!isEmptyValue(normalizedCategoryId)) {
+            excludedRootCategoryIdMap[normalizedCategoryId] = true;
+        }
+    });
+
+    return excludedRootCategoryIdMap;
+}
+
+/**
  * Renders a listing URL template.
  * @param {string} template - URL template.
  * @param {Object} values - Placeholder values.
@@ -506,10 +525,12 @@ function buildBrandListingPageContribution(brand, exportContext) {
 /**
  * Traverses all online categories.
  * @param {Object} catalog - Catalog to inspect.
+ * @param {Array} excludedRootCategoryIds - Category roots to exclude.
  * @returns {Array} category name paths.
  */
-function collectCategoryEntries(catalog) {
+function collectCategoryEntries(catalog, excludedRootCategoryIds) {
     var categoryEntries = [];
+    var excludedRootCategoryIdMap = buildExcludedRootCategoryIdMap(excludedRootCategoryIds);
 
     function visitCategory(category, parentPath) {
         var categoryName = getCategoryName(category);
@@ -517,6 +538,10 @@ function collectCategoryEntries(catalog) {
         var currentPath;
 
         if (!isOnlineCategory(category) || isEmptyValue(categoryName)) {
+            return;
+        }
+
+        if (parentPath.key.length === 0 && excludedRootCategoryIdMap[normalizeString(categoryKey).toLowerCase()]) {
             return;
         }
 
@@ -595,9 +620,10 @@ function collectBrands(catalog) {
 /**
  * Builds listing page contributions for the current request locale.
  * @param {Object} exportContext - Export context.
+ * @param {Object} options - Build options.
  * @returns {Array} locale contributions.
  */
-function buildLocaleListingPageContributions(exportContext) {
+function buildLocaleListingPageContributions(exportContext, options) {
     var catalog = getTargetCatalog(exportContext);
     var contributions = [];
 
@@ -605,7 +631,7 @@ function buildLocaleListingPageContributions(exportContext) {
         contributions.push(buildBrandListingPageContribution(brand, exportContext));
     });
 
-    collectCategoryEntries(catalog).forEach(function (categoryEntry) {
+    collectCategoryEntries(catalog, options && options.excludedCategoryRoots).forEach(function (categoryEntry) {
         contributions.push(buildCategoryListingPageContribution(categoryEntry, exportContext));
     });
 
@@ -722,9 +748,10 @@ function mergeListingPageContributions(contributions) {
 /**
  * Builds all desired listing page payloads.
  * @param {Object|Array} exportContexts - Export context or contexts.
+ * @param {Object} options - Build options.
  * @returns {Array} listing page payloads.
  */
-function buildDesiredListingPages(exportContexts) {
+function buildDesiredListingPages(exportContexts, options) {
     var contexts = normalizeExportContexts(exportContexts);
     var contributions = [];
 
@@ -742,7 +769,7 @@ function buildDesiredListingPages(exportContexts) {
         var previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
 
         try {
-            contributions = contributions.concat(buildLocaleListingPageContributions(exportContext));
+            contributions = contributions.concat(buildLocaleListingPageContributions(exportContext, options));
         } finally {
             exportTargetHelper.restoreRequestLocale(previousLocale);
         }

@@ -78,6 +78,7 @@
                         <parameter name="targetId"></parameter>
                         <parameter name="dryRun">false</parameter>
                         <parameter name="existingTrackingIds"></parameter>
+                        <parameter name="excludedCategoryRoots">products</parameter>
                     </parameters>
                 </step>
             </flow-template>

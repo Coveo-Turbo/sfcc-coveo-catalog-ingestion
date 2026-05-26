@@ -56,6 +56,31 @@ function parseTrackingIds(value) {
 }
 
 /**
+ * Parses a comma-separated list of category roots to exclude.
+ * @param {*} value - Raw job parameter value.
+ * @returns {Array} unique normalized category roots.
+ */
+function parseExcludedCategoryRoots(value) {
+    var seen = {};
+    var excludedCategoryRoots = normalizeString(value).split(',').map(function (categoryRoot) {
+        return normalizeString(categoryRoot).toLowerCase();
+    }).filter(function (categoryRoot) {
+        if (empty(categoryRoot) || seen[categoryRoot]) {
+            return false;
+        }
+
+        seen[categoryRoot] = true;
+        return true;
+    });
+
+    if (!excludedCategoryRoots.length) {
+        excludedCategoryRoots.push('products');
+    }
+
+    return excludedCategoryRoots;
+}
+
+/**
  * Formats service failure details for logs and thrown errors.
  * @param {Object} response - Service response.
  * @returns {string} formatted detail string.
@@ -587,8 +612,9 @@ function writeListingPageChunks(listingPages, requestFunction, exportContext, op
  * @param {Object} group - Tracking-ID group.
  * @param {boolean} dryRun - Whether to skip writes.
  * @param {Array} additionalTrackingIds - Additional tracking IDs to scan for existing pages.
+ * @param {Array} excludedCategoryRoots - Category roots to exclude from listing-page generation.
  */
-function syncListingPageGroup(group, dryRun, additionalTrackingIds) {
+function syncListingPageGroup(group, dryRun, additionalTrackingIds, excludedCategoryRoots) {
     var exportContexts = group.exportContexts || [];
     var existingListingReadContexts = buildExistingListingReadContexts(group, additionalTrackingIds);
     var primaryContext = group.primaryContext || exportContexts[0];
@@ -615,19 +641,22 @@ function syncListingPageGroup(group, dryRun, additionalTrackingIds) {
         validateListingContext(exportContext);
     });
 
-    desiredListingPages = listingPageHelper.buildDesiredListingPages(exportContexts);
+    desiredListingPages = listingPageHelper.buildDesiredListingPages(exportContexts, {
+        excludedCategoryRoots: excludedCategoryRoots
+    });
     desiredCounts = countDesiredListingPages(desiredListingPages);
     existingListingPages = readExistingListingPages(existingListingReadContexts);
     syncPlan = listingPageHelper.planListingPageChanges(desiredListingPages, existingListingPages);
     logCreateOnlyDiagnostics(desiredListingPages, existingListingPages, syncPlan);
 
     Logger.info(
-        'Resolved Coveo listing page sync - site={0}, trackingId={1}, locales={2}, targets={3}, existingTrackingIds={4}, existingPagesRead={5}, categories={6}, brands={7}, creates={8}, updates={9}, dryRun={10}',
+        'Resolved Coveo listing page sync - site={0}, trackingId={1}, locales={2}, targets={3}, existingTrackingIds={4}, excludedCategoryRoots={5}, existingPagesRead={6}, categories={7}, brands={8}, creates={9}, updates={10}, dryRun={11}',
         primaryContext.siteId,
         group.trackingId,
         localeLabels,
         exportContexts.length,
         existingTrackingIds.join(', '),
+        excludedCategoryRoots.join(', '),
         existingListingPages.length,
         desiredCounts.categories,
         desiredCounts.brands,
@@ -700,10 +729,11 @@ function syncListingPageGroup(group, dryRun, additionalTrackingIds) {
 exports.execute = function (parameters, stepExecution) { // eslint-disable-line no-unused-vars
     var dryRun = toBoolean(parameters && typeof parameters.get === 'function' ? parameters.get('dryRun') : false);
     var additionalTrackingIds = parseTrackingIds(parameters && typeof parameters.get === 'function' ? parameters.get('existingTrackingIds') : null);
+    var excludedCategoryRoots = parseExcludedCategoryRoots(parameters && typeof parameters.get === 'function' ? parameters.get('excludedCategoryRoots') : null);
     var listingSyncGroups = exportTargetHelper.resolveListingSyncGroups(parameters);
 
     listingSyncGroups.forEach(function (group) {
-        syncListingPageGroup(group, dryRun, additionalTrackingIds);
+        syncListingPageGroup(group, dryRun, additionalTrackingIds, excludedCategoryRoots);
     });
 
     return new Status(Status.OK);
