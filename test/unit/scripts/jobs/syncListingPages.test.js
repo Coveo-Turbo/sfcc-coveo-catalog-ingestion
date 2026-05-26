@@ -115,7 +115,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 getPrimaryUrl: function (listingPage) {
                     return listingPage.patterns[0].url;
                 },
@@ -124,8 +123,8 @@ describe('syncListingPages job', function () {
                     assert.deepEqual(options, {
                         excludedCategoryRoots: []
                     });
-                    return desired.map(function (listingPage, index) {
-                        listingPage.generatedType = index % 2 ? 'brand' : 'category';
+                    return desired.map(function (listingPage) {
+                        listingPage.generatedType = 'category';
                         return listingPage;
                     });
                 },
@@ -230,7 +229,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 buildDesiredListingPages: function () {
                     return creates.map(function (listingPage) {
                         listingPage.generatedType = 'category';
@@ -326,7 +324,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 buildDesiredListingPages: function () {
                     return creates.map(function (listingPage) {
                         listingPage.generatedType = 'category';
@@ -427,7 +424,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 extractListingPageItems: function (responseObject) {
                     return typeof responseObject.toArray === 'function' ? responseObject.toArray() : [];
                 },
@@ -524,7 +520,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 buildDesiredListingPages: function (exportContexts) {
                     assert.lengthOf(exportContexts, 1);
                     return [{
@@ -569,6 +564,71 @@ describe('syncListingPages job', function () {
         assert.strictEqual(writes, 0);
     });
 
+    it('does not require listingBrandUrlTemplate when syncing category-driven listing pages', function () {
+        var readCalls = 0;
+        var contextWithoutLegacyBrandUrl = Object.assign({}, exportContext, {
+            listingBrandUrlTemplate: ''
+        });
+
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/syncListingPages'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': createStatus(),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveListingSyncGroups: function () {
+                    return [{
+                        trackingId: 'mondou_ca',
+                        primaryContext: contextWithoutLegacyBrandUrl,
+                        exportContexts: [contextWithoutLegacyBrandUrl]
+                    }];
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageHelper': {
+                PAGE_TYPE_CATEGORY: 'category',
+                buildDesiredListingPages: function () {
+                    return [{
+                        name: 'Brands|Acme',
+                        generatedType: 'category',
+                        patterns: [{
+                            url: 'https://www.mondou.com/brands/acme'
+                        }],
+                        pageRules: []
+                    }];
+                },
+                readExistingListingPages: function () {
+                    readCalls += 1;
+                    return [];
+                },
+                planListingPageChanges: function () {
+                    return {
+                        creates: [],
+                        updates: []
+                    };
+                }
+            },
+            '*/cartridge/scripts/helper/listingPageService': {
+                LISTING_PAGE_BULK_LIMIT: 100,
+                LISTING_PAGE_LIST_LIMIT: 1000,
+                buildListingPagesRequestUrl: function () {
+                    return 'https://platform-ca.cloud.coveo.com/rest/organizations/mondouorg/commerce/v2/listings/pages';
+                }
+            }
+        });
+
+        var status = job.execute(createParameters({
+            dryRun: true
+        }));
+
+        assert.strictEqual(status.code, 'OK');
+        assert.strictEqual(readCalls, 1);
+    });
+
     it('reads existing pages from additional site tracking ids before planning creates and updates', function () {
         var sharedContext = Object.assign({}, exportContext, {
             coveoTrackingId: 'mondou'
@@ -610,7 +670,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 getPrimaryUrl: function (listingPage) {
                     return listingPage.patterns[0].url;
                 },
@@ -732,7 +791,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 getPrimaryUrl: function (listingPage) {
                     return listingPage.patterns[0].url;
                 },
@@ -850,7 +908,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 buildDesiredListingPages: function (exportContexts) {
                     assert.lengthOf(exportContexts, 1);
                     return [{
@@ -926,7 +983,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 buildDesiredListingPages: function () {
                     return [{
                         name: 'Cat',
@@ -1022,7 +1078,6 @@ describe('syncListingPages job', function () {
             },
             '*/cartridge/scripts/helper/listingPageHelper': {
                 PAGE_TYPE_CATEGORY: 'category',
-                PAGE_TYPE_BRAND: 'brand',
                 buildDesiredListingPages: function () {
                     return [{
                         name: 'Holiday Gift Guide',

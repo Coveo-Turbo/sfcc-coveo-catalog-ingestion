@@ -214,8 +214,7 @@ function validateListingContext(exportContext) {
         'coveoCountry',
         'coveoCurrency',
         'storefrontBaseUrl',
-        'listingCategoryUrlTemplate',
-        'listingBrandUrlTemplate'
+        'listingCategoryUrlTemplate'
     ].forEach(function (fieldName) {
         if (empty(exportContext[fieldName])) {
             missing.push(fieldName);
@@ -234,15 +233,12 @@ function validateListingContext(exportContext) {
  */
 function countDesiredListingPages(desiredListingPages) {
     var counts = {
-        categories: 0,
-        brands: 0
+        categories: 0
     };
 
     desiredListingPages.forEach(function (listingPage) {
         if (listingPage.generatedType === listingPageHelper.PAGE_TYPE_CATEGORY) {
             counts.categories += 1;
-        } else if (listingPage.generatedType === listingPageHelper.PAGE_TYPE_BRAND) {
-            counts.brands += 1;
         }
     });
 
@@ -644,7 +640,7 @@ function syncListingPageGroup(group, dryRun, additionalTrackingIds, excludedCate
     logCreateOnlyDiagnostics(desiredListingPages, existingListingPages, syncPlan);
 
     Logger.info(
-        'Resolved Coveo listing page sync - site={0}, trackingId={1}, locales={2}, targets={3}, existingTrackingIds={4}, excludedCategoryRoots={5}, existingPagesRead={6}, categories={7}, brands={8}, creates={9}, updates={10}, dryRun={11}',
+        'Resolved Coveo listing page sync - site={0}, trackingId={1}, locales={2}, targets={3}, existingTrackingIds={4}, excludedCategoryRoots={5}, existingPagesRead={6}, categories={7}, creates={8}, updates={9}, dryRun={10}',
         primaryContext.siteId,
         group.trackingId,
         localeLabels,
@@ -653,7 +649,6 @@ function syncListingPageGroup(group, dryRun, additionalTrackingIds, excludedCate
         excludedCategoryRoots.join(', '),
         existingListingPages.length,
         desiredCounts.categories,
-        desiredCounts.brands,
         syncPlan.creates.length,
         syncPlan.updates.length,
         dryRun

@@ -70,7 +70,7 @@ These tests cover:
 - If your mapping JSON should also create the matching Coveo fields, run `coveoPlatformFieldCreate` with the same `sourceFile`. The job creates one platform field per enabled mapping `targetField`, and the optional `coveoField` block on each mapping can set the initial field type and options.
 - To upload a field-mapping JSON file to IMPEX with the credentials in `dw.json`, run `npm run uploadFieldMappingsJson -- documentation/examples/default-commerce-fields.sample.json`.
 - To inspect which catalog attributes are actually populated before you build mappings, run the `coveoCatalogAttributeAudit` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
-- To sync CMH listing pages, set the target's `coveoTrackingId`, `coveoCountry`, `coveoCurrency`, `storefrontBaseUrl`, `listingCategoryUrlTemplate`, and `listingBrandUrlTemplate`, then run `coveoListingPagesSync`.
+- To sync CMH listing pages, set the target's `coveoTrackingId`, `coveoCountry`, `coveoCurrency`, `storefrontBaseUrl`, and `listingCategoryUrlTemplate`, then run `coveoListingPagesSync`. If you need existing brand landing page URLs to keep resolving to `Brands|...` category pages, also set `listingBrandUrlTemplate` as an optional legacy URL alias.
 - Run a full export before trusting any delta export.
 
 See [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md) for the full ingestion setup and validation flow.
