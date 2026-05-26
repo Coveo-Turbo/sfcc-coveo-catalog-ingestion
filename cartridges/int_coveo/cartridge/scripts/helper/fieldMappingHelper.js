@@ -21,6 +21,7 @@ var RESERVED_TARGET_FIELDS = [
     'ec_price',
     'ec_promo_price',
     'ec_category',
+    'ec_primary_category',
     'objecttype',
     'ec_rating',
     'ec_brand',

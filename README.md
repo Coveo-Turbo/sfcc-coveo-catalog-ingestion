@@ -21,6 +21,8 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
 - `language` on every item
 - `ec_price` stores the base/list price.
 - `ec_promo_price` stores the effective promotional price when a discounted price is active.
+- `ec_category` stores every valid online category hierarchy assigned to the exported product. Variant-backed product exports include the union of the variant and master assignments, deduplicated into a single hierarchical field value.
+- `ec_primary_category` stores only the effective primary category hierarchy for the exported product.
 - `ec_images` contains the `large` gallery image array.
 - `ec_thumbnails` contains the `medium` image array.
 - Export scope is target-aware:
