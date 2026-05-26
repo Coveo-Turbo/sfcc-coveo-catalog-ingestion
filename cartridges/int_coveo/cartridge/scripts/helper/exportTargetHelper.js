@@ -87,6 +87,13 @@ function buildLegacyExportContext() {
         language: getLanguageFromLocale(locale),
         coveoOrganizationId: normalizeString(sitePreferences.coveoOrganizationId),
         coveoSourceId: normalizeString(sitePreferences.coveoSourceId),
+        coveoTrackingId: '',
+        coveoCountry: '',
+        coveoCurrency: '',
+        storefrontBaseUrl: '',
+        listingCategoryUrlTemplate: '',
+        listingBrandUrlTemplate: '',
+        listingSlugAmpersandToken: '',
         catalogId: '',
         mappingProfileId: '',
         mappingProfile: null,
@@ -115,6 +122,13 @@ function buildTargetExportContext(targetObject, targetId) {
         language: normalizeString(custom.language).toLowerCase(),
         coveoOrganizationId: normalizeString(Site.current.preferences.custom.coveoOrganizationId),
         coveoSourceId: normalizeString(custom.coveoSourceId),
+        coveoTrackingId: normalizeString(custom.coveoTrackingId),
+        coveoCountry: normalizeString(custom.coveoCountry).toUpperCase(),
+        coveoCurrency: normalizeString(custom.coveoCurrency).toUpperCase(),
+        storefrontBaseUrl: normalizeString(custom.storefrontBaseUrl),
+        listingCategoryUrlTemplate: normalizeString(custom.listingCategoryUrlTemplate),
+        listingBrandUrlTemplate: normalizeString(custom.listingBrandUrlTemplate),
+        listingSlugAmpersandToken: normalizeString(custom.listingSlugAmpersandToken),
         catalogId: normalizeString(custom.catalogId),
         mappingProfileId: normalizeString(custom.mappingProfileId),
         mappingProfile: null,
@@ -216,6 +230,160 @@ function getTargetsForCurrentSite() {
     }
 
     return siteTargets;
+}
+
+/**
+ * Compares two normalized string values.
+ * @param {string} left - Left-hand value.
+ * @param {string} right - Right-hand value.
+ * @returns {number} comparison result.
+ */
+function compareStrings(left, right) {
+    var leftValue = normalizeString(left);
+    var rightValue = normalizeString(right);
+
+    if (leftValue === rightValue) {
+        return 0;
+    }
+
+    return leftValue < rightValue ? -1 : 1;
+}
+
+/**
+ * Returns a normalized target context for listing sync use.
+ * @param {Object} targetObject - Custom object instance.
+ * @param {string} targetId - Explicit target identifier, when known.
+ * @returns {Object} export context.
+ */
+function buildListingSyncContext(targetObject, targetId) {
+    var exportContext = buildTargetExportContext(targetObject, targetId);
+
+    validateExportContext(exportContext);
+
+    if (empty(exportContext.coveoTrackingId)) {
+        throw new Error('The Coveo listing page sync target ' + (exportContext.targetId || exportContext.label || exportContext.locale || '[unknown]') + ' is missing required value coveoTrackingId.');
+    }
+
+    return exportContext;
+}
+
+/**
+ * Builds a minimal context used to read existing listing pages.
+ * @param {Object} targetObject - Custom object instance.
+ * @returns {Object|null} read context or null when unusable.
+ */
+function buildListingReadContext(targetObject) {
+    var exportContext = buildTargetExportContext(targetObject, '');
+
+    if (empty(exportContext.siteId)
+        || empty(exportContext.coveoOrganizationId)
+        || empty(exportContext.coveoTrackingId)
+        || exportContext.siteId !== normalizeString(Site.current.ID)
+        || !isValidOrganizationId(exportContext.coveoOrganizationId)) {
+        return null;
+    }
+
+    return exportContext;
+}
+
+/**
+ * Groups export contexts by tracking ID.
+ * @param {Array} exportContexts - Export contexts.
+ * @returns {Array} grouped contexts.
+ */
+function groupListingSyncContexts(exportContexts) {
+    var groupsByTrackingId = {};
+    var groups = [];
+
+    exportContexts.sort(function (left, right) {
+        var localeComparison = compareStrings(left.locale, right.locale);
+
+        if (localeComparison !== 0) {
+            return localeComparison;
+        }
+
+        return compareStrings(left.targetId, right.targetId);
+    }).forEach(function (exportContext) {
+        var trackingId = normalizeString(exportContext.coveoTrackingId);
+        var group = groupsByTrackingId[trackingId];
+
+        if (empty(group)) {
+            group = {
+                trackingId: trackingId,
+                exportContexts: [],
+                primaryContext: exportContext
+            };
+            groupsByTrackingId[trackingId] = group;
+            groups.push(group);
+        }
+
+        group.exportContexts.push(exportContext);
+    });
+
+    groups.sort(function (left, right) {
+        return compareStrings(left.trackingId, right.trackingId);
+    });
+
+    return groups;
+}
+
+/**
+ * Resolves listing-sync contexts grouped by tracking ID.
+ * @param {Object} parameters - Job parameters.
+ * @returns {Array} listing sync groups.
+ */
+function resolveListingSyncGroups(parameters) {
+    var requestedTargetId = normalizeString(parameters && typeof parameters.get === 'function' ? parameters.get('targetId') : null);
+    var targetObjects = [];
+    var exportContexts = [];
+    var siteReadContexts = [];
+    var requestedTrackingId = '';
+    var siteTargets = getTargetsForCurrentSite();
+
+    if (!empty(requestedTargetId)) {
+        var requestedTarget = CustomObjectMgr.getCustomObject(TARGET_CUSTOM_OBJECT_TYPE, requestedTargetId);
+
+        if (empty(requestedTarget)) {
+            throw new Error('No Coveo export target with targetId ' + requestedTargetId + ' exists.');
+        }
+
+        requestedTrackingId = normalizeString((requestedTarget.custom || {}).coveoTrackingId);
+
+        if (empty(requestedTrackingId)) {
+            throw new Error('The Coveo listing page sync target ' + requestedTargetId + ' is missing required value coveoTrackingId.');
+        }
+
+        targetObjects = siteTargets.filter(function (targetObject) {
+            return normalizeString((targetObject.custom || {}).coveoTrackingId) === requestedTrackingId;
+        });
+
+        if (!targetObjects.length) {
+            targetObjects = [requestedTarget];
+        }
+    } else {
+        targetObjects = siteTargets;
+    }
+
+    if (!targetObjects.length) {
+        throw new Error('No Coveo listing page sync targets are configured for site ' + Site.current.ID + '.');
+    }
+
+    targetObjects.forEach(function (targetObject) {
+        exportContexts.push(buildListingSyncContext(targetObject, ''));
+    });
+
+    siteTargets.forEach(function (targetObject) {
+        var readContext = buildListingReadContext(targetObject);
+
+        if (!empty(readContext)) {
+            siteReadContexts.push(readContext);
+        }
+    });
+
+    return groupListingSyncContexts(exportContexts).map(function (group) {
+        group.existingListingReadContexts = siteReadContexts;
+        return group;
+    });
 }
 
 /**
@@ -331,8 +499,11 @@ module.exports = {
     TARGET_CUSTOM_OBJECT_TYPE: TARGET_CUSTOM_OBJECT_TYPE,
     applyRequestLocale: applyRequestLocale,
     buildLegacyExportContext: buildLegacyExportContext,
+    buildListingSyncContext: buildListingSyncContext,
     getLanguageFromLocale: getLanguageFromLocale,
+    getTargetsForCurrentSite: getTargetsForCurrentSite,
     resolveExportContext: resolveExportContext,
+    resolveListingSyncGroups: resolveListingSyncGroups,
     restoreRequestLocale: restoreRequestLocale,
     updateLastSync: updateLastSync,
     validateExportContext: validateExportContext

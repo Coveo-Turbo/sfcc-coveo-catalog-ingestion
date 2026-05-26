@@ -24,6 +24,16 @@
         <cb-millis>0</cb-millis>
     </service-profile>
 
+    <service-profile service-profile-id="int.coveo.platform.api.profile">
+        <timeout-millis>10000</timeout-millis>
+        <rate-limit-enabled>false</rate-limit-enabled>
+        <rate-limit-calls>0</rate-limit-calls>
+        <rate-limit-millis>0</rate-limit-millis>
+        <cb-enabled>true</cb-enabled>
+        <cb-calls>0</cb-calls>
+        <cb-millis>0</cb-millis>
+    </service-profile>
+
     <service service-id="int.coveo.http.api">
         <service-type>HTTP</service-type>
         <enabled>true</enabled>
@@ -35,14 +45,14 @@
         <credential-id>int.coveo.api.cred</credential-id>
     </service>
 
-    <service service-id="int.coveo.platform.http.api">
+    <service service-id="int.coveo.platform.api">
         <service-type>HTTP</service-type>
         <enabled>true</enabled>
         <log-prefix>coveo-platform-service</log-prefix>
         <comm-log-enabled>true</comm-log-enabled>
         <force-prd-enabled>false</force-prd-enabled>
         <mock-mode-enabled>false</mock-mode-enabled>
-        <profile-id>int.coveo.api.profile</profile-id>
+        <profile-id>int.coveo.platform.api.profile</profile-id>
         <credential-id>int.coveo.platform.api.cred</credential-id>
     </service>
 

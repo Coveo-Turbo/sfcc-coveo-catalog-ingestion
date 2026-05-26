@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jobs xmlns="http://www.demandware.com/xml/impex/jobs/2015-07-01">
     <job job-id="coveoProductExportFull" priority="0">
-        <description>Performs a full Coveo catalog reconcile using Stream update operations and deleteolderthan.</description>
-        <parameters/>
+        <description>Performs a full Coveo catalog reconcile using Stream update operations and
+            deleteolderthan.</description>
+        <parameters />
         <split sequential="false">
             <contexts template-ref="template_79">
-                <context site-id="RefArch"/>
+                <context site-id="RefArch" />
             </contexts>
             <flow-template template-id="template_79">
-                <step step-id="ExportProductsToCoveo" type="custom.coveo.coveoProductExportFull" enforce-restart="false">
+                <step step-id="ExportProductsToCoveo" type="custom.coveo.coveoProductExportFull"
+                    enforce-restart="false">
                     <description>Exports all site products using validated addOrUpdate payloads.</description>
                     <parameters>
                         <parameter name="srcFolder">/src/coveo/feeds/products/</parameter>
@@ -21,7 +23,7 @@
         </split>
         <rules>
             <on-running runtime-threshold="60m" enabled="false">
-                <mark-job-as-hanging/>
+                <mark-job-as-hanging />
             </on-running>
         </rules>
         <triggers>
@@ -34,13 +36,14 @@
 
     <job job-id="coveoProductExportDelta" priority="0">
         <description>Exports products changed since the last successful Coveo catalog sync.</description>
-        <parameters/>
+        <parameters />
         <split sequential="false">
             <contexts template-ref="template_94">
-                <context site-id="RefArch"/>
+                <context site-id="RefArch" />
             </contexts>
             <flow-template template-id="template_94">
-                <step step-id="ExportProductsToCoveo" type="custom.coveo.coveoProductExportDelta" enforce-restart="false">
+                <step step-id="ExportProductsToCoveo" type="custom.coveo.coveoProductExportDelta"
+                    enforce-restart="false">
                     <description>Exports only products that changed since the last successful sync.</description>
                     <parameters>
                         <parameter name="srcFolder">/src/coveo/feeds/products/</parameter>
@@ -53,7 +56,7 @@
         </split>
         <rules>
             <on-running runtime-threshold="60m" enabled="false">
-                <mark-job-as-hanging/>
+                <mark-job-as-hanging />
             </on-running>
         </rules>
         <triggers>
@@ -64,18 +67,56 @@
         </triggers>
     </job>
 
+    <job job-id="coveoListingPagesSync" priority="0">
+        <description>Creates or updates Coveo Merchandising Hub listing pages from SFCC categories
+            and brands.</description>
+        <parameters />
+        <split sequential="false">
+            <contexts template-ref="template_118">
+                <context site-id="RefArch" />
+            </contexts>
+            <flow-template template-id="template_118">
+                <step step-id="SyncListingPagesToCoveo" type="custom.coveo.coveoListingPagesSync"
+                    enforce-restart="false">
+                    <description>Synchronizes CMH public listing pages for the configured target.</description>
+                    <parameters>
+                        <parameter name="targetId"></parameter>
+                        <parameter name="dryRun">false</parameter>
+                        <parameter name="existingTrackingIds"></parameter>
+                        <parameter name="excludedCategoryRoots"></parameter>
+                    </parameters>
+                </step>
+            </flow-template>
+        </split>
+        <rules>
+            <on-running runtime-threshold="60m" enabled="false">
+                <mark-job-as-hanging />
+            </on-running>
+        </rules>
+        <triggers>
+            <run-once enabled="false">
+                <date>2023-05-18Z</date>
+                <time>12:17:00.000Z</time>
+            </run-once>
+        </triggers>
+    </job>
+
     <job job-id="coveoFieldMappingImport" priority="0">
-        <description>Imports a Coveo field mapping profile and mapping rows from a JSON file in IMPEX.</description>
-        <parameters/>
+        <description>Imports a Coveo field mapping profile and mapping rows from a JSON file in
+            IMPEX.</description>
+        <parameters />
         <split sequential="false">
             <contexts template-ref="template_113">
-                <context site-id="RefArch"/>
+                <context site-id="RefArch" />
             </contexts>
             <flow-template template-id="template_113">
-                <step step-id="ImportCoveoFieldMappings" type="custom.coveo.coveoFieldMappingImport" enforce-restart="false">
-                    <description>Upserts a field mapping profile and rows from a JSON file stored under IMPEX.</description>
+                <step step-id="ImportCoveoFieldMappings" type="custom.coveo.coveoFieldMappingImport"
+                    enforce-restart="false">
+                    <description>Upserts a field mapping profile and rows from a JSON file stored
+                        under IMPEX.</description>
                     <parameters>
-                        <parameter name="sourceFile">/src/coveo/config/field-mappings/default-commerce-fields.json</parameter>
+                        <parameter name="sourceFile">
+                            /src/coveo/config/field-mappings/default-commerce-fields.json</parameter>
                         <parameter name="replaceExistingMappings">false</parameter>
                     </parameters>
                 </step>
@@ -83,7 +124,7 @@
         </split>
         <rules>
             <on-running runtime-threshold="30m" enabled="false">
-                <mark-job-as-hanging/>
+                <mark-job-as-hanging />
             </on-running>
         </rules>
         <triggers>
@@ -95,15 +136,18 @@
     </job>
 
     <job job-id="coveoCatalogAttributeAudit" priority="0">
-        <description>Audits a catalog in a chosen locale and writes populated attribute reports to IMPEX.</description>
-        <parameters/>
+        <description>Audits a catalog in a chosen locale and writes populated attribute reports to
+            IMPEX.</description>
+        <parameters />
         <split sequential="false">
             <contexts template-ref="template_127">
-                <context site-id="RefArch"/>
+                <context site-id="RefArch" />
             </contexts>
             <flow-template template-id="template_127">
-                <step step-id="AuditCatalogAttributes" type="custom.coveo.coveoCatalogAttributeAudit" enforce-restart="false">
-                    <description>Scans catalog products and primary categories, then writes JSON and CSV attribute reports.</description>
+                <step step-id="AuditCatalogAttributes"
+                    type="custom.coveo.coveoCatalogAttributeAudit" enforce-restart="false">
+                    <description>Scans catalog products and primary categories, then writes JSON and
+                        CSV attribute reports.</description>
                     <parameters>
                         <parameter name="catalogId">mondou_CA-storefront</parameter>
                         <parameter name="locale">en_CA</parameter>
@@ -116,7 +160,7 @@
         </split>
         <rules>
             <on-running runtime-threshold="60m" enabled="false">
-                <mark-job-as-hanging/>
+                <mark-job-as-hanging />
             </on-running>
         </rules>
         <triggers>
@@ -128,24 +172,28 @@
     </job>
 
     <job job-id="coveoPlatformFieldCreate" priority="0">
-        <description>Creates missing Coveo platform fields from the same JSON file used for SFCC field mapping imports.</description>
-        <parameters/>
+        <description>Creates missing Coveo platform fields from the same JSON file used for SFCC
+            field mapping imports.</description>
+        <parameters />
         <split sequential="false">
             <contexts template-ref="template_141">
-                <context site-id="RefArch"/>
+                <context site-id="RefArch" />
             </contexts>
             <flow-template template-id="template_141">
-                <step step-id="CreateCoveoPlatformFields" type="custom.coveo.coveoPlatformFieldCreate" enforce-restart="false">
-                    <description>Ensures all enabled mapping target fields exist in the configured Coveo organization.</description>
+                <step step-id="CreateCoveoPlatformFields"
+                    type="custom.coveo.coveoPlatformFieldCreate" enforce-restart="false">
+                    <description>Ensures all enabled mapping target fields exist in the configured
+                        Coveo organization.</description>
                     <parameters>
-                        <parameter name="sourceFile">/src/coveo/config/field-mappings/default-commerce-fields.json</parameter>
+                        <parameter name="sourceFile">
+                            /src/coveo/config/field-mappings/default-commerce-fields.json</parameter>
                     </parameters>
                 </step>
             </flow-template>
         </split>
         <rules>
             <on-running runtime-threshold="30m" enabled="false">
-                <mark-job-as-hanging/>
+                <mark-job-as-hanging />
             </on-running>
         </rules>
         <triggers>

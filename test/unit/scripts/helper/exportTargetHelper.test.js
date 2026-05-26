@@ -171,6 +171,13 @@ describe('exportTargetHelper', function () {
                 locale: 'fr_CA',
                 language: 'fr',
                 coveoSourceId: 'source-fr',
+                coveoTrackingId: 'mondou_fr_ca',
+                coveoCountry: 'ca',
+                coveoCurrency: 'cad',
+                storefrontBaseUrl: 'https://www.mondou.com',
+                listingCategoryUrlTemplate: '/{categorySlugPath}',
+                listingBrandUrlTemplate: '/marques/{brandSlug}',
+                listingSlugAmpersandToken: 'et',
                 catalogId: 'fr-catalog',
                 mappingProfileId: 'fr-profile',
                 enabled: true,
@@ -241,10 +248,112 @@ describe('exportTargetHelper', function () {
         assert.isFalse(context.legacyMode);
         assert.strictEqual(context.targetId, 'fr-ca');
         assert.strictEqual(context.language, 'fr');
+        assert.strictEqual(context.coveoTrackingId, 'mondou_fr_ca');
+        assert.strictEqual(context.coveoCountry, 'CA');
+        assert.strictEqual(context.coveoCurrency, 'CAD');
+        assert.strictEqual(context.storefrontBaseUrl, 'https://www.mondou.com');
+        assert.strictEqual(context.listingCategoryUrlTemplate, '/{categorySlugPath}');
+        assert.strictEqual(context.listingBrandUrlTemplate, '/marques/{brandSlug}');
+        assert.strictEqual(context.listingSlugAmpersandToken, 'et');
         assert.strictEqual(context.catalogId, 'fr-catalog');
         assert.strictEqual(context.mappingProfileId, 'fr-profile');
         assert.lengthOf(context.fieldMappings, 1);
         assert.strictEqual(requestedTarget.custom.lastSync, lastSync);
+    });
+
+    it('groups locale-specific targets by tracking id for listing sync', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                buildFieldMappingContext: function () {
+                    return {
+                        mappingProfileId: '',
+                        mappingProfile: null,
+                        fieldMappings: []
+                    };
+                }
+            },
+            'dw/object/CustomObjectMgr': {
+                queryCustomObjects: function () {
+                    return createIterator([
+                        {
+                            custom: {
+                                targetId: 'en-ca',
+                                siteId: 'RefArch',
+                                locale: 'en_CA',
+                                language: 'en',
+                                coveoSourceId: 'source-en',
+                                coveoTrackingId: 'mondou',
+                                coveoCountry: 'ca',
+                                coveoCurrency: 'cad',
+                                storefrontBaseUrl: 'https://www.mondou.com',
+                                listingCategoryUrlTemplate: '/en-CA/{categorySlugPath}',
+                                listingBrandUrlTemplate: '/en-CA/brands/{brandSlug}',
+                                enabled: true
+                            }
+                        },
+                        {
+                            custom: {
+                                targetId: 'fr-ca',
+                                siteId: 'RefArch',
+                                locale: 'fr_CA',
+                                language: 'fr',
+                                coveoSourceId: 'source-fr',
+                                coveoTrackingId: 'mondou',
+                                coveoCountry: 'ca',
+                                coveoCurrency: 'cad',
+                                storefrontBaseUrl: 'https://www.mondou.com',
+                                listingCategoryUrlTemplate: '/fr-CA/{categorySlugPath}',
+                                listingBrandUrlTemplate: '/fr-CA/marques/{brandSlug}',
+                                enabled: true
+                            }
+                        }
+                    ]);
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        warn: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    ID: 'RefArch',
+                    defaultLocale: 'en_CA',
+                    preferences: {
+                        custom: {
+                            coveoOrganizationId: 'orgid',
+                            coveoSourceId: 'legacy-source',
+                            coveoCatalogLastSync: null
+                        }
+                    }
+                }
+            },
+            'dw/system/Transaction': {
+                wrap: function (callback) {
+                    callback();
+                }
+            }
+        });
+
+        var groups = helper.resolveListingSyncGroups({
+            get: function () {
+                return '';
+            }
+        });
+
+        assert.lengthOf(groups, 1);
+        assert.strictEqual(groups[0].trackingId, 'mondou');
+        assert.lengthOf(groups[0].exportContexts, 2);
+        assert.lengthOf(groups[0].existingListingReadContexts, 2);
+        assert.deepEqual(groups[0].exportContexts.map(function (context) {
+            return context.locale;
+        }), ['en_CA', 'fr_CA']);
+        assert.deepEqual(groups[0].existingListingReadContexts.map(function (context) {
+            return context.coveoTrackingId;
+        }), ['mondou', 'mondou']);
+        assert.strictEqual(groups[0].primaryContext.locale, 'en_CA');
     });
 
     it('fails fast when the site-level Coveo organization id is still a placeholder', function () {

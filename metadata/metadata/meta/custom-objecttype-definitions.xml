@@ -52,6 +52,62 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>1</min-length>
             </attribute-definition>
+            <attribute-definition attribute-id="coveoTrackingId">
+                <display-name xml:lang="x-default">Coveo Tracking ID</display-name>
+                <description xml:lang="x-default">Coveo tracking ID used to create or update CMH listing pages.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoCountry">
+                <display-name xml:lang="x-default">Coveo Country</display-name>
+                <description xml:lang="x-default">Country code used in CMH listing page rule locales.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="coveoCurrency">
+                <display-name xml:lang="x-default">Coveo Currency</display-name>
+                <description xml:lang="x-default">Currency code used in CMH listing page rule locales.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="storefrontBaseUrl">
+                <display-name xml:lang="x-default">Storefront Base URL</display-name>
+                <description xml:lang="x-default">Absolute storefront origin used to build CMH listing page URL patterns.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="listingCategoryUrlTemplate">
+                <display-name xml:lang="x-default">Listing Category URL Template</display-name>
+                <description xml:lang="x-default">Category listing URL template, for example /{categorySlugPath}.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="listingBrandUrlTemplate">
+                <display-name xml:lang="x-default">Listing Brand URL Template</display-name>
+                <description xml:lang="x-default">Brand listing URL template, for example /brands/{brandSlug} or /marques/{brandSlug}.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
+            <attribute-definition attribute-id="listingSlugAmpersandToken">
+                <display-name xml:lang="x-default">Listing Slug Ampersand Token</display-name>
+                <description xml:lang="x-default">Optional slug token used when listing names contain ampersands, for example and or et.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+            </attribute-definition>
             <attribute-definition attribute-id="catalogId">
                 <display-name xml:lang="x-default">Catalog ID</display-name>
                 <description xml:lang="x-default">Optional catalog scope for locale-specific or market-specific exports.</description>
@@ -107,6 +163,13 @@
                 <attribute attribute-id="locale"/>
                 <attribute attribute-id="language"/>
                 <attribute attribute-id="coveoSourceId"/>
+                <attribute attribute-id="coveoTrackingId"/>
+                <attribute attribute-id="coveoCountry"/>
+                <attribute attribute-id="coveoCurrency"/>
+                <attribute attribute-id="storefrontBaseUrl"/>
+                <attribute attribute-id="listingCategoryUrlTemplate"/>
+                <attribute attribute-id="listingBrandUrlTemplate"/>
+                <attribute attribute-id="listingSlugAmpersandToken"/>
                 <attribute attribute-id="catalogId"/>
                 <attribute attribute-id="mappingProfileId"/>
                 <attribute attribute-id="enabled"/>
