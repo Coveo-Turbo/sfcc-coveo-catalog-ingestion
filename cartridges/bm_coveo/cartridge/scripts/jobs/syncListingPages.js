@@ -62,7 +62,7 @@ function parseTrackingIds(value) {
  */
 function parseExcludedCategoryRoots(value) {
     var seen = {};
-    var excludedCategoryRoots = normalizeString(value).split(',').map(function (categoryRoot) {
+    return normalizeString(value).split(',').map(function (categoryRoot) {
         return normalizeString(categoryRoot).toLowerCase();
     }).filter(function (categoryRoot) {
         if (empty(categoryRoot) || seen[categoryRoot]) {
@@ -72,12 +72,6 @@ function parseExcludedCategoryRoots(value) {
         seen[categoryRoot] = true;
         return true;
     });
-
-    if (!excludedCategoryRoots.length) {
-        excludedCategoryRoots.push('products');
-    }
-
-    return excludedCategoryRoots;
 }
 
 /**

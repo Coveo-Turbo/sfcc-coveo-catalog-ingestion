@@ -122,7 +122,7 @@ describe('syncListingPages job', function () {
                 buildDesiredListingPages: function (exportContexts, options) {
                     assert.lengthOf(exportContexts, 2);
                     assert.deepEqual(options, {
-                        excludedCategoryRoots: ['products']
+                        excludedCategoryRoots: []
                     });
                     return desired.map(function (listingPage, index) {
                         listingPage.generatedType = index % 2 ? 'brand' : 'category';
@@ -617,7 +617,7 @@ describe('syncListingPages job', function () {
                 buildDesiredListingPages: function (exportContexts, options) {
                     assert.lengthOf(exportContexts, 1);
                     assert.deepEqual(options, {
-                        excludedCategoryRoots: ['products']
+                        excludedCategoryRoots: []
                     });
                     return [{
                         name: 'Holiday Gift Guide',
