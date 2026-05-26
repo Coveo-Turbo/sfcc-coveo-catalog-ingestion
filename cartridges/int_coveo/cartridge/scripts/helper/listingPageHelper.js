@@ -413,6 +413,7 @@ function buildCategoryListingPage(categoryEntry, exportContext) {
     var normalizedCategoryEntry = normalizeCategoryEntry(categoryEntry);
     var pathNames = normalizedCategoryEntry.pathNames || [];
     var categoryValue = pathNames.join('|');
+    var categoryDisplayName = pathNames.join(' > ');
     var patterns = [];
     var patternUrls = {};
     var categorySlugPath = pathNames.map(function (pathName) {
@@ -447,7 +448,7 @@ function buildCategoryListingPage(categoryEntry, exportContext) {
     }
 
     return {
-        name: categoryValue,
+        name: categoryDisplayName,
         patterns: patterns,
         pageRules: [{
             name: 'Include ec_category contains ' + categoryValue,

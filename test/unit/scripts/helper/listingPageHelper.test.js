@@ -191,7 +191,7 @@ describe('listingPageHelper', function () {
             currency: 'CAD'
         }]);
 
-        assert.strictEqual(listingPages[1].name, 'Cat|Food & Treats');
+        assert.strictEqual(listingPages[1].name, 'Cat > Food & Treats');
         assert.sameMembers(listingPages[1].patterns.map(function (pattern) {
             return pattern.url;
         }), [
@@ -219,7 +219,7 @@ describe('listingPageHelper', function () {
         assert.lengthOf(listingPages, 2);
         assert.sameMembers(listingPages.map(function (listingPage) {
             return listingPage.name;
-        }), ['Brands', 'Brands|1st Choice']);
+        }), ['Brands', 'Brands > 1st Choice']);
     });
 
     it('excludes configured root categories using root category names', function () {
@@ -240,7 +240,7 @@ describe('listingPageHelper', function () {
         assert.lengthOf(listingPages, 2);
         assert.sameMembers(listingPages.map(function (listingPage) {
             return listingPage.name;
-        }), ['Brands', 'Brands|1st Choice']);
+        }), ['Brands', 'Brands > 1st Choice']);
     });
 
     it('merges locale-specific category pages and preserves legacy brand URLs as aliases', function () {
@@ -290,13 +290,13 @@ describe('listingPageHelper', function () {
             return listingPage.name === 'Cat';
         })[0];
         var foodPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === 'Cat|Food & Treats';
+            return listingPage.name === 'Cat > Food & Treats';
         })[0];
         var brandsPage = listingPages.filter(function (listingPage) {
             return listingPage.name === 'Brands';
         })[0];
         var legacyBrandAliasPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === 'Brands|vetdiet';
+            return listingPage.name === 'Brands > vetdiet';
         })[0];
 
         assert.isOk(catPage);
@@ -378,10 +378,10 @@ describe('listingPageHelper', function () {
         assert.lengthOf(listingPages, 3);
         assert.sameMembers(listingPages.map(function (listingPage) {
             return listingPage.name;
-        }), ['Brands', 'Brands|vetdiet', "Brands|Ren's Pets"]);
+        }), ['Brands', 'Brands > vetdiet', "Brands > Ren's Pets"]);
 
         var rensPetsPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === "Brands|Ren's Pets";
+            return listingPage.name === "Brands > Ren's Pets";
         })[0];
         assert.sameMembers(rensPetsPage.patterns.map(function (pattern) {
             return pattern.url;
@@ -418,7 +418,7 @@ describe('listingPageHelper', function () {
         })[0];
 
         assert.isDefined(listingPage);
-        assert.strictEqual(listingPage.name, 'Brands|1st Choice');
+        assert.strictEqual(listingPage.name, 'Brands > 1st Choice');
         assert.strictEqual(listingPage.pageRules[0].name, 'Include ec_category contains Brands|1st Choice');
         assert.deepEqual(listingPage.pageRules[0].filters[0], {
             fieldName: 'ec_category',
@@ -453,7 +453,7 @@ describe('listingPageHelper', function () {
             },
             {
                 id: 'brand-id',
-                name: 'Brands|vetdiet',
+                name: 'Brands > vetdiet',
                 patterns: [{
                     url: 'https://www.mondou.com/legacy-vetdiet'
                 }]
@@ -773,7 +773,7 @@ describe('listingPageHelper', function () {
                 },
                 {
                     id: 'brand-id',
-                    name: 'Brands|vetdiet',
+                    name: 'Brands > vetdiet',
                     patterns: [{
                         url: 'https://www.mondou.com/categories/brands/vetdiet'
                     }]

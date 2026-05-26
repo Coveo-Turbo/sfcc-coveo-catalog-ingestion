@@ -593,7 +593,7 @@ describe('syncListingPages job', function () {
                 PAGE_TYPE_CATEGORY: 'category',
                 buildDesiredListingPages: function () {
                     return [{
-                        name: 'Brands|Acme',
+                        name: 'Brands > Acme',
                         generatedType: 'category',
                         patterns: [{
                             url: 'https://www.mondou.com/brands/acme'
