@@ -1,15 +1,14 @@
 'use strict';
 
 var CatalogMgr = require('dw/catalog/CatalogMgr');
-var ProductMgr = require('dw/catalog/ProductMgr');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 var HashSet = require('dw/util/HashSet');
 
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
 var listingPageService = require('*/cartridge/scripts/helper/listingPageService');
 
+var BRAND_CATEGORY_ROOT_ID = 'brands';
 var PAGE_TYPE_CATEGORY = 'category';
-var PAGE_TYPE_BRAND = 'brand';
 
 /**
  * Returns whether a value is empty.
@@ -117,27 +116,6 @@ function isOnlineCategory(category) {
 
     if (Object.prototype.hasOwnProperty.call(category, 'online')) {
         return category.online !== false;
-    }
-
-    return true;
-}
-
-/**
- * Returns whether a product should contribute brand listing pages.
- * @param {Object} product - Product to inspect.
- * @returns {boolean} whether product is online.
- */
-function isOnlineProduct(product) {
-    if (isEmptyValue(product)) {
-        return false;
-    }
-
-    if (typeof product.isOnline === 'function') {
-        return product.isOnline();
-    }
-
-    if (Object.prototype.hasOwnProperty.call(product, 'online')) {
-        return product.online !== false;
     }
 
     return true;
@@ -410,13 +388,34 @@ function buildRuleLocale(exportContext) {
 }
 
 /**
+ * Normalizes a category entry or path-name array for backward-compatible helper calls.
+ * @param {Object|Array} categoryEntry - Category entry or path-name array.
+ * @returns {Object} normalized category entry.
+ */
+function normalizeCategoryEntry(categoryEntry) {
+    if (Array.isArray(categoryEntry)) {
+        return {
+            pathNames: categoryEntry,
+            keyParts: []
+        };
+    }
+
+    return categoryEntry || {};
+}
+
+/**
  * Creates a category listing payload.
- * @param {Array} pathNames - Localized category path names.
+ * @param {Object|Array} categoryEntry - Category entry or path-name array.
  * @param {Object} exportContext - Export context.
  * @returns {Object} listing page payload.
  */
-function buildCategoryListingPage(pathNames, exportContext) {
+function buildCategoryListingPage(categoryEntry, exportContext) {
+    var normalizedCategoryEntry = normalizeCategoryEntry(categoryEntry);
+    var pathNames = normalizedCategoryEntry.pathNames || [];
     var categoryValue = pathNames.join('|');
+    var categoryDisplayName = pathNames.join(' > ');
+    var patterns = [];
+    var patternUrls = {};
     var categorySlugPath = pathNames.map(function (pathName) {
         return slugify(pathName, exportContext.listingSlugAmpersandToken);
     }).join('/');
@@ -425,10 +424,32 @@ function buildCategoryListingPage(pathNames, exportContext) {
         categorySlugPath: categorySlugPath,
         nameSlug: categorySlugPath
     });
+    var brandName = pathNames[pathNames.length - 1];
+    var legacyBrandPath = isLegacyBrandCategoryEntry(normalizedCategoryEntry)
+        ? renderTemplate(exportContext.listingBrandUrlTemplate, {
+            brand: brandName,
+            brandSlug: slugify(brandName, exportContext.listingSlugAmpersandToken),
+            nameSlug: slugify(brandName, exportContext.listingSlugAmpersandToken)
+        })
+        : '';
+
+    function appendPatterns(path) {
+        buildListingPatterns(exportContext.storefrontBaseUrl, path).forEach(function (pattern) {
+            if (!patternUrls[pattern.url]) {
+                patternUrls[pattern.url] = true;
+                patterns.push(pattern);
+            }
+        });
+    }
+
+    appendPatterns(renderedPath);
+    if (!isEmptyValue(legacyBrandPath)) {
+        appendPatterns(legacyBrandPath);
+    }
 
     return {
-        name: categoryValue,
-        patterns: buildListingPatterns(exportContext.storefrontBaseUrl, renderedPath),
+        name: categoryDisplayName,
+        patterns: patterns,
         pageRules: [{
             name: 'Include ec_category contains ' + categoryValue,
             locales: [buildRuleLocale(exportContext)],
@@ -447,37 +468,19 @@ function buildCategoryListingPage(pathNames, exportContext) {
 }
 
 /**
- * Creates a brand listing payload.
- * @param {string} brand - Brand value.
- * @param {Object} exportContext - Export context.
- * @returns {Object} listing page payload.
+ * Returns whether a category entry maps a former brand landing page.
+ * @param {Object} categoryEntry - Category entry.
+ * @returns {boolean} whether legacy brand URLs should be added.
  */
-function buildBrandListingPage(brand, exportContext) {
-    var brandSlug = slugify(brand, exportContext.listingSlugAmpersandToken);
-    var renderedPath = renderTemplate(exportContext.listingBrandUrlTemplate, {
-        brand: brand,
-        brandSlug: brandSlug,
-        nameSlug: brandSlug
-    });
+function isLegacyBrandCategoryEntry(categoryEntry) {
+    var keyParts = categoryEntry && categoryEntry.keyParts ? categoryEntry.keyParts : [];
+    var pathNames = categoryEntry && categoryEntry.pathNames ? categoryEntry.pathNames : [];
 
-    return {
-        name: 'Brands|' + brand,
-        patterns: buildListingPatterns(exportContext.storefrontBaseUrl, renderedPath),
-        pageRules: [{
-            name: 'Brand is ' + brand,
-            locales: [buildRuleLocale(exportContext)],
-            filters: [{
-                fieldName: 'ec_brand',
-                operator: 'isExactly',
-                value: {
-                    type: 'array',
-                    values: [brand]
-                }
-            }]
-        }],
-        trackingId: exportContext.coveoTrackingId,
-        generatedType: PAGE_TYPE_BRAND
-    };
+    return pathNames.length === 2
+        && (
+            normalizeString(keyParts[0]).toLowerCase() === BRAND_CATEGORY_ROOT_ID
+            || normalizeString(pathNames[0]).toLowerCase() === BRAND_CATEGORY_ROOT_ID
+        );
 }
 
 /**
@@ -487,31 +490,10 @@ function buildBrandListingPage(brand, exportContext) {
  * @returns {Object} locale contribution.
  */
 function buildCategoryListingPageContribution(categoryEntry, exportContext) {
-    var page = buildCategoryListingPage(categoryEntry.pathNames, exportContext);
+    var page = buildCategoryListingPage(categoryEntry, exportContext);
 
     return {
         key: 'category|' + categoryEntry.key,
-        name: page.name,
-        patternUrls: (page.patterns || []).map(function (pattern) {
-            return normalizeString(pattern.url);
-        }),
-        pageRule: page.pageRules[0],
-        trackingId: page.trackingId,
-        generatedType: page.generatedType
-    };
-}
-
-/**
- * Builds a contribution for a brand listing page in a specific locale.
- * @param {string} brand - Brand value.
- * @param {Object} exportContext - Export context.
- * @returns {Object} locale contribution.
- */
-function buildBrandListingPageContribution(brand, exportContext) {
-    var page = buildBrandListingPage(brand, exportContext);
-
-    return {
-        key: 'brand|' + normalizeString(brand).toLowerCase(),
         name: page.name,
         patternUrls: (page.patterns || []).map(function (pattern) {
             return normalizeString(pattern.url);
@@ -554,6 +536,7 @@ function collectCategoryEntries(catalog, excludedRootCategoryIds) {
         };
         categoryEntries.push({
             key: currentPath.key.join('|'),
+            keyParts: currentPath.key,
             pathNames: currentPath.pathNames,
             name: currentPath.pathNames.join('|')
         });
@@ -585,42 +568,6 @@ function collectCategoryPaths(catalog) {
 }
 
 /**
- * Collects distinct brands from online catalog products.
- * @param {Object} catalog - Catalog to inspect.
- * @returns {Array} brand values.
- */
-function collectBrands(catalog) {
-    var productIterator = ProductMgr.queryProductsInCatalog(catalog);
-    var brandKeys = {};
-    var brands = [];
-
-    try {
-        while (productIterator.hasNext()) {
-            var product = productIterator.next();
-            var brand = normalizeString(product.brand);
-            var brandKey = brand.toLowerCase();
-
-            if (isOnlineProduct(product) && !isEmptyValue(brand) && !brandKeys[brandKey]) {
-                brandKeys[brandKey] = true;
-                brands.push(brand);
-            }
-        }
-    } finally {
-        closeIterator(productIterator);
-    }
-
-    brands.sort(function (left, right) {
-        if (left.toLowerCase() === right.toLowerCase()) {
-            return 0;
-        }
-
-        return left.toLowerCase() < right.toLowerCase() ? -1 : 1;
-    });
-
-    return brands;
-}
-
-/**
  * Builds listing page contributions for the current request locale.
  * @param {Object} exportContext - Export context.
  * @param {Object} options - Build options.
@@ -628,17 +575,9 @@ function collectBrands(catalog) {
  */
 function buildLocaleListingPageContributions(exportContext, options) {
     var catalog = getTargetCatalog(exportContext);
-    var contributions = [];
-
-    collectBrands(catalog).forEach(function (brand) {
-        contributions.push(buildBrandListingPageContribution(brand, exportContext));
+    return collectCategoryEntries(catalog, options && options.excludedCategoryRoots).map(function (categoryEntry) {
+        return buildCategoryListingPageContribution(categoryEntry, exportContext);
     });
-
-    collectCategoryEntries(catalog, options && options.excludedCategoryRoots).forEach(function (categoryEntry) {
-        contributions.push(buildCategoryListingPageContribution(categoryEntry, exportContext));
-    });
-
-    return contributions;
 }
 
 /**
@@ -1067,16 +1006,12 @@ function verifyWrittenListingPages(writtenListingPages, refreshedListingPages) {
 }
 
 module.exports = {
-    PAGE_TYPE_BRAND: PAGE_TYPE_BRAND,
     PAGE_TYPE_CATEGORY: PAGE_TYPE_CATEGORY,
     buildAbsoluteUrl: buildAbsoluteUrl,
-    buildBrandListingPage: buildBrandListingPage,
-    buildBrandListingPageContribution: buildBrandListingPageContribution,
     buildCategoryListingPage: buildCategoryListingPage,
     buildCategoryListingPageContribution: buildCategoryListingPageContribution,
     buildDesiredListingPages: buildDesiredListingPages,
     chunk: chunk,
-    collectBrands: collectBrands,
     collectCategoryEntries: collectCategoryEntries,
     collectCategoryPaths: collectCategoryPaths,
     dedupeDesiredListingPages: dedupeDesiredListingPages,

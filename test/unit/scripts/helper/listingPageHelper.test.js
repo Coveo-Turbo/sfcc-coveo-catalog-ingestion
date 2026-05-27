@@ -191,7 +191,7 @@ describe('listingPageHelper', function () {
             currency: 'CAD'
         }]);
 
-        assert.strictEqual(listingPages[1].name, 'Cat|Food & Treats');
+        assert.strictEqual(listingPages[1].name, 'Cat > Food & Treats');
         assert.sameMembers(listingPages[1].patterns.map(function (pattern) {
             return pattern.url;
         }), [
@@ -219,7 +219,7 @@ describe('listingPageHelper', function () {
         assert.lengthOf(listingPages, 2);
         assert.sameMembers(listingPages.map(function (listingPage) {
             return listingPage.name;
-        }), ['Brands', 'Brands|1st Choice']);
+        }), ['Brands', 'Brands > 1st Choice']);
     });
 
     it('excludes configured root categories using root category names', function () {
@@ -240,28 +240,28 @@ describe('listingPageHelper', function () {
         assert.lengthOf(listingPages, 2);
         assert.sameMembers(listingPages.map(function (listingPage) {
             return listingPage.name;
-        }), ['Brands', 'Brands|1st Choice']);
+        }), ['Brands', 'Brands > 1st Choice']);
     });
 
-    it('merges locale-specific category and brand pages into a single CMH page per logical listing', function () {
+    it('merges locale-specific category pages and preserves legacy brand URLs as aliases', function () {
         var food = createCategory('cat-food', {
             'en_CA': 'Food & Treats',
             'fr_CA': 'Nourriture et friandises'
         }, []);
+        var brands = createCategory('brands', {
+            'en_CA': 'Brands',
+            'fr_CA': 'Marques'
+        }, [
+            createCategory('brands-vetdiet', 'vetdiet', [])
+        ]);
         var cat = createCategory('cat', {
             'en_CA': 'Cat',
             'fr_CA': 'Chat'
         }, [food]);
         var catalog = {
-            root: createCategory('root', 'Root', [cat])
+            root: createCategory('root', 'Root', [cat, brands])
         };
-        var helper = createHelper(catalog, [
-            {
-                ID: 'SKU-1',
-                brand: 'vetdiet',
-                online: true
-            }
-        ]);
+        var helper = createHelper(catalog, []);
         var listingPages = helper.buildDesiredListingPages([
             createExportContext({
                 locale: 'en_CA',
@@ -269,7 +269,7 @@ describe('listingPageHelper', function () {
                 coveoTrackingId: 'mondou',
                 coveoCountry: 'CA',
                 coveoCurrency: 'CAD',
-                listingCategoryUrlTemplate: '/en-CA/{categorySlugPath}',
+                listingCategoryUrlTemplate: '/en-CA/categories/{categorySlugPath}',
                 listingBrandUrlTemplate: '/en-CA/brands/{brandSlug}'
             }),
             createExportContext({
@@ -278,35 +278,39 @@ describe('listingPageHelper', function () {
                 coveoTrackingId: 'mondou',
                 coveoCountry: 'CA',
                 coveoCurrency: 'CAD',
-                listingCategoryUrlTemplate: '/fr-CA/{categorySlugPath}',
+                listingCategoryUrlTemplate: '/fr-CA/categories/{categorySlugPath}',
                 listingBrandUrlTemplate: '/fr-CA/marques/{brandSlug}',
                 listingSlugAmpersandToken: 'et'
             })
         ]);
 
-        assert.lengthOf(listingPages, 3);
+        assert.lengthOf(listingPages, 4);
 
         var catPage = listingPages.filter(function (listingPage) {
             return listingPage.name === 'Cat';
         })[0];
         var foodPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === 'Cat|Food & Treats';
+            return listingPage.name === 'Cat > Food & Treats';
         })[0];
-        var brandPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === 'Brands|vetdiet';
+        var brandsPage = listingPages.filter(function (listingPage) {
+            return listingPage.name === 'Brands';
+        })[0];
+        var legacyBrandAliasPage = listingPages.filter(function (listingPage) {
+            return listingPage.name === 'Brands > vetdiet';
         })[0];
 
         assert.isOk(catPage);
         assert.isOk(foodPage);
-        assert.isOk(brandPage);
+        assert.isOk(brandsPage);
+        assert.isOk(legacyBrandAliasPage);
 
         assert.sameMembers(catPage.patterns.map(function (pattern) {
             return pattern.url;
         }), [
-            'https://www.mondou.com/en-CA/cat',
-            '/en-CA/cat',
-            'https://www.mondou.com/fr-CA/chat',
-            '/fr-CA/chat'
+            'https://www.mondou.com/en-CA/categories/cat',
+            '/en-CA/categories/cat',
+            'https://www.mondou.com/fr-CA/categories/chat',
+            '/fr-CA/categories/chat'
         ]);
         assert.lengthOf(catPage.pageRules, 2);
         assert.sameMembers(catPage.pageRules[0].locales.concat(catPage.pageRules[1].locales).map(function (locale) {
@@ -319,10 +323,10 @@ describe('listingPageHelper', function () {
         assert.sameMembers(foodPage.patterns.map(function (pattern) {
             return pattern.url;
         }), [
-            'https://www.mondou.com/en-CA/cat/food-and-treats',
-            '/en-CA/cat/food-and-treats',
-            'https://www.mondou.com/fr-CA/chat/nourriture-et-friandises',
-            '/fr-CA/chat/nourriture-et-friandises'
+            'https://www.mondou.com/en-CA/categories/cat/food-and-treats',
+            '/en-CA/categories/cat/food-and-treats',
+            'https://www.mondou.com/fr-CA/categories/chat/nourriture-et-friandises',
+            '/fr-CA/categories/chat/nourriture-et-friandises'
         ]);
         assert.lengthOf(foodPage.pageRules, 2);
         assert.sameMembers(foodPage.pageRules.map(function (rule) {
@@ -332,113 +336,96 @@ describe('listingPageHelper', function () {
             'Chat|Nourriture et friandises'
         ]);
 
-        assert.sameMembers(brandPage.patterns.map(function (pattern) {
+        assert.sameMembers(brandsPage.pageRules.map(function (rule) {
+            return rule.filters[0].value.values[0];
+        }), ['Brands', 'Marques']);
+
+        assert.sameMembers(legacyBrandAliasPage.patterns.map(function (pattern) {
             return pattern.url;
         }), [
+            'https://www.mondou.com/en-CA/categories/brands/vetdiet',
+            '/en-CA/categories/brands/vetdiet',
             'https://www.mondou.com/en-CA/brands/vetdiet',
             '/en-CA/brands/vetdiet',
+            'https://www.mondou.com/fr-CA/categories/marques/vetdiet',
+            '/fr-CA/categories/marques/vetdiet',
             'https://www.mondou.com/fr-CA/marques/vetdiet',
             '/fr-CA/marques/vetdiet'
         ]);
-        assert.lengthOf(brandPage.pageRules, 1);
-        assert.lengthOf(brandPage.pageRules[0].locales, 2);
-        assert.sameMembers(brandPage.pageRules[0].locales.map(function (locale) {
-            return locale.language + '_' + locale.country;
-        }), ['en_CA', 'fr_CA']);
-        assert.deepEqual(brandPage.pageRules[0].filters[0], {
-            fieldName: 'ec_brand',
-            operator: 'isExactly',
-            value: {
-                type: 'array',
-                values: ['vetdiet']
-            }
-        });
+        assert.lengthOf(legacyBrandAliasPage.pageRules, 2);
+        assert.sameMembers(legacyBrandAliasPage.pageRules.map(function (rule) {
+            return rule.filters[0].value.values[0];
+        }), ['Brands|vetdiet', 'Marques|vetdiet']);
+        assert.strictEqual(legacyBrandAliasPage.pageRules[0].filters[0].fieldName, 'ec_category');
     });
 
-    it('generates brand listing pages from distinct online product brands', function () {
+    it('generates former brand landing pages from category taxonomy', function () {
         var catalog = {
-            root: createCategory('root', 'Root', [])
+            root: createCategory('root', 'Root', [
+                createCategory('brands', 'Brands', [
+                    createCategory('brands-vetdiet', 'vetdiet', []),
+                    createCategory('brands-rens-pets', "Ren's Pets", [])
+                ])
+            ])
         };
-        var helper = createHelper(catalog, [
-            {
-                ID: 'SKU-1',
-                brand: 'vetdiet',
-                online: true
-            },
-            {
-                ID: 'SKU-2',
-                brand: ' Vetdiet ',
-                online: true
-            },
-            {
-                ID: 'SKU-3',
-                brand: "Ren's Pets",
-                online: true
-            },
-            {
-                ID: 'SKU-4',
-                brand: 'Offline Brand',
-                online: false
-            },
-            {
-                ID: 'SKU-5',
-                brand: '',
-                online: true
-            }
-        ]);
+        var helper = createHelper(catalog, []);
 
-        var listingPages = helper.buildDesiredListingPages(createExportContext());
+        var listingPages = helper.buildDesiredListingPages(createExportContext({
+            listingCategoryUrlTemplate: '/categories/{categorySlugPath}',
+            listingBrandUrlTemplate: '/brands/{brandSlug}'
+        }));
 
-        assert.lengthOf(listingPages, 2);
+        assert.lengthOf(listingPages, 3);
         assert.sameMembers(listingPages.map(function (listingPage) {
             return listingPage.name;
-        }), ['Brands|vetdiet', "Brands|Ren's Pets"]);
+        }), ['Brands', 'Brands > vetdiet', "Brands > Ren's Pets"]);
 
         var rensPetsPage = listingPages.filter(function (listingPage) {
-            return listingPage.name === "Brands|Ren's Pets";
+            return listingPage.name === "Brands > Ren's Pets";
         })[0];
         assert.sameMembers(rensPetsPage.patterns.map(function (pattern) {
             return pattern.url;
         }), [
+            'https://www.mondou.com/categories/brands/rens-pets',
+            '/categories/brands/rens-pets',
             'https://www.mondou.com/brands/rens-pets',
             '/brands/rens-pets'
         ]);
         assert.deepEqual(rensPetsPage.pageRules[0].filters[0], {
-            fieldName: 'ec_brand',
-            operator: 'isExactly',
+            fieldName: 'ec_category',
+            operator: 'contains',
             value: {
                 type: 'array',
-                values: ["Ren's Pets"]
+                values: ["Brands|Ren's Pets"]
             }
         });
     });
 
-    it('prefers ec_brand rules when brand and category listing URLs overlap', function () {
+    it('keeps ec_category rules when legacy brand and category URLs overlap', function () {
         var brandsCategory = createCategory('brands', 'Brands', [
             createCategory('1st-choice', '1st Choice', [])
         ]);
         var helper = createHelper({
             root: createCategory('root', 'Root', [brandsCategory])
-        }, [{
-            ID: 'SKU-1',
-            brand: '1st Choice',
-            online: true
-        }]);
-        var desiredPages = helper.buildDesiredListingPages(createExportContext());
+        }, []);
+        var desiredPages = helper.buildDesiredListingPages(createExportContext({
+            listingCategoryUrlTemplate: '/{categorySlugPath}',
+            listingBrandUrlTemplate: '/brands/{brandSlug}'
+        }));
         var syncPlan = helper.planListingPageChanges(desiredPages, []);
         var listingPage = syncPlan.creates.filter(function (page) {
             return page.patterns[0].url === 'https://www.mondou.com/brands/1st-choice';
         })[0];
 
         assert.isDefined(listingPage);
-        assert.strictEqual(listingPage.name, 'Brands|1st Choice');
-        assert.strictEqual(listingPage.pageRules[0].name, 'Brand is 1st Choice');
+        assert.strictEqual(listingPage.name, 'Brands > 1st Choice');
+        assert.strictEqual(listingPage.pageRules[0].name, 'Include ec_category contains Brands|1st Choice');
         assert.deepEqual(listingPage.pageRules[0].filters[0], {
-            fieldName: 'ec_brand',
-            operator: 'isExactly',
+            fieldName: 'ec_category',
+            operator: 'contains',
             value: {
                 type: 'array',
-                values: ['1st Choice']
+                values: ['Brands|1st Choice']
             }
         });
     });
@@ -448,9 +435,15 @@ describe('listingPageHelper', function () {
             root: createCategory('root', 'Root', [])
         }, []);
         var categoryPage = helper.buildCategoryListingPage(['Cat'], createExportContext());
-        var brandPage = helper.buildBrandListingPage('vetdiet', createExportContext());
+        var brandCategoryPage = helper.buildCategoryListingPage({
+            keyParts: ['brands', 'brands-vetdiet'],
+            pathNames: ['Brands', 'vetdiet']
+        }, createExportContext({
+            listingCategoryUrlTemplate: '/categories/{categorySlugPath}',
+            listingBrandUrlTemplate: '/brands/{brandSlug}'
+        }));
 
-        var syncPlan = helper.planListingPageChanges([categoryPage, brandPage], [
+        var syncPlan = helper.planListingPageChanges([categoryPage, brandCategoryPage], [
             {
                 id: 'category-id',
                 name: 'Old Cat Name',
@@ -460,7 +453,7 @@ describe('listingPageHelper', function () {
             },
             {
                 id: 'brand-id',
-                name: 'Brands|vetdiet',
+                name: 'Brands > vetdiet',
                 patterns: [{
                     url: 'https://www.mondou.com/legacy-vetdiet'
                 }]
@@ -472,7 +465,14 @@ describe('listingPageHelper', function () {
         assert.strictEqual(syncPlan.updates[0].id, 'category-id');
         assert.strictEqual(syncPlan.updates[0].name, 'Cat');
         assert.strictEqual(syncPlan.updates[1].id, 'brand-id');
-        assert.strictEqual(syncPlan.updates[1].patterns[0].url, 'https://www.mondou.com/brands/vetdiet');
+        assert.sameMembers(syncPlan.updates[1].patterns.map(function (pattern) {
+            return pattern.url;
+        }), [
+            'https://www.mondou.com/categories/brands/vetdiet',
+            '/categories/brands/vetdiet',
+            'https://www.mondou.com/brands/vetdiet',
+            '/brands/vetdiet'
+        ]);
         assert.notProperty(syncPlan.updates[0], 'generatedType');
     });
 
@@ -754,10 +754,16 @@ describe('listingPageHelper', function () {
             root: createCategory('root', 'Root', [])
         }, []);
         var categoryPage = helper.buildCategoryListingPage(['Cat'], createExportContext());
-        var brandPage = helper.buildBrandListingPage('vetdiet', createExportContext());
+        var brandCategoryPage = helper.buildCategoryListingPage({
+            keyParts: ['brands', 'brands-vetdiet'],
+            pathNames: ['Brands', 'vetdiet']
+        }, createExportContext({
+            listingCategoryUrlTemplate: '/categories/{categorySlugPath}',
+            listingBrandUrlTemplate: '/brands/{brandSlug}'
+        }));
 
         assert.doesNotThrow(function () {
-            helper.verifyWrittenListingPages([categoryPage, brandPage], [
+            helper.verifyWrittenListingPages([categoryPage, brandCategoryPage], [
                 {
                     id: 'category-id',
                     name: 'Cat',
@@ -767,9 +773,9 @@ describe('listingPageHelper', function () {
                 },
                 {
                     id: 'brand-id',
-                    name: 'vetdiet',
+                    name: 'Brands > vetdiet',
                     patterns: [{
-                        url: 'https://www.mondou.com/brands/vetdiet'
+                        url: 'https://www.mondou.com/categories/brands/vetdiet'
                     }]
                 }
             ]);

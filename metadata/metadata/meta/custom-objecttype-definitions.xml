@@ -94,7 +94,7 @@
             </attribute-definition>
             <attribute-definition attribute-id="listingBrandUrlTemplate">
                 <display-name xml:lang="x-default">Listing Brand URL Template</display-name>
-                <description xml:lang="x-default">Brand listing URL template, for example /brands/{brandSlug} or /marques/{brandSlug}.</description>
+                <description xml:lang="x-default">Optional legacy URL alias template for category pages under brand branches, for example /brands/{brandSlug} or /marques/{brandSlug}.</description>
                 <type>string</type>
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
