@@ -125,6 +125,20 @@
       "sortOrder": "90"
     },
     {
+      "mappingId": "treat-type",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "treatType",
+      "targetField": "ec_treat_type",
+      "valueMode": "displayValueArray",
+      "enabled": true,
+      "coveoField": {
+        "facet": true
+      },
+      "sortOrder": "95"
+    },
+    {
       "mappingId": "litter-type",
       "appliesTo": "Both",
       "sourceObject": "product",
