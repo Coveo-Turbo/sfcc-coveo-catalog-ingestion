@@ -160,6 +160,9 @@
       "sourceAttributeId": "toyType",
       "targetField": "ec_toy_type",
       "valueMode": "displayValueArray",
+      "coveoField": {
+        "facet": true
+      },
       "enabled": true,
       "sortOrder": "110"
     },
@@ -218,6 +221,9 @@
       "sourceAttributeId": "ranges",
       "targetField": "ec_range",
       "valueMode": "displayValueArray",
+      "coveoField": {
+        "facet": true
+      },
       "enabled": true,
       "sortOrder": "160"
     },
@@ -229,6 +235,9 @@
       "sourceAttributeId": "specificCare",
       "targetField": "ec_specific_care",
       "valueMode": "displayValueArray",
+      "coveoField": {
+        "facet": true
+      },
       "enabled": true,
       "sortOrder": "170"
     },
@@ -240,6 +249,9 @@
       "sourceAttributeId": "specificNeeds",
       "targetField": "ec_specific_needs",
       "valueMode": "displayValueArray",
+      "coveoField": {
+        "facet": true
+      },
       "enabled": true,
       "sortOrder": "180"
     },
@@ -251,6 +263,9 @@
       "sourceAttributeId": "Thematique",
       "targetField": "ec_theme",
       "valueMode": "displayValue",
+      "coveoField": {
+        "facet": true
+      },
       "enabled": true,
       "sortOrder": "190"
     },
@@ -262,6 +277,9 @@
       "sourceAttributeId": "Origine",
       "targetField": "ec_origin",
       "valueMode": "displayValueArray",
+      "coveoField": {
+        "facet": true
+      },
       "enabled": true,
       "sortOrder": "200"
     },
@@ -481,6 +499,9 @@
       "sourceAttributeId": "webProdDefinition",
       "targetField": "ec_web_product_definition",
       "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
       "enabled": true,
       "sortOrder": "380"
     },
@@ -519,6 +540,272 @@
       "valueMode": "raw",
       "enabled": true,
       "sortOrder": "410"
+    },
+    {
+      "mappingId": "available",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "available",
+      "targetField": "ec_available",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "420"
+    },
+    {
+      "mappingId": "facebook-enabled",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "facebookEnabled",
+      "targetField": "ec_facebook_enabled",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "430"
+    },
+    {
+      "mappingId": "online-flag",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "onlineFlag",
+      "targetField": "ec_online_flag",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "440"
+    },
+    {
+      "mappingId": "pinterest-enabled",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "pinterestEnabled",
+      "targetField": "ec_pinterest_enabled",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "450"
+    },
+    {
+      "mappingId": "searchable",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "searchable",
+      "targetField": "ec_searchable",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "460"
+    },
+    {
+      "mappingId": "acces-plus",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "accesPlus",
+      "targetField": "ec_acces_plus",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "470"
+    },
+    {
+      "mappingId": "is-newtest",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "isNewtest",
+      "targetField": "ec_is_newtest",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "480"
+    },
+    {
+      "mappingId": "is-new",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "isNew",
+      "targetField": "ec_is_new",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "490"
+    },
+    {
+      "mappingId": "additional-shipping-fees",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "additionalShippingFees",
+      "targetField": "ec_additional_shipping_fees",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "500"
+    },
+    {
+      "mappingId": "scented-item",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "scentedItem",
+      "targetField": "ec_scented_item",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "510"
+    },
+    {
+      "mappingId": "ac-enable-double-points",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "acEnableDoublePoints",
+      "targetField": "ec_ac_enable_double_points",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "520"
+    },
+    {
+      "mappingId": "excluded-from-feeds",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "excludedFromFeeds",
+      "targetField": "ec_excluded_from_feeds",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "530"
+    },
+    {
+      "mappingId": "is-sale",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "isSale",
+      "targetField": "ec_is_sale",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "540"
+    },
+    {
+      "mappingId": "additional-information-1",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "additionalInformation1",
+      "targetField": "ec_additional_information1",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "550"
+    },
+    {
+      "mappingId": "additional-information-2",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "additionalInformation2",
+      "targetField": "ec_additional_information2",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "560"
+    },
+    {
+      "mappingId": "additional-information-3",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "additionalInformation3",
+      "targetField": "ec_additional_information3",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "570"
+    },
+    {
+      "mappingId": "additional-information-4",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "additionalInformation4",
+      "targetField": "ec_additional_information4",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "580"
+    },
+    {
+      "mappingId": "additional-information-5",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "additionalInformation5",
+      "targetField": "ec_additional_information5",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "590"
+    },
+    {
+      "mappingId": "additional-information-6",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "custom",
+      "sourceAttributeId": "additionalInformation6",
+      "targetField": "ec_additional_information6",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "600"
     }
   ]
 }

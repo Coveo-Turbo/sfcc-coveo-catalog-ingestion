@@ -330,16 +330,7 @@ function createFieldsFromConfig(config, options) {
     });
     summary.response = response;
 
-    if (isFieldAlreadyExistsResponse(response)) {
-        summary.response = {
-            ok: true,
-            status: 'OK',
-            object: {}
-        };
-        return summary;
-    }
-
-    if (!response.ok) {
+    if (isFieldAlreadyExistsResponse(response) || !response.ok) {
         summary.fallbackMode = 'single';
         summary.individualResults = createFieldsIndividually(generatedFields.fields, organizationId);
 

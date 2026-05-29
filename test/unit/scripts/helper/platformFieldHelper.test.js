@@ -429,7 +429,8 @@ describe('platformFieldHelper', function () {
         assert.strictEqual(summary.individualResults.failed[0].name, 'ec_bird_type');
     });
 
-    it('treats existing fields as a successful no-op', function () {
+    it('retries individual field creation when the batch reports existing fields', function () {
+        var batchCallCount = 0;
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/platformFieldHelper'), {
             'dw/system/Logger': {
                 getLogger: function () {
@@ -458,12 +459,21 @@ describe('platformFieldHelper', function () {
                 }
             },
             '*/cartridge/scripts/services/platformFieldService': {
-                createFields: function () {
+                createFields: function (fields) {
+                    batchCallCount += 1;
+
+                    if (batchCallCount === 1) {
+                        return {
+                            ok: false,
+                            status: 'ERROR',
+                            error: 412,
+                            errorMessage: '{"message":"Fields [ec_animal_type] already exist.","errorCode":"FIELD_ALREADY_EXISTS"}'
+                        };
+                    }
+
                     return {
-                        ok: false,
-                        status: 'ERROR',
-                        error: 412,
-                        errorMessage: '{"message":"Fields [ec_animal_type] already exist.","errorCode":"FIELD_ALREADY_EXISTS"}'
+                        ok: true,
+                        object: {}
                     };
                 }
             }
@@ -490,6 +500,103 @@ describe('platformFieldHelper', function () {
         });
 
         assert.strictEqual(summary.response.ok, true);
+        assert.strictEqual(summary.fallbackMode, 'single');
+        assert.deepEqual(summary.individualResults.succeeded, ['ec_animal_type']);
+        assert.deepEqual(summary.individualResults.failed, []);
+    });
+
+    it('keeps creating missing fields when the batch mixes existing and new definitions', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/platformFieldHelper'), {
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    preferences: {
+                        custom: {
+                            coveoOrganizationId: 'my-org'
+                        }
+                    }
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingImportHelper': {
+                normalizeImportConfig: function (config) {
+                    return config;
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                validateFieldMappings: function (mappings) {
+                    return mappings;
+                }
+            },
+            '*/cartridge/scripts/services/platformFieldService': {
+                createFields: function (fields) {
+                    if (fields.length > 1) {
+                        return {
+                            ok: false,
+                            status: 'ERROR',
+                            error: 412,
+                            errorMessage: '{"message":"Fields [ec_animal_type] already exist.","errorCode":"FIELD_ALREADY_EXISTS"}'
+                        };
+                    }
+
+                    if (fields[0].name === 'ec_animal_type') {
+                        return {
+                            ok: false,
+                            status: 'ERROR',
+                            error: 412,
+                            errorMessage: '{"message":"Fields [ec_animal_type] already exist.","errorCode":"FIELD_ALREADY_EXISTS"}'
+                        };
+                    }
+
+                    return {
+                        ok: true,
+                        object: {}
+                    };
+                }
+            }
+        });
+        var summary = helper.createFieldsFromConfig({
+            profile: {
+                profileId: 'mondou-commerce-fields',
+                siteId: 'RefArch'
+            },
+            mappings: [
+                {
+                    mappingId: 'animal-type',
+                    siteId: 'RefArch',
+                    profileId: 'mondou-commerce-fields',
+                    enabled: true,
+                    appliesTo: 'Both',
+                    sourceObject: 'product',
+                    sourceScope: 'custom',
+                    sourceAttributeId: 'AnimalType',
+                    targetField: 'ec_animal_type',
+                    valueMode: 'displayValue'
+                },
+                {
+                    mappingId: 'bird-type',
+                    siteId: 'RefArch',
+                    profileId: 'mondou-commerce-fields',
+                    enabled: true,
+                    appliesTo: 'Both',
+                    sourceObject: 'product',
+                    sourceScope: 'custom',
+                    sourceAttributeId: 'BirdsCategories',
+                    targetField: 'ec_bird_type',
+                    valueMode: 'displayValue'
+                }
+            ]
+        });
+
+        assert.strictEqual(summary.response.ok, true);
+        assert.strictEqual(summary.fallbackMode, 'single');
+        assert.deepEqual(summary.individualResults.succeeded, ['ec_animal_type', 'ec_bird_type']);
+        assert.deepEqual(summary.individualResults.failed, []);
     });
 
     it('rejects mappings whose target field is not a valid Coveo field name', function () {
