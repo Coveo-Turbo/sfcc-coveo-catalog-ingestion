@@ -291,6 +291,39 @@ function isFieldAlreadyExistsResponse(response) {
 }
 
 /**
+ * Returns field names reported as already existing by the Platform API.
+ * @param {Object} response - Service response.
+ * @returns {Array} existing field names.
+ */
+function getAlreadyExistingFieldNames(response) {
+    var errorMessage = normalizeString(response && response.errorMessage);
+    var parsedMessage = '';
+    var match = null;
+
+    if (isEmptyValue(errorMessage)) {
+        return [];
+    }
+
+    try {
+        parsedMessage = JSON.parse(errorMessage).message || '';
+    } catch (error) {
+        parsedMessage = errorMessage;
+    }
+
+    match = /Fields \[([^\]]+)\] already exist\./.exec(parsedMessage);
+
+    if (!match || isEmptyValue(match[1])) {
+        return [];
+    }
+
+    return match[1].split(',').map(function (fieldName) {
+        return normalizeString(fieldName);
+    }).filter(function (fieldName) {
+        return !isEmptyValue(fieldName);
+    });
+}
+
+/**
  * Creates missing platform fields from the JSON payload.
  * @param {Object} config - Parsed JSON payload.
  * @param {Object} options - Runtime options.
@@ -300,6 +333,9 @@ function createFieldsFromConfig(config, options) {
     var organizationId = getOrganizationId(options);
     var generatedFields = buildFieldDefinitionsFromConfig(config);
     var response = null;
+    var existingFieldNames = [];
+    var existingFieldLookup = {};
+    var missingFieldDefinitions = [];
     var summary = {
         profileId: generatedFields.profile.profileId,
         siteId: generatedFields.profile.siteId,
@@ -330,7 +366,47 @@ function createFieldsFromConfig(config, options) {
     });
     summary.response = response;
 
-    if (isFieldAlreadyExistsResponse(response) || !response.ok) {
+    if (isFieldAlreadyExistsResponse(response)) {
+        existingFieldNames = getAlreadyExistingFieldNames(response);
+        summary.existingFieldNames = existingFieldNames;
+
+        if (existingFieldNames.length === generatedFields.fields.length) {
+            summary.response = {
+                ok: true,
+                status: 'OK',
+                object: {}
+            };
+
+            return summary;
+        }
+
+        existingFieldNames.forEach(function (fieldName) {
+            existingFieldLookup[fieldName] = true;
+        });
+
+        missingFieldDefinitions = generatedFields.fields.filter(function (fieldDefinition) {
+            return !existingFieldLookup[fieldDefinition.name];
+        });
+
+        summary.fallbackMode = 'single';
+        summary.individualResults = createFieldsIndividually(missingFieldDefinitions, organizationId);
+
+        if (summary.individualResults.failed.length === 0) {
+            Logger.info(
+                'Recovered Coveo platform field creation for profile {0} on site {1} by creating {2} missing fields individually after the batch reported {3} existing fields.',
+                summary.profileId,
+                summary.siteId,
+                missingFieldDefinitions.length,
+                existingFieldNames.length
+            );
+
+            summary.response = {
+                ok: true,
+                status: 'OK',
+                object: {}
+            };
+        }
+    } else if (!response.ok) {
         summary.fallbackMode = 'single';
         summary.individualResults = createFieldsIndividually(generatedFields.fields, organizationId);
 

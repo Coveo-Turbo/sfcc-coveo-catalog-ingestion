@@ -429,7 +429,7 @@ describe('platformFieldHelper', function () {
         assert.strictEqual(summary.individualResults.failed[0].name, 'ec_bird_type');
     });
 
-    it('retries individual field creation when the batch reports existing fields', function () {
+    it('treats a batch of already existing fields as a successful no-op', function () {
         var batchCallCount = 0;
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/platformFieldHelper'), {
             'dw/system/Logger': {
@@ -500,12 +500,13 @@ describe('platformFieldHelper', function () {
         });
 
         assert.strictEqual(summary.response.ok, true);
-        assert.strictEqual(summary.fallbackMode, 'single');
-        assert.deepEqual(summary.individualResults.succeeded, ['ec_animal_type']);
-        assert.deepEqual(summary.individualResults.failed, []);
+        assert.isUndefined(summary.fallbackMode);
+        assert.isUndefined(summary.individualResults);
+        assert.strictEqual(batchCallCount, 1);
     });
 
-    it('keeps creating missing fields when the batch mixes existing and new definitions', function () {
+    it('keeps creating only missing fields when the batch mixes existing and new definitions', function () {
+        var createdFieldNames = [];
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/platformFieldHelper'), {
             'dw/system/Logger': {
                 getLogger: function () {
@@ -544,14 +545,7 @@ describe('platformFieldHelper', function () {
                         };
                     }
 
-                    if (fields[0].name === 'ec_animal_type') {
-                        return {
-                            ok: false,
-                            status: 'ERROR',
-                            error: 412,
-                            errorMessage: '{"message":"Fields [ec_animal_type] already exist.","errorCode":"FIELD_ALREADY_EXISTS"}'
-                        };
-                    }
+                    createdFieldNames.push(fields[0].name);
 
                     return {
                         ok: true,
@@ -595,8 +589,9 @@ describe('platformFieldHelper', function () {
 
         assert.strictEqual(summary.response.ok, true);
         assert.strictEqual(summary.fallbackMode, 'single');
-        assert.deepEqual(summary.individualResults.succeeded, ['ec_animal_type', 'ec_bird_type']);
+        assert.deepEqual(summary.individualResults.succeeded, ['ec_bird_type']);
         assert.deepEqual(summary.individualResults.failed, []);
+        assert.deepEqual(createdFieldNames, ['ec_bird_type']);
     });
 
     it('rejects mappings whose target field is not a valid Coveo field name', function () {

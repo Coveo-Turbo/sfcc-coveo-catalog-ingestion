@@ -806,6 +806,20 @@
       },
       "enabled": true,
       "sortOrder": "600"
+    },
+    {
+      "mappingId": "creation-date",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "creationDate",
+      "targetField": "ec_creation_date",
+      "valueMode": "raw",
+      "coveoField": {
+        "type": "DATE"
+      },
+      "enabled": true,
+      "sortOrder": "610"
     }
   ]
 }
