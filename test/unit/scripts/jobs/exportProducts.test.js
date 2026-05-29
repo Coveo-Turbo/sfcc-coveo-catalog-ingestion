@@ -95,6 +95,12 @@ describe('exportProducts job', function () {
                     return [];
                 }
             },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                DEFAULT_STATE_PATH: '/src/coveo/state/purchase-enrichment/',
+                attachSnapshotsToExportContext: function () { return []; },
+                ensureMetricFields: function () {},
+                markFullExportApplied: function () {}
+            },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {
                     return {
@@ -231,6 +237,12 @@ describe('exportProducts job', function () {
                     return [];
                 }
             },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                DEFAULT_STATE_PATH: '/src/coveo/state/purchase-enrichment/',
+                attachSnapshotsToExportContext: function () { return []; },
+                ensureMetricFields: function () {},
+                markFullExportApplied: function () {}
+            },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {
                     return {
@@ -335,6 +347,12 @@ describe('exportProducts job', function () {
                 processProducts: function () {
                     return [];
                 }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                DEFAULT_STATE_PATH: '/src/coveo/state/purchase-enrichment/',
+                attachSnapshotsToExportContext: function () { return []; },
+                ensureMetricFields: function () {},
+                markFullExportApplied: function () {}
             },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {
@@ -479,6 +497,12 @@ describe('exportProducts job', function () {
                 processProducts: function () {
                     return [];
                 }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                DEFAULT_STATE_PATH: '/src/coveo/state/purchase-enrichment/',
+                attachSnapshotsToExportContext: function () { return []; },
+                ensureMetricFields: function () {},
+                markFullExportApplied: function () {}
             },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {

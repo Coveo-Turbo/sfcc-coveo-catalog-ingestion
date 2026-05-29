@@ -266,6 +266,9 @@ describe('productRequestGenerator', function () {
                     return payload;
                 }
             },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
@@ -347,6 +350,9 @@ describe('productRequestGenerator', function () {
                     payload.ec_name = product.name;
                     return payload;
                 }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
             },
             'dw/system/Logger': {
                 getLogger: function () {
@@ -467,6 +473,9 @@ describe('productRequestGenerator', function () {
                     return payload;
                 }
             },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
@@ -537,6 +546,123 @@ describe('productRequestGenerator', function () {
         }));
     });
 
+    it('applies units-sold metrics to grouped products and exact matching variants', function () {
+        var capturedMetricCalls = [];
+        var masterProduct = createProduct({
+            ID: 'MASTER-2',
+            master: true
+        });
+        var redVariantSmall = createProduct({
+            ID: '1000879',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'red',
+                size: 'small'
+            }
+        });
+        var redVariantMedium = createProduct({
+            ID: '1000880',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'red',
+                size: 'medium'
+            }
+        });
+
+        masterProduct.variants = createArrayWrapper([
+            redVariantSmall,
+            redVariantMedium
+        ]);
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return masterProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                getLanguageFromLocale: function (locale) {
+                    return locale.split(/[-_]/)[0].toLowerCase();
+                }
+            },
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function (payload, metricContext) {
+                    capturedMetricCalls.push({
+                        documentId: payload.documentId,
+                        objecttype: payload.objecttype,
+                        aliases: metricContext.aliases
+                    });
+
+                    if (payload.objecttype === 'Product') {
+                        payload.ec_units_sold_90d = 5;
+                    }
+
+                    if (payload.objecttype === 'Variant' && payload.ec_variant_id === '1000879') {
+                        payload.ec_units_sold_90d = 2;
+                    }
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('MASTER-2');
+        var productExport = exports.find(function (item) {
+            return item.objecttype === 'Product';
+        });
+        var matchingVariant = exports.find(function (item) {
+            return item.objecttype === 'Variant' && item.ec_variant_id === '1000879';
+        });
+        var otherVariant = exports.find(function (item) {
+            return item.objecttype === 'Variant' && item.ec_variant_id === '1000880';
+        });
+
+        assert.strictEqual(productExport.ec_units_sold_90d, 5);
+        assert.strictEqual(matchingVariant.ec_units_sold_90d, 2);
+        assert.notProperty(otherVariant, 'ec_units_sold_90d');
+        assert.deepEqual(capturedMetricCalls[0].aliases, ['MASTER-2-red', '1000879', '1000880']);
+        assert.deepEqual(capturedMetricCalls[1].aliases, ['1000879']);
+    });
+
     it('exports all valid category hierarchies while preserving the primary hierarchy separately', function () {
         var menCategory = createCategory('men', 'Men');
         var shoesCategory = createCategory('men-shoes', 'Shoes', {
@@ -596,6 +722,9 @@ describe('productRequestGenerator', function () {
                     payload.ec_name = product.name;
                     return payload;
                 }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
             },
             'dw/system/Logger': {
                 getLogger: function () {
@@ -696,6 +825,9 @@ describe('productRequestGenerator', function () {
                     return payload;
                 }
             },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
@@ -770,6 +902,9 @@ describe('productRequestGenerator', function () {
                     return payload;
                 }
             },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
@@ -839,6 +974,9 @@ describe('productRequestGenerator', function () {
                     return payload;
                 }
             },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
             'dw/system/Logger': {
                 getLogger: function () {
                     return {
@@ -904,6 +1042,9 @@ describe('productRequestGenerator', function () {
                     payload.ec_name = product.name;
                     return payload;
                 }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
             },
             'dw/system/Logger': {
                 getLogger: function () {
@@ -971,6 +1112,9 @@ describe('productRequestGenerator', function () {
                     payload.ec_name = product.name;
                     return payload;
                 }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
             },
             'dw/system/Logger': {
                 getLogger: function () {

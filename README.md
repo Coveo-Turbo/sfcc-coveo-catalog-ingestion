@@ -6,6 +6,7 @@ This repository contains the SFCC cartridges used to export catalog data to Cove
 
 - `bm_coveo` for Business Manager job step definitions
 - `int_coveo` for server-side catalog selection, payload generation, validation, and Stream API submission
+- rolling purchase enrichment support that can generate shared IMPEX snapshots and inject dynamic `ec_units_sold_<window>d` fields into product exports
 
 The storefront sample integration that existed in the archived `coveo/SFCC-Cartridge` repository is intentionally removed from this maintained version.
 
@@ -13,6 +14,7 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
 
 - Full exports upload validated `addOrUpdate` batches through file containers and finish with `deleteolderthan`.
 - Delta exports use the resolved export target baseline and only export changed root products.
+- Purchase enrichment can generate a rolling Usage Analytics export, aggregate purchased units by `ec_product_id`, store a shared snapshot per `trackingId`, and let full or delta exports emit dynamic `ec_units_sold_<window>d` fields on exported `Product` items.
 - Product and variant identifiers follow the modern Coveo Commerce schema:
   - `ec_product_id` on `Product` and `Variant`
   - `ec_variant_id` on `Variant`
@@ -59,8 +61,10 @@ These tests cover:
 - Import [`metadata/metadata.zip`](metadata/metadata.zip).
 - Configure `int.coveo.api.cred` with the real Push API URL and secret.
 - Configure `int.coveo.platform.api.cred` with a Coveo Platform API key that can support Coveo field creation and Merchandising Hub listing-page updates.
+- Configure `int.coveo.ua.read.api.cred` with a Usage Analytics Read API key that can create and download exports.
 - Allow outbound connections for both the configured Coveo Push API host and the S3 host returned by file-container `uploadUri` values, such as `https://coveo-nprod-customerdata.s3.amazonaws.com`.
 - Allow outbound connections to `https://platform.cloud.coveo.com` if you want to use the platform field creation job.
+- Allow outbound connections to the configured Usage Analytics Read API host if you want to use the purchase enrichment job.
 - Put `bm_coveo:int_coveo` on the Business Manager site cartridge path.
 - Put at least `int_coveo` on each export site cartridge path. Using `bm_coveo:int_coveo` on both the Business Manager site and the export site is the simplest setup.
 - Set the site-level `coveoOrganizationId`.
@@ -68,6 +72,7 @@ These tests cover:
 - For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target and run the jobs with the matching `targetId`. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - If you need extra catalog fields beyond the built-in export payload, create a `CoveoCatalogFieldMappingProfile`, add `CoveoCatalogFieldMapping` rows under that profile, and assign the profile on the target `mappingProfileId`. For larger mapping sets, you can also load the profile and rows from JSON with the `coveoFieldMappingImport` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - If your mapping JSON should also create the matching Coveo fields, run `coveoPlatformFieldCreate` with the same `sourceFile`. The job creates one platform field per enabled mapping `targetField`, and the optional `coveoField` block on each mapping can set the initial field type and options.
+- To maintain best-seller sort fields from Coveo Usage Analytics purchase events, run `coveoPurchaseEnrichmentSync` per target. The job creates or reuses a rolling export for one `trackingId`, stores a shared snapshot in IMPEX, and writes target-specific mapped or skipped reports. Subsequent full exports emit `ec_units_sold_<window>d` values for every product, and delta exports also include products whose units-sold values changed in the snapshot state.
 - To upload a field-mapping JSON file to IMPEX with the credentials in `dw.json`, run `npm run uploadFieldMappingsJson -- documentation/examples/default-commerce-fields.sample.json`.
 - To inspect which catalog attributes are actually populated before you build mappings, run the `coveoCatalogAttributeAudit` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - To sync CMH listing pages, set the target's `coveoTrackingId`, `coveoCountry`, `coveoCurrency`, `storefrontBaseUrl`, and `listingCategoryUrlTemplate`, then run `coveoListingPagesSync`. If you need existing brand landing page URLs to keep resolving to `Brands|...` category pages, also set `listingBrandUrlTemplate` as an optional legacy URL alias.

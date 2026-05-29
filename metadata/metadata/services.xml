@@ -14,6 +14,13 @@
         <password masked="true">********</password>
     </service-credential>
 
+    <service-credential service-credential-id="int.coveo.ua.read.api.cred">
+        <!-- Update the credential URL if your organization requires a different regional Usage Analytics Read API host. -->
+        <url>https://platform.cloud.coveo.com/rest/ua/</url>
+        <user-id/>
+        <password masked="true">********</password>
+    </service-credential>
+
     <service-profile service-profile-id="int.coveo.api.profile">
         <timeout-millis>3000</timeout-millis>
         <rate-limit-enabled>false</rate-limit-enabled>
@@ -26,6 +33,16 @@
 
     <service-profile service-profile-id="int.coveo.platform.api.profile">
         <timeout-millis>10000</timeout-millis>
+        <rate-limit-enabled>false</rate-limit-enabled>
+        <rate-limit-calls>0</rate-limit-calls>
+        <rate-limit-millis>0</rate-limit-millis>
+        <cb-enabled>true</cb-enabled>
+        <cb-calls>0</cb-calls>
+        <cb-millis>0</cb-millis>
+    </service-profile>
+
+    <service-profile service-profile-id="int.coveo.ua.read.api.profile">
+        <timeout-millis>30000</timeout-millis>
         <rate-limit-enabled>false</rate-limit-enabled>
         <rate-limit-calls>0</rate-limit-calls>
         <rate-limit-millis>0</rate-limit-millis>
@@ -54,6 +71,17 @@
         <mock-mode-enabled>false</mock-mode-enabled>
         <profile-id>int.coveo.platform.api.profile</profile-id>
         <credential-id>int.coveo.platform.api.cred</credential-id>
+    </service>
+
+    <service service-id="int.coveo.ua.read.api">
+        <service-type>HTTP</service-type>
+        <enabled>true</enabled>
+        <log-prefix>coveo-ua-read-service</log-prefix>
+        <comm-log-enabled>true</comm-log-enabled>
+        <force-prd-enabled>false</force-prd-enabled>
+        <mock-mode-enabled>false</mock-mode-enabled>
+        <profile-id>int.coveo.ua.read.api.profile</profile-id>
+        <credential-id>int.coveo.ua.read.api.cred</credential-id>
     </service>
 
 </services>

@@ -6,6 +6,7 @@ var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
 var fieldMappingHelper = require('*/cartridge/scripts/helper/fieldMappingHelper');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
+var purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
 var Site = require('dw/system/Site');
 var URLUtils = require('dw/web/URLUtils');
 
@@ -317,6 +318,26 @@ function getCanonicalProductId(product) {
     }
 
     return !empty(product) ? product.ID : '';
+}
+
+/**
+ * Returns a deduplicated array of metric aliases.
+ * @param {Array} aliases - Candidate aliases.
+ * @returns {Array} normalized aliases.
+ */
+function getMetricAliases(aliases) {
+    var seen = {};
+
+    return (aliases || []).map(function (alias) {
+        return alias === null || alias === undefined ? '' : String(alias).trim();
+    }).filter(function (alias) {
+        if (alias === '' || seen[alias]) {
+            return false;
+        }
+
+        seen[alias] = true;
+        return true;
+    });
 }
 
 /**
@@ -692,6 +713,12 @@ function getProductsData(product, exportOptions, exportContext) {
         if (!empty(itemGroupId)) {
             prdObj.ec_item_group_id = itemGroupId;
         }
+
+        purchaseMetricHelper.applyPurchaseMetrics(prdObj, {
+            objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
+            documentId: prdObj.documentId,
+            aliases: getMetricAliases(exportOptions && exportOptions.metricAliases ? exportOptions.metricAliases : [productId])
+        }, exportContext);
     } catch (ex) {
         Logger.error('(productRequestGenerator-getProductsData) -> Error occured while generating products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
     }
@@ -721,6 +748,11 @@ function getVariantsData(product, productId, exportContext) {
             ec_variant_id: product.ID
         };
         fieldMappingHelper.applyFieldMappings(variantObj, product, coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT, exportContext);
+        purchaseMetricHelper.applyPurchaseMetrics(variantObj, {
+            objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT,
+            documentId: variantObj.documentId,
+            aliases: getMetricAliases([variantObj.ec_variant_id, variantObj.permanentid])
+        }, exportContext);
     } catch (ex) {
         Logger.error('(productRequestGenerator-getVariantsData) -> Error occured while generating Product variants and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
     }
@@ -758,10 +790,16 @@ function processProducts(product, isDelta, exportContext) {
                 var currentProductVariants = groupedVariants[colorKey];
                 var representativeVariant = currentProductVariants[0];
                 var parentProductId = getCanonicalProductId(representativeVariant);
+                var metricAliases = [parentProductId];
+
+                currentProductVariants.forEach(function (variant) {
+                    metricAliases.push(variant.ID);
+                });
 
                 coveoProducts.push(getProductsData(representativeVariant, {
                     productId: parentProductId,
-                    itemGroupId: coveoPrd.ID
+                    itemGroupId: coveoPrd.ID,
+                    metricAliases: metricAliases
                 }, exportContext));
 
                 currentProductVariants.forEach(function (element) {
@@ -772,12 +810,14 @@ function processProducts(product, isDelta, exportContext) {
             var groupedProductId = getCanonicalProductId(coveoPrd);
             coveoProducts.push(getProductsData(coveoPrd, {
                 productId: groupedProductId,
-                itemGroupId: coveoPrd.masterProduct.ID
+                itemGroupId: coveoPrd.masterProduct.ID,
+                metricAliases: [groupedProductId, coveoPrd.ID]
             }, exportContext));
             coveoProducts.push(getVariantsData(coveoPrd, groupedProductId, exportContext));
         } else {
             coveoProducts.push(getProductsData(coveoPrd, {
-                productId: coveoPrd.ID
+                productId: coveoPrd.ID,
+                metricAliases: [coveoPrd.ID]
             }, exportContext));
         }
     } catch (ex) {
