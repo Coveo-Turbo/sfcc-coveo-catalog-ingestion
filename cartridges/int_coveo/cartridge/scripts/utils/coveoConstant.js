@@ -106,7 +106,8 @@ function getCoveoConstants(exportContext) {
 
 exports.SERVICE_ID = {
     COVEO_STREAM: 'int.coveo.http.api',
-    COVEO_PLATFORM: 'int.coveo.platform.api'
+    COVEO_PLATFORM: 'int.coveo.platform.api',
+    COVEO_UA_READ: 'int.coveo.ua.read.api'
 };
 
 exports.COVEO_API_ENDPOINT = getApiEndpoints();

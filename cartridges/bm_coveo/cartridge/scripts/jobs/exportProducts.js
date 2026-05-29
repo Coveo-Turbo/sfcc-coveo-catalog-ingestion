@@ -15,6 +15,7 @@ var streamHelper = null;
 var firstOrderingId = null;
 var exportContext = null;
 var previousLocale = null;
+var purchaseMetricHelper = null;
 var MAX_RETRYABLE_REQUEST_ATTEMPTS = 3;
 
 /**
@@ -192,11 +193,14 @@ exports.beforeStep = function (parameters, stepExecution) {
     exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
     productRequestGenerator = require('*/cartridge/scripts/generators/productRequestGenerator');
     streamHelper = require('*/cartridge/scripts/helper/streamHelper');
+    purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
     sourceFolder = parameters.get('srcFolder');
     firstOrderingId = null;
     productsToExport = [];
     exportContext = exportTargetHelper.resolveExportContext(parameters);
     previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
+    purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
+    purchaseMetricHelper.ensureMetricFields(exportContext, exportContext.purchaseMetrics);
     Logger.info(
         'Resolved Coveo full export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, legacyMode={7}',
         exportContext.siteId,
@@ -255,6 +259,7 @@ exports.afterStep = function (success, parameters) {
             return streamHelper.deleteOlderThan(firstOrderingId, exportContext);
         }, 'delete older than');
         Logger.info('Coveo deleteolderthan request accepted for source={0}, orderingId={1}', exportContext.coveoSourceId, firstOrderingId);
+        purchaseMetricHelper.markFullExportApplied(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH);
         exportTargetHelper.updateLastSync(exportContext, new Date());
     } finally {
         closeProductsIterator();

@@ -14,6 +14,8 @@ var sourceFolder = null;
 var streamHelper = null;
 var exportContext = null;
 var previousLocale = null;
+var purchaseMetricHelper = null;
+var exportedRootIds = {};
 
 /**
  * Formats service failure details for logs and thrown errors.
@@ -89,10 +91,14 @@ exports.beforeStep = function (parameters, stepExecution) {
     exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
     productRequestGenerator = require('*/cartridge/scripts/generators/productRequestGenerator');
     streamHelper = require('*/cartridge/scripts/helper/streamHelper');
+    purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
     sourceFolder = parameters.get('srcFolder');
     productsToExport = [];
+    exportedRootIds = {};
     exportContext = exportTargetHelper.resolveExportContext(parameters);
     previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
+    purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
+    purchaseMetricHelper.ensureMetricFields(exportContext, exportContext.purchaseMetrics);
     Logger.info(
         'Resolved Coveo delta export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, legacyMode={7}',
         exportContext.siteId,
@@ -104,7 +110,11 @@ exports.beforeStep = function (parameters, stepExecution) {
         exportContext.mappingProfileId || '[built-in only]',
         exportContext.legacyMode
     );
-    products = coveoHelper.buildProductQuery(isDelta, exportContext);
+    products = coveoHelper.buildProductQuery(
+        isDelta,
+        exportContext,
+        purchaseMetricHelper.getSnapshotDrivenRootIds(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH)
+    );
 };
 
 exports.read = function (parameters, stepExecution) { // eslint-disable-line
@@ -114,6 +124,7 @@ exports.read = function (parameters, stepExecution) { // eslint-disable-line
 };
 
 exports.process = function (product, parameters, stepExecution) {
+    exportedRootIds[product] = true;
     return productRequestGenerator.processProducts(product, isDelta, exportContext);
 };
 
@@ -131,6 +142,11 @@ exports.write = function (lines, parameters, stepExecution) {
 
 exports.afterStep = function (success, parameters) {
     try {
+        if (success === false) {
+            Logger.error('Skipping final Coveo delta export upload and reconciliation because a previous chunk already failed.');
+            return;
+        }
+
         if (!empty(productsToExport) && productsToExport.length > 0) {
             productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
             Logger.info('exportProducts-write - Total products Exported: {0}', productsToExport.length);
@@ -151,6 +167,12 @@ exports.afterStep = function (success, parameters) {
             Logger.info('No delta products were exported to Coveo.');
         }
 
+        purchaseMetricHelper.markDeltaExportApplied(
+            exportContext,
+            exportContext.purchaseMetrics,
+            purchaseMetricHelper.DEFAULT_STATE_PATH,
+            Object.keys(exportedRootIds)
+        );
         exportTargetHelper.updateLastSync(exportContext, new Date());
     } finally {
         closeProductsIterator();

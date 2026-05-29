@@ -182,6 +182,69 @@
               }
             ]
           }
+        },
+        {
+          "@type-id":"custom.coveo.coveoPurchaseEnrichmentSync",
+          "@supports-site-context": true,
+          "@supports-organization-context": false,
+          "description": "Aggregates rolling purchase analytics into shared IMPEX snapshots and target mapping reports",
+          "module": "bm_coveo/cartridge/scripts/jobs/syncPurchaseEnrichment.js",
+          "function":"execute",
+          "parameters": {
+            "parameter": [
+              {
+                "@name": "targetId",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "description": "Optional export target id for multi-locale or catalog-scoped purchase enrichment"
+              },
+              {
+                "@name": "windowDays",
+                "@type": "long",
+                "@required": "false",
+                "@trim": "true",
+                "default-value": 90,
+                "description": "Rolling number of days to include in the purchase aggregation window"
+              },
+              {
+                "@name": "workingPath",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "default-value": "/src/coveo/feeds/purchase-enrichment/",
+                "description": "Working folder path (in IMPEX) for temporary Usage Analytics export files"
+              },
+              {
+                "@name": "statePath",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "default-value": "/src/coveo/state/purchase-enrichment/",
+                "description": "State folder path (in IMPEX) for shared purchase snapshots and target mapping reports"
+              },
+              {
+                "@name": "quantityDimension",
+                "@type": "string",
+                "@required": "false",
+                "@trim": "true",
+                "default-value": "custom_events.c_quantity",
+                "description": "Usage Analytics export dimension used to read purchased quantity"
+              }
+            ]
+          },
+          "status-codes": {
+            "status": [
+              {
+                "@code": "ERROR",
+                "description": "Used when an error occurred."
+              },
+              {
+                "@code": "OK",
+                "description": "Used when everything went well."
+              }
+            ]
+          }
         }
       ],
       "chunk-script-module-step": [

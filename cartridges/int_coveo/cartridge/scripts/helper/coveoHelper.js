@@ -50,6 +50,69 @@ function createArrayIterator(values) {
 }
 
 /**
+ * Returns a deduplicated iterator that appends extra root ids after a base iterator.
+ * @param {Object} baseIterator - Base product iterator.
+ * @param {Array} extraRootIds - Additional root ids to append.
+ * @returns {Object} merged iterator.
+ */
+function mergeRootIdIterators(baseIterator, extraRootIds) {
+    var seen = new HashSet();
+    var base = baseIterator || createArrayIterator([]);
+    var extras = extraRootIds || [];
+    var extraIndex = 0;
+    var nextValue = null;
+    var hasBufferedValue = false;
+
+    if (!extras.length) {
+        return base;
+    }
+
+    function bufferNextValue() {
+        while (!hasBufferedValue && base && base.hasNext && base.hasNext()) {
+            var baseValue = base.next();
+
+            if (!empty(baseValue) && !seen.contains(baseValue)) {
+                seen.add(baseValue);
+                nextValue = baseValue;
+                hasBufferedValue = true;
+            }
+        }
+
+        while (!hasBufferedValue && extraIndex < extras.length) {
+            var extraValue = extras[extraIndex];
+            extraIndex += 1;
+
+            if (!empty(extraValue) && !seen.contains(extraValue)) {
+                seen.add(extraValue);
+                nextValue = extraValue;
+                hasBufferedValue = true;
+            }
+        }
+
+        return hasBufferedValue;
+    }
+
+    return {
+        hasNext: function () {
+            return bufferNextValue();
+        },
+        next: function () {
+            if (!bufferNextValue()) {
+                return null;
+            }
+
+            var value = nextValue;
+            nextValue = null;
+            hasBufferedValue = false;
+            return value;
+        },
+        close: function () {
+            closeIterator(base);
+        }
+    };
+}
+
+/**
  * Returns whether the product can be used as a full-export root item.
  * @param {Object} product - Product to inspect.
  * @returns {boolean} whether the product should be read by the full export.
@@ -320,15 +383,15 @@ function getScopedProductsIterator(exportContext) {
  * @param {Object} exportContext - Export context.
  * @returns {Object} productSearch - productSearch
  */
-function buildProductQuery(isDelta, exportContext) {
+function buildProductQuery(isDelta, exportContext, additionalRootIds) {
     try {
         Logger.info('Starting product search...');
 
         if (isDelta) {
-            return buildDeltaProductQuery(exportContext);
+            return mergeRootIdIterators(buildDeltaProductQuery(exportContext), additionalRootIds);
         }
 
-        return buildFullProductQuery(exportContext);
+        return mergeRootIdIterators(buildFullProductQuery(exportContext), additionalRootIds);
     } catch (ex) {
         Logger.error('(coveoHelper-buildProductQuery) -> Error occured while bulding the product query and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
         throw ex;

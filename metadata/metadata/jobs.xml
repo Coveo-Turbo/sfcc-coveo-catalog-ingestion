@@ -204,4 +204,40 @@
         </triggers>
     </job>
 
+    <job job-id="coveoPurchaseEnrichmentSync" priority="0">
+        <description>Aggregates rolling purchase analytics into shared IMPEX snapshots and
+            target-specific mapping reports for best seller sorting.</description>
+        <parameters />
+        <split sequential="false">
+            <contexts template-ref="template_152">
+                <context site-id="RefArch" />
+            </contexts>
+            <flow-template template-id="template_152">
+                <step step-id="SyncPurchaseEnrichmentToCoveo"
+                    type="custom.coveo.coveoPurchaseEnrichmentSync" enforce-restart="false">
+                    <description>Generates or reuses a rolling Usage Analytics export, writes a
+                        shared units-sold snapshot, and records target mapping reports.</description>
+                    <parameters>
+                        <parameter name="targetId"></parameter>
+                        <parameter name="windowDays">90</parameter>
+                        <parameter name="workingPath">/src/coveo/feeds/purchase-enrichment/</parameter>
+                        <parameter name="statePath">/src/coveo/state/purchase-enrichment/</parameter>
+                        <parameter name="quantityDimension">custom_events.c_quantity</parameter>
+                    </parameters>
+                </step>
+            </flow-template>
+        </split>
+        <rules>
+            <on-running runtime-threshold="60m" enabled="false">
+                <mark-job-as-hanging />
+            </on-running>
+        </rules>
+        <triggers>
+            <run-once enabled="false">
+                <date>2026-05-29Z</date>
+                <time>12:15:00.000Z</time>
+            </run-once>
+        </triggers>
+    </job>
+
 </jobs>
