@@ -713,7 +713,7 @@ function getVariantsData(product, productId, exportContext) {
             documentId: URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString(),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             language: getExportLanguage(exportContext),
-            permanentid: productId,
+            permanentid: product.ID,
             ec_sku: product.ID,
             ec_size: getProductSize(product),
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT,

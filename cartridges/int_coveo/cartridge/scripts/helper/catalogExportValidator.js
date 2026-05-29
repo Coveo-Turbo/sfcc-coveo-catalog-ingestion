@@ -56,12 +56,12 @@ function validateCatalogItems(items, options) {
         if (item.objecttype === 'Variant') {
             if (isMissing(item.ec_product_id)) {
                 errors.push('Variant item at index ' + index + ' is missing ec_product_id.');
-            } else if (item.permanentid !== item.ec_product_id) {
-                errors.push('Variant item at index ' + index + ' must set permanentid to ec_product_id.');
             }
 
             if (isMissing(item.ec_variant_id)) {
                 errors.push('Variant item at index ' + index + ' is missing ec_variant_id.');
+            } else if (item.permanentid !== item.ec_variant_id) {
+                errors.push('Variant item at index ' + index + ' must set permanentid to ec_variant_id.');
             } else if (variantIds.contains(item.ec_variant_id)) {
                 errors.push('Variant item at index ' + index + ' duplicates ec_variant_id ' + item.ec_variant_id + '.');
             } else {

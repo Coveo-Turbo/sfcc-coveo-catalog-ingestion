@@ -42,7 +42,7 @@ describe('catalogExportValidator', function () {
                 documentId: 'https://example.com/product/red?pid=sSKU-1',
                 objecttype: 'Variant',
                 language: 'en',
-                permanentid: 'MASTER-red',
+                permanentid: 'SKU-1',
                 ec_product_id: 'MASTER-red',
                 ec_variant_id: 'SKU-1'
             }
@@ -61,7 +61,7 @@ describe('catalogExportValidator', function () {
                     documentId: 'https://example.com/product/red?pid=sSKU-1',
                     objecttype: 'Variant',
                     language: 'en',
-                    permanentid: 'MASTER-red',
+                    permanentid: 'SKU-1',
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }
@@ -91,7 +91,7 @@ describe('catalogExportValidator', function () {
                     documentId: 'https://example.com/product/red?pid=sSKU-1',
                     objecttype: 'Variant',
                     language: 'en',
-                    permanentid: 'MASTER-red',
+                    permanentid: 'SKU-1',
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }

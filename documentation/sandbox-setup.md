@@ -608,7 +608,7 @@ Confirm that:
 - `Product` items contain `ec_product_id`
 - `Variant` items contain both `ec_product_id` and `ec_variant_id`
 - `Product` items set `permanentid = ec_product_id`
-- `Variant` items set `permanentid = ec_product_id`
+- `Variant` items set `permanentid = ec_variant_id`
 - every item contains `language`
 - `language` matches the configured export target
 - `ec_price` contains the base or list price

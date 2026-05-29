@@ -521,7 +521,7 @@ describe('productRequestGenerator', function () {
             return item.objecttype === 'Variant'
                 && item.ec_product_id === 'MASTER-1-red'
                 && item.ec_variant_id === 'MASTER-1-RED-S'
-                && item.permanentid === 'MASTER-1-red'
+                && item.permanentid === 'MASTER-1-RED-S'
                 && item.language === 'en'
                 && item.ec_name === 'Name MASTER-1-RED-S'
                 && item.ec_sku === 'MASTER-1-RED-S';
@@ -530,7 +530,7 @@ describe('productRequestGenerator', function () {
             return item.objecttype === 'Variant'
                 && item.ec_product_id === 'MASTER-1-blue'
                 && item.ec_variant_id === 'MASTER-1-BLUE-S'
-                && item.permanentid === 'MASTER-1-blue'
+                && item.permanentid === 'MASTER-1-BLUE-S'
                 && item.language === 'en'
                 && item.ec_name === 'Name MASTER-1-BLUE-S'
                 && item.ec_sku === 'MASTER-1-BLUE-S';
