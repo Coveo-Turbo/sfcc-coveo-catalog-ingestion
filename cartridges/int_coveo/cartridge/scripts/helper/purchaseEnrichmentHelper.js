@@ -865,7 +865,7 @@ function syncPurchaseEnrichment(parameters, exportContext) {
         windowDays: purchaseMetricHelper.parsePositiveInteger(parameters.get('windowDays'), 'windowDays', 90),
         workingPath: normalizeString(parameters.get('workingPath')),
         statePath: normalizeString(parameters.get('statePath')),
-        quantityDimension: normalizeString(parameters.get('quantityDimension')) || 'custom_events.pr1qt'
+        quantityDimension: normalizeString(parameters.get('quantityDimension')) || 'custom_events.c_quantity'
     };
     var reusableSnapshot = null;
     var createdExport = null;

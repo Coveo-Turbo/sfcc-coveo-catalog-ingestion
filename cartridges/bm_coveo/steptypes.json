@@ -228,7 +228,7 @@
                 "@type": "string",
                 "@required": "false",
                 "@trim": "true",
-                "default-value": "custom_events.pr1qt",
+                "default-value": "custom_events.c_quantity",
                 "description": "Usage Analytics export dimension used to read purchased quantity"
               }
             ]

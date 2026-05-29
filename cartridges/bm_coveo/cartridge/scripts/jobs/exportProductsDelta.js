@@ -142,6 +142,11 @@ exports.write = function (lines, parameters, stepExecution) {
 
 exports.afterStep = function (success, parameters) {
     try {
+        if (success === false) {
+            Logger.error('Skipping final Coveo delta export upload and reconciliation because a previous chunk already failed.');
+            return;
+        }
+
         if (!empty(productsToExport) && productsToExport.length > 0) {
             productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
             Logger.info('exportProducts-write - Total products Exported: {0}', productsToExport.length);

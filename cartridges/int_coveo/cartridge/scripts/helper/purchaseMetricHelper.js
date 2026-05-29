@@ -600,7 +600,7 @@ function writeTargetSnapshotState(directoryPath, exportContext, snapshot, mapped
     var targetId = exportContext.targetId || exportContext.locale || exportContext.coveoTrackingId;
     var windowDays = snapshot.windowDays;
     var summary = {
-        targetId: exportContext.targetId,
+        targetId: targetId,
         trackingId: exportContext.coveoTrackingId,
         locale: exportContext.locale,
         windowDays: windowDays,
