@@ -1,0 +1,292 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">SFCC Catalog Ingestion Cartridge - Jobs and process flow</title>
+  <desc id="desc">A slide-style infographic that explains the setup, recurring jobs, and outputs used by the SFCC catalog ingestion cartridge.</desc>
+  <defs>
+    <linearGradient id="headerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f2a5f"/>
+      <stop offset="100%" stop-color="#123978"/>
+    </linearGradient>
+    <linearGradient id="laneGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0a6c78"/>
+      <stop offset="100%" stop-color="#0e8f9d"/>
+    </linearGradient>
+    <linearGradient id="bgGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eef6fb"/>
+    </linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#d8e4ef" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#17438d"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#0b7c86"/>
+    </marker>
+    <marker id="arrowGold" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#d18c10"/>
+    </marker>
+    <style>
+      .title { font: 700 66px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0f2a5f; letter-spacing: -1px; }
+      .subtitle { font: 600 26px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0b7c86; }
+      .laneNumber { font: 700 34px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0f2a5f; }
+      .laneLabel { font: 700 22px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #ffffff; }
+      .cardTitle { font: 700 22px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0f2a5f; }
+      .cardBody { font: 400 15px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #1e293b; }
+      .noteText { font: 400 14px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #334155; }
+      .outputTitle { font: 700 21px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0f2a5f; }
+      .footerText { font: 700 18px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #ffffff; }
+      .chipTextDark { font: 700 18px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0f2a5f; }
+      .chipTextLight { font: 700 18px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #ffffff; }
+      .mini { font: 700 14px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #ffffff; letter-spacing: 0.6px; }
+      .iconLabel { font: 700 16px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0b7c86; }
+      .optional { font: 700 13px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #5a3b00; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bgGlow)"/>
+  <rect width="1600" height="900" fill="url(#grid)" opacity="0.32"/>
+
+  <g transform="translate(28 24)">
+    <rect x="0" y="0" width="110" height="110" rx="26" fill="#ffffff" stroke="#123978" stroke-width="4"/>
+    <path d="M56 18 L87 36 L87 74 L56 92 L25 74 L25 36 Z" fill="none" stroke="#123978" stroke-width="4"/>
+    <path d="M39 47 L56 40 L73 47" fill="none" stroke="#123978" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M39 49 L39 64" fill="none" stroke="#123978" stroke-width="4" stroke-linecap="round"/>
+    <path d="M73 49 L73 64" fill="none" stroke="#123978" stroke-width="4" stroke-linecap="round"/>
+    <path d="M48 44 L48 58 L56 61 L64 58 L64 44" fill="none" stroke="#123978" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="41" cy="80" r="5" fill="#123978"/>
+    <circle cx="71" cy="80" r="5" fill="#123978"/>
+  </g>
+
+  <rect x="160" y="34" width="3" height="88" fill="#123978" opacity="0.4"/>
+  <text x="200" y="82" class="title">SFCC Catalog Ingestion Cartridge</text>
+  <text x="200" y="133" class="subtitle">Jobs and process flow</text>
+
+  <g>
+    <rect x="20" y="160" width="1560" height="180" rx="18" fill="#fbfdff" stroke="#9fc4d7" stroke-width="2"/>
+    <rect x="20" y="360" width="1560" height="250" rx="18" fill="#fbfdff" stroke="#9fc4d7" stroke-width="2"/>
+    <rect x="20" y="630" width="1560" height="170" rx="18" fill="#fbfdff" stroke="#9fc4d7" stroke-width="2"/>
+
+    <rect x="20" y="160" width="170" height="180" rx="18" fill="url(#headerGradient)"/>
+    <rect x="20" y="360" width="170" height="250" rx="18" fill="url(#laneGradient)"/>
+    <rect x="20" y="630" width="170" height="170" rx="18" fill="url(#laneGradient)"/>
+
+    <circle cx="48" cy="190" r="22" fill="#ffffff"/>
+    <circle cx="48" cy="390" r="22" fill="#ffffff"/>
+    <circle cx="48" cy="660" r="22" fill="#ffffff"/>
+    <text x="40" y="200" class="laneNumber">1</text>
+    <text x="40" y="400" class="laneNumber">2</text>
+    <text x="40" y="670" class="laneNumber">3</text>
+
+    <text x="105" y="232" text-anchor="middle" class="laneLabel">
+      <tspan x="105" dy="0">Setup and</tspan>
+      <tspan x="105" dy="28">Configuration</tspan>
+    </text>
+    <text x="105" y="452" text-anchor="middle" class="laneLabel">
+      <tspan x="105" dy="0">Recurring</tspan>
+      <tspan x="105" dy="28">Jobs</tspan>
+    </text>
+    <text x="105" y="720" text-anchor="middle" class="laneLabel">
+      <tspan x="105" dy="0">Outputs and</tspan>
+      <tspan x="105" dy="28">Destinations</tspan>
+    </text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="215" y="185" width="210" height="116" rx="18" fill="#ffffff" stroke="#2d74b8" stroke-width="2"/>
+    <rect x="455" y="185" width="235" height="116" rx="18" fill="#ffffff" stroke="#2d74b8" stroke-width="2"/>
+    <rect x="715" y="185" width="210" height="116" rx="18" fill="#ffffff" stroke="#2d74b8" stroke-width="2"/>
+    <rect x="955" y="185" width="230" height="116" rx="18" fill="#ffffff" stroke="#2d74b8" stroke-width="2"/>
+    <rect x="1215" y="185" width="305" height="116" rx="18" fill="#ffffff" stroke="#2d74b8" stroke-width="2" stroke-dasharray="8 7"/>
+
+    <rect x="215" y="390" width="230" height="112" rx="18" fill="#ffffff" stroke="#0b7c86" stroke-width="2"/>
+    <rect x="470" y="390" width="245" height="112" rx="18" fill="#ffffff" stroke="#0b7c86" stroke-width="2"/>
+    <rect x="740" y="390" width="250" height="112" rx="18" fill="#ffffff" stroke="#17438d" stroke-width="2.5"/>
+    <rect x="1015" y="390" width="250" height="112" rx="18" fill="#ffffff" stroke="#0b7c86" stroke-width="2"/>
+    <rect x="1290" y="390" width="230" height="112" rx="18" fill="#ffffff" stroke="#0b7c86" stroke-width="2" stroke-dasharray="8 7"/>
+
+    <rect x="215" y="670" width="250" height="112" rx="18" fill="#ffffff" stroke="#0b7c86" stroke-width="2"/>
+    <rect x="500" y="670" width="220" height="112" rx="18" fill="#ffffff" stroke="#d18c10" stroke-width="2.5"/>
+    <rect x="760" y="670" width="250" height="112" rx="18" fill="#ffffff" stroke="#17438d" stroke-width="2.5"/>
+    <rect x="1050" y="670" width="220" height="112" rx="18" fill="#ffffff" stroke="#0b7c86" stroke-width="2"/>
+    <rect x="1305" y="670" width="215" height="112" rx="18" fill="#ffffff" stroke="#0b7c86" stroke-width="2"/>
+  </g>
+
+  <g>
+    <circle cx="250" cy="225" r="18" fill="#e6f4ff"/>
+    <text x="250" y="231" text-anchor="middle" class="iconLabel">ZIP</text>
+    <text x="308" y="224" class="cardTitle">Metadata import</text>
+    <text x="308" y="248" class="cardBody">
+      <tspan x="308" dy="0">metadata.zip, services,</tspan>
+      <tspan x="308" dy="18">custom objects, job steps</tspan>
+    </text>
+
+    <circle cx="490" cy="225" r="18" fill="#e8fbfd"/>
+    <text x="490" y="231" text-anchor="middle" class="iconLabel">CFG</text>
+    <text x="550" y="220" class="cardTitle">Export target config</text>
+    <text x="550" y="246" class="cardBody">
+      <tspan x="550" dy="0">site preferences or</tspan>
+      <tspan x="550" dy="18">CoveoCatalogExportTarget</tspan>
+      <tspan x="550" dy="18">per locale or market</tspan>
+    </text>
+
+    <circle cx="750" cy="225" r="18" fill="#e8fbfd"/>
+    <text x="750" y="231" text-anchor="middle" class="iconLabel">JSON</text>
+    <text x="808" y="220" class="cardTitle">Field mapping upload</text>
+    <text x="808" y="246" class="cardBody">
+      <tspan x="808" dy="0">uploadFieldMappingsJson</tspan>
+      <tspan x="808" dy="18">to IMPEX JSON</tspan>
+    </text>
+
+    <circle cx="990" cy="225" r="18" fill="#e8fbfd"/>
+    <text x="990" y="231" text-anchor="middle" class="iconLabel">MAP</text>
+    <text x="1048" y="220" class="cardTitle">Field mapping import</text>
+    <text x="1048" y="246" class="cardBody">
+      <tspan x="1048" dy="0">coveoFieldMappingImport</tspan>
+      <tspan x="1048" dy="18">profile and mapping rows</tspan>
+    </text>
+
+    <circle cx="1250" cy="225" r="18" fill="#fff7db"/>
+    <text x="1250" y="231" text-anchor="middle" class="iconLabel">FLD</text>
+    <text x="1308" y="220" class="cardTitle">Platform field create</text>
+    <text x="1308" y="246" class="cardBody">
+      <tspan x="1308" dy="0">coveoPlatformFieldCreate</tspan>
+      <tspan x="1308" dy="18">same JSON, missing fields</tspan>
+    </text>
+    <rect x="1426" y="274" width="86" height="24" rx="12" fill="#ffd76b" stroke="#efb52d"/>
+    <text x="1469" y="291" text-anchor="middle" class="optional">OPTIONAL</text>
+  </g>
+
+  <g>
+    <circle cx="250" cy="430" r="18" fill="#e8fbfd"/>
+    <text x="250" y="436" text-anchor="middle" class="iconLabel">AUD</text>
+    <text x="308" y="428" class="cardTitle">Catalog attribute audit</text>
+    <text x="308" y="454" class="cardBody">coveoCatalogAttributeAudit</text>
+    <text x="220" y="535" class="noteText">
+      <tspan x="220" dy="0">scans products and categories,</tspan>
+      <tspan x="220" dy="18">writes CSV and JSON reports to IMPEX</tspan>
+    </text>
+
+    <circle cx="505" cy="430" r="18" fill="#fff7db"/>
+    <text x="505" y="436" text-anchor="middle" class="iconLabel">UA</text>
+    <text x="563" y="428" class="cardTitle">Purchase enrichment sync</text>
+    <text x="563" y="454" class="cardBody">coveoPurchaseEnrichmentSync</text>
+    <text x="508" y="535" class="noteText">
+      <tspan x="508" dy="0">Usage Analytics export -> aggregate</tspan>
+      <tspan x="508" dy="18">units sold -> shared snapshot -></tspan>
+      <tspan x="508" dy="18">ec_units_sold_&lt;window&gt;d</tspan>
+    </text>
+
+    <circle cx="775" cy="430" r="18" fill="#ebf2ff"/>
+    <text x="775" y="436" text-anchor="middle" class="iconLabel">FULL</text>
+    <text x="833" y="428" class="cardTitle">Full export</text>
+    <text x="833" y="454" class="cardBody">coveoProductExportFull</text>
+    <text x="772" y="510" class="noteText">
+      <tspan x="772" dy="0">query catalog -> build Product and Variant payloads</tspan>
+      <tspan x="772" dy="18">apply mapped fields -> validate addOrUpdate</tspan>
+      <tspan x="772" dy="18">upload file container -> stream update -> deleteolderthan</tspan>
+    </text>
+
+    <circle cx="1050" cy="430" r="18" fill="#e8fbfd"/>
+    <text x="1050" y="436" text-anchor="middle" class="iconLabel">DEL</text>
+    <text x="1108" y="428" class="cardTitle">Delta export</text>
+    <text x="1108" y="454" class="cardBody">coveoProductExportDelta</text>
+    <text x="1050" y="535" class="noteText">
+      <tspan x="1050" dy="0">changed root products + metric-changed IDs</tspan>
+      <tspan x="1050" dy="18">upload incremental update -> update lastSync</tspan>
+    </text>
+
+    <circle cx="1325" cy="430" r="18" fill="#fff7db"/>
+    <text x="1325" y="436" text-anchor="middle" class="iconLabel">CMH</text>
+    <text x="1383" y="428" class="cardTitle">Listing pages sync</text>
+    <text x="1383" y="454" class="cardBody">coveoListingPagesSync</text>
+    <rect x="1427" y="474" width="86" height="24" rx="12" fill="#ffd76b" stroke="#efb52d"/>
+    <text x="1470" y="491" text-anchor="middle" class="optional">OPTIONAL</text>
+    <text x="1320" y="535" class="noteText">
+      <tspan x="1320" dy="0">categories and brands -></tspan>
+      <tspan x="1320" dy="18">Merchandising Hub listing pages</tspan>
+    </text>
+  </g>
+
+  <g>
+    <circle cx="250" cy="710" r="18" fill="#e8fbfd"/>
+    <text x="250" y="716" text-anchor="middle" class="iconLabel">IMPEX</text>
+    <text x="308" y="708" class="outputTitle">IMPEX state and reports</text>
+    <text x="308" y="734" class="cardBody">
+      <tspan x="308" dy="0">feeds, snapshots, mapped or</tspan>
+      <tspan x="308" dy="18">skipped reports</tspan>
+    </text>
+
+    <circle cx="535" cy="710" r="18" fill="#fff7db"/>
+    <text x="535" y="716" text-anchor="middle" class="iconLabel">UA</text>
+    <text x="593" y="708" class="outputTitle">Usage Analytics snapshot</text>
+    <text x="593" y="734" class="cardBody">
+      <tspan x="593" dy="0">shared per trackingId</tspan>
+      <tspan x="593" dy="18">reused by later exports</tspan>
+    </text>
+
+    <circle cx="795" cy="710" r="18" fill="#ebf2ff"/>
+    <text x="795" y="716" text-anchor="middle" class="iconLabel">SRC</text>
+    <text x="853" y="708" class="outputTitle">Coveo Stream API source</text>
+    <text x="853" y="734" class="cardBody">
+      <tspan x="853" dy="0">catalog documents in source</tspan>
+      <tspan x="853" dy="18">full or incremental updates</tspan>
+    </text>
+
+    <circle cx="1085" cy="710" r="18" fill="#e8fbfd"/>
+    <text x="1085" y="716" text-anchor="middle" class="iconLabel">FLD</text>
+    <text x="1143" y="708" class="outputTitle">Coveo Platform fields</text>
+    <text x="1143" y="734" class="cardBody">
+      <tspan x="1143" dy="0">created from mapping JSON</tspan>
+      <tspan x="1143" dy="18">when missing in the org</tspan>
+    </text>
+
+    <circle cx="1340" cy="710" r="18" fill="#e8fbfd"/>
+    <text x="1340" y="716" text-anchor="middle" class="iconLabel">WEB</text>
+    <text x="1398" y="708" class="outputTitle">Merchandising Hub pages</text>
+    <text x="1398" y="734" class="cardBody">
+      <tspan x="1398" dy="0">category and brand public URLs</tspan>
+      <tspan x="1398" dy="18">for commerce experiences</tspan>
+    </text>
+  </g>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M425 243 H 455" stroke="#17438d" stroke-width="4" marker-end="url(#arrowBlue)"/>
+    <path d="M925 243 H 955" stroke="#0b7c86" stroke-width="4" marker-end="url(#arrowTeal)"/>
+    <path d="M820 301 V 330 H 1130 V 301" stroke="#0b7c86" stroke-width="4" marker-end="url(#arrowTeal)"/>
+    <path d="M820 301 V 330 H 1368 V 301" stroke="#0b7c86" stroke-width="4" marker-end="url(#arrowTeal)"/>
+
+    <path d="M445 446 H 470" stroke="#0b7c86" stroke-width="4" marker-end="url(#arrowTeal)"/>
+    <path d="M715 446 H 740" stroke="#d18c10" stroke-width="4" marker-end="url(#arrowGold)"/>
+    <path d="M990 446 H 1015" stroke="#17438d" stroke-width="6" marker-end="url(#arrowBlue)"/>
+
+    <path d="M330 502 V 670" stroke="#0b7c86" stroke-width="3.5" marker-end="url(#arrowTeal)"/>
+    <path d="M592 575 V 670" stroke="#d18c10" stroke-width="3.5" marker-end="url(#arrowGold)"/>
+    <path d="M865 575 V 670" stroke="#17438d" stroke-width="5" marker-end="url(#arrowBlue)"/>
+    <path d="M1148 575 V 652 H 865" stroke="#17438d" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowBlue)"/>
+    <path d="M1368 502 V 670" stroke="#0b7c86" stroke-width="3.5" marker-end="url(#arrowTeal)"/>
+    <path d="M1368 301 V 670 H 1160" stroke="#0b7c86" stroke-width="3" marker-end="url(#arrowTeal)"/>
+
+    <path d="M640 560 H 770" stroke="#d18c10" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowGold)"/>
+    <path d="M640 560 H 1130" stroke="#d18c10" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowGold)"/>
+  </g>
+
+  <g>
+    <text x="945" y="618" class="noteText" fill="#17438d">Delta updates the same source after a trusted full export baseline.</text>
+    <text x="1210" y="650" class="noteText" fill="#0b7c86">Platform field creation and listing-page sync are separate optional flows.</text>
+  </g>
+
+  <g>
+    <rect x="20" y="820" width="1560" height="62" rx="18" fill="url(#headerGradient)"/>
+    <text x="86" y="858" text-anchor="middle" class="footerText">Core repo areas</text>
+    <rect x="350" y="835" width="200" height="34" rx="16" fill="#0b7c86" stroke="#8ed9e0"/>
+    <rect x="575" y="835" width="200" height="34" rx="16" fill="#1d63c8" stroke="#8ab6ff"/>
+    <rect x="800" y="835" width="150" height="34" rx="16" fill="#fff3cc" stroke="#ffd76b"/>
+    <text x="450" y="858" text-anchor="middle" class="chipTextLight">bm_coveo</text>
+    <text x="675" y="858" text-anchor="middle" class="chipTextLight">int_coveo</text>
+    <text x="875" y="858" text-anchor="middle" class="chipTextDark">IMPEX</text>
+  </g>
+</svg>

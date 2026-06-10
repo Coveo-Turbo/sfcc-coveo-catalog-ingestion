@@ -197,6 +197,34 @@
       "valueMode": "raw",
       "enabled": true,
       "sortOrder": "160"
+    },
+    {
+      "mappingId": "searchable",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "searchable",
+      "targetField": "ec_searchable",
+      "valueMode": "raw",
+      "coveoField": {
+        "facet": true
+      },
+      "enabled": true,
+      "sortOrder": "170"
+    },
+    {
+      "mappingId": "creation-date",
+      "appliesTo": "Both",
+      "sourceObject": "product",
+      "sourceScope": "system",
+      "sourceAttributeId": "creationDate",
+      "targetField": "ec_creation_date",
+      "valueMode": "raw",
+      "coveoField": {
+        "type": "DATE"
+      },
+      "enabled": true,
+      "sortOrder": "180"
     }
   ]
 }
