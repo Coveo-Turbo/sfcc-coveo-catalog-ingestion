@@ -116,6 +116,15 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
             </attribute-definition>
+            <attribute-definition attribute-id="catalogStructureMode">
+                <display-name xml:lang="x-default">Catalog Structure Mode</display-name>
+                <description xml:lang="x-default">Controls whether exports emit Product plus Variant rows or Product rows only.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+                <default-value>product_variant</default-value>
+            </attribute-definition>
             <attribute-definition attribute-id="mappingProfileId">
                 <display-name xml:lang="x-default">Mapping Profile ID</display-name>
                 <description xml:lang="x-default">Optional field-mapping profile applied to this export target.</description>
@@ -171,6 +180,7 @@
                 <attribute attribute-id="listingBrandUrlTemplate"/>
                 <attribute attribute-id="listingSlugAmpersandToken"/>
                 <attribute attribute-id="catalogId"/>
+                <attribute attribute-id="catalogStructureMode"/>
                 <attribute attribute-id="mappingProfileId"/>
                 <attribute attribute-id="enabled"/>
                 <attribute attribute-id="lastSync"/>

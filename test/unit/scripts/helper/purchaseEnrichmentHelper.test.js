@@ -272,6 +272,7 @@ function createHelper(options) {
             }
         },
         '*/cartridge/scripts/helper/exportTargetHelper': options && options.exportTargetHelper ? options.exportTargetHelper : {
+            CATALOG_STRUCTURE_MODE_PRODUCT_ONLY: 'product_only',
             getTargetsForCurrentSite: function () {
                 return [{
                     custom: {
@@ -279,6 +280,9 @@ function createHelper(options) {
                         coveoTrackingId: 'tracking-1'
                     }
                 }];
+            },
+            normalizeCatalogStructureMode: function (value) {
+                return value ? String(value).trim().toLowerCase() : 'product_variant';
             }
         },
         '*/cartridge/scripts/helper/purchaseMetricHelper': createPurchaseMetricStub(captured),
@@ -486,6 +490,55 @@ describe('purchaseEnrichmentHelper', function () {
             rootProductId: 'root-suffixed',
             documentId: 'https://example.com/product/group-1234-2000999',
             count: 3
+        }]);
+        assert.deepEqual(rows.skippedRows, []);
+    });
+
+    it('maps SKU-based product_only rows directly to their own product documents', function () {
+        var helper = createHelper({
+            coveoHelper: {
+                buildProductQuery: function () {
+                    return createArrayIterator(['root-product-only']);
+                }
+            },
+            productRequestGenerator: {
+                processProducts: function () {
+                    return [{
+                        objecttype: 'Product',
+                        ec_product_id: 'SKU-1',
+                        ec_sku: 'SKU-1',
+                        ec_item_group_id: 'MASTER-1',
+                        documentId: 'https://example.com/product/SKU-1'
+                    }, {
+                        objecttype: 'Product',
+                        ec_product_id: 'SKU-2',
+                        ec_sku: 'SKU-2',
+                        ec_item_group_id: 'MASTER-1',
+                        documentId: 'https://example.com/product/SKU-2'
+                    }];
+                }
+            }
+        });
+        var counts = {
+            'SKU-1': 4,
+            'SKU-2': 1
+        };
+        var required = helper.buildRequiredProductIds(counts);
+        var rows = helper.buildProductDocumentRows({
+            catalogId: 'catalog-1',
+            catalogStructureMode: 'product_only'
+        }, required, counts);
+
+        assert.deepEqual(rows.mappedRows, [{
+            productId: 'SKU-1',
+            rootProductId: 'root-product-only',
+            documentId: 'https://example.com/product/SKU-1',
+            count: 4
+        }, {
+            productId: 'SKU-2',
+            rootProductId: 'root-product-only',
+            documentId: 'https://example.com/product/SKU-2',
+            count: 1
         }]);
         assert.deepEqual(rows.skippedRows, []);
     });

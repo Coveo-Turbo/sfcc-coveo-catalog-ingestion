@@ -690,13 +690,51 @@ function convertValue(rawValue, mapping, attributeDefinition) {
 }
 
 /**
+ * Returns a normalized array of logical item types.
+ * @param {string|Array} objectType - Exported item type or types.
+ * @returns {Array} normalized item types.
+ */
+function normalizeObjectTypes(objectType) {
+    var values = Array.isArray(objectType) ? objectType : [objectType];
+    var seen = {};
+
+    return values.map(function (value) {
+        return normalizeString(value);
+    }).filter(function (value) {
+        if (value === '' || seen[value]) {
+            return false;
+        }
+
+        seen[value] = true;
+        return true;
+    });
+}
+
+/**
  * Returns whether a mapping should apply to the current item type.
  * @param {string} appliesTo - Mapping appliesTo value.
- * @param {string} objectType - Exported item type.
+ * @param {string|Array} objectType - Exported item type or types.
  * @returns {boolean} whether the mapping applies.
  */
 function mappingAppliesTo(appliesTo, objectType) {
-    return appliesTo === 'Both' || appliesTo === objectType;
+    var objectTypes = normalizeObjectTypes(objectType);
+
+    return appliesTo === 'Both' || objectTypes.indexOf(appliesTo) !== -1;
+}
+
+/**
+ * Returns a stable label for one or more item types.
+ * @param {string|Array} objectType - Exported item type or types.
+ * @returns {string} normalized type label.
+ */
+function getObjectTypeLabel(objectType) {
+    var objectTypes = normalizeObjectTypes(objectType);
+
+    if (!objectTypes.length) {
+        return '[unknown object type]';
+    }
+
+    return objectTypes.join('+');
 }
 
 /**
@@ -750,7 +788,7 @@ function getProductIdentifier(product) {
  * Applies the built-in and configured mappings to a product payload.
  * @param {Object} payload - Export payload.
  * @param {Object} product - Exported product object.
- * @param {string} objectType - Product or Variant.
+ * @param {string|Array} objectType - Product or Variant logical type(s).
  * @param {Object} exportContext - Export context.
  * @returns {Object} updated payload.
  */
@@ -774,7 +812,7 @@ function applyFieldMappings(payload, product, objectType, exportContext) {
             Logger.error(
                 '(fieldMappingHelper-applyFieldMappings) -> Skipping mapping {0} for {1} {2}. {3}',
                 mapping.mappingId || mapping.targetField || '[unknown mapping]',
-                objectType || '[unknown object type]',
+                getObjectTypeLabel(objectType),
                 getProductIdentifier(product),
                 error.message || error
             );

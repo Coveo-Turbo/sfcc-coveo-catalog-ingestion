@@ -360,6 +360,16 @@ function getExportLanguage(exportContext) {
 }
 
 /**
+ * Returns whether the current export target uses product-only catalog rows.
+ * @param {Object} exportContext - Export context.
+ * @returns {boolean} whether the export is product-only.
+ */
+function isProductOnlyCatalogStructureMode(exportContext) {
+    return exportTargetHelper.normalizeCatalogStructureMode(exportContext && exportContext.catalogStructureMode)
+        === exportTargetHelper.CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
+}
+
+/**
  * Returns the source text from an SFCC markup-like value when available.
  * @param {*} markupValue - Markup or string value.
  * @returns {string} source text.
@@ -673,7 +683,10 @@ function getProductsData(product, exportOptions, exportContext) {
     var prdObj = null;
     try {
         var productId = exportOptions && exportOptions.productId ? exportOptions.productId : getCanonicalProductId(product);
-        var itemGroupId = exportOptions && exportOptions.itemGroupId ? exportOptions.itemGroupId : null;
+        var itemGroupId = exportOptions && exportOptions.itemGroupId ? exportOptions.itemGroupId : productId;
+        var mappingObjectTypes = exportOptions && exportOptions.mappingObjectTypes
+            ? exportOptions.mappingObjectTypes
+            : coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT;
         var categoryExportValues = getCategoryExportValues(product);
         var productImages = getImageUrls(product, 'large', ['medium']);
         var productThumbnails = getThumbnailUrls(product);
@@ -703,16 +716,17 @@ function getProductsData(product, exportOptions, exportContext) {
         if (exportPrices.promoPrice !== null) {
             prdObj.ec_promo_price = exportPrices.promoPrice;
         }
-        fieldMappingHelper.applyFieldMappings(prdObj, product, coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT, exportContext);
+        fieldMappingHelper.applyFieldMappings(prdObj, product, mappingObjectTypes, exportContext);
         if (product.variant && 'color' in product.custom && !empty(product.custom.color)) {
             prdObj.ec_color = productColor;
         }
         if (product.variant && 'size' in product.custom && !empty(product.custom.size)) {
             prdObj.ec_size = getProductSize(product);
         }
-        if (!empty(itemGroupId)) {
-            prdObj.ec_item_group_id = itemGroupId;
+        if (product.variant && isProductOnlyCatalogStructureMode(exportContext)) {
+            prdObj.ec_sku = product.ID;
         }
+        prdObj.ec_item_group_id = itemGroupId;
 
         purchaseMetricHelper.applyPurchaseMetrics(prdObj, {
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
@@ -769,11 +783,28 @@ function getVariantsData(product, productId, exportContext) {
  */
 function processProducts(product, isDelta, exportContext) {
     var coveoProducts = [];
+    var isProductOnly = isProductOnlyCatalogStructureMode(exportContext);
 
     try {
         var coveoPrd = ProductMgr.getProduct(product);
 
         if (coveoPrd.master) {
+            if (isProductOnly) {
+                coveoPrd.variants.toArray().forEach(function (variant) {
+                    coveoProducts.push(getProductsData(variant, {
+                        productId: variant.ID,
+                        itemGroupId: coveoPrd.ID,
+                        metricAliases: [variant.ID],
+                        mappingObjectTypes: [
+                            coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
+                            coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT
+                        ]
+                    }, exportContext));
+                });
+
+                return coveoProducts;
+            }
+
             var variants = coveoPrd.variants.toArray();
             var groupedVariants = {};
 
@@ -807,6 +838,20 @@ function processProducts(product, isDelta, exportContext) {
                 });
             });
         } else if (coveoPrd.variant && !empty(coveoPrd.masterProduct)) {
+            if (isProductOnly) {
+                coveoProducts.push(getProductsData(coveoPrd, {
+                    productId: coveoPrd.ID,
+                    itemGroupId: coveoPrd.masterProduct.ID,
+                    metricAliases: [coveoPrd.ID],
+                    mappingObjectTypes: [
+                        coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
+                        coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT
+                    ]
+                }, exportContext));
+
+                return coveoProducts;
+            }
+
             var groupedProductId = getCanonicalProductId(coveoPrd);
             coveoProducts.push(getProductsData(coveoPrd, {
                 productId: groupedProductId,

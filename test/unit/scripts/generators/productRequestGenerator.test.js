@@ -76,6 +76,18 @@ function createSiteCurrent(customPreferences) {
     };
 }
 
+function createExportTargetHelperStub() {
+    return {
+        CATALOG_STRUCTURE_MODE_PRODUCT_ONLY: 'product_only',
+        normalizeCatalogStructureMode: function (value) {
+            return value ? String(value).trim().toLowerCase() : 'product_variant';
+        },
+        getLanguageFromLocale: function (locale) {
+            return locale.split(/[-_]/)[0].toLowerCase();
+        }
+    };
+}
+
 function createProduct(options) {
     var imageSets = options.images || {};
     var categoryAssignments = [];
@@ -255,11 +267,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -300,6 +308,7 @@ describe('productRequestGenerator', function () {
         assert.strictEqual(exports[0].language, 'en');
         assert.strictEqual(exports[0].ec_name, 'Name SKU-1');
         assert.strictEqual(exports[0].ec_price, 99);
+        assert.strictEqual(exports[0].ec_item_group_id, 'SKU-1');
         assert.strictEqual(exports[0].ec_description, '<html><body>Long Description</body></html>');
         assert.strictEqual(exports[0].ec_shortdesc, 'Short Description');
         assert.notProperty(exports[0], 'ec_promo_price');
@@ -340,11 +349,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -462,11 +467,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -546,6 +547,199 @@ describe('productRequestGenerator', function () {
         }));
     });
 
+    it('exports a direct variant as one consolidated Product row in product_only mode', function () {
+        var masterProduct = createProduct({
+            ID: 'MASTER-1',
+            master: true
+        });
+        var variantProduct = createProduct({
+            ID: 'MASTER-1-RED-S',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'red',
+                size: 'small'
+            }
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return variantProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/object/ObjectAttributeDefinition': {},
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('MASTER-1-RED-S', false, {
+            catalogStructureMode: 'product_only'
+        });
+
+        assert.lengthOf(exports, 1);
+        assert.strictEqual(exports[0].objecttype, 'Product');
+        assert.strictEqual(exports[0].ec_product_id, 'MASTER-1-RED-S');
+        assert.strictEqual(exports[0].permanentid, 'MASTER-1-RED-S');
+        assert.strictEqual(exports[0].ec_sku, 'MASTER-1-RED-S');
+        assert.strictEqual(exports[0].ec_item_group_id, 'MASTER-1');
+        assert.strictEqual(exports[0].documentId, 'https://example.com/Product-Show?pid=MASTER-1-RED-S');
+        assert.strictEqual(exports[0].ec_color, 'RED');
+        assert.strictEqual(exports[0].ec_size, 'SMALL');
+        assert.notProperty(exports[0], 'ec_variant_id');
+    });
+
+    it('exports one Product row per variant SKU for masters in product_only mode', function () {
+        var masterProduct = createProduct({
+            ID: 'MASTER-1',
+            master: true
+        });
+        var redVariantSmall = createProduct({
+            ID: 'MASTER-1-RED-S',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'red',
+                size: 'small'
+            }
+        });
+        var redVariantMedium = createProduct({
+            ID: 'MASTER-1-RED-M',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'red',
+                size: 'medium'
+            }
+        });
+        var blueVariantSmall = createProduct({
+            ID: 'MASTER-1-BLUE-S',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'blue',
+                size: 'small'
+            }
+        });
+
+        masterProduct.variants = createArrayWrapper([
+            redVariantSmall,
+            redVariantMedium,
+            blueVariantSmall
+        ]);
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return masterProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    defaultLocale: 'en_CA'
+                }
+            },
+            'dw/object/ObjectAttributeDefinition': {},
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('MASTER-1', false, {
+            catalogStructureMode: 'product_only'
+        });
+
+        assert.lengthOf(exports, 3);
+        assert.sameMembers(exports.map(function (item) {
+            return item.objecttype;
+        }), ['Product', 'Product', 'Product']);
+        assert.sameMembers(exports.map(function (item) {
+            return item.ec_product_id;
+        }), ['MASTER-1-RED-S', 'MASTER-1-RED-M', 'MASTER-1-BLUE-S']);
+        exports.forEach(function (item) {
+            assert.strictEqual(item.permanentid, item.ec_product_id);
+            assert.strictEqual(item.ec_sku, item.ec_product_id);
+            assert.strictEqual(item.ec_item_group_id, 'MASTER-1');
+            assert.notProperty(item, 'ec_variant_id');
+        });
+    });
+
     it('applies units-sold metrics to grouped products and exact matching variants', function () {
         var capturedMetricCalls = [];
         var masterProduct = createProduct({
@@ -595,11 +789,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -712,11 +902,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -814,11 +1000,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -891,11 +1073,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -963,11 +1141,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1032,11 +1206,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1102,11 +1272,7 @@ describe('productRequestGenerator', function () {
                     OBJECT_TYPE_VARIANT: 'Variant'
                 }
             },
-            '*/cartridge/scripts/helper/exportTargetHelper': {
-                getLanguageFromLocale: function (locale) {
-                    return locale.split(/[-_]/)[0].toLowerCase();
-                }
-            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;

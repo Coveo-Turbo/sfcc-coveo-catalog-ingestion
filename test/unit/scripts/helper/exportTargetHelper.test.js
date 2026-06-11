@@ -87,6 +87,7 @@ describe('exportTargetHelper', function () {
         assert.strictEqual(context.siteId, 'RefArch');
         assert.strictEqual(context.locale, 'en_CA');
         assert.strictEqual(context.language, 'en');
+        assert.strictEqual(context.catalogStructureMode, 'product_variant');
         assert.strictEqual(context.coveoOrganizationId, 'orgid');
         assert.strictEqual(context.coveoSourceId, 'source-id');
         assert.strictEqual(context.mappingProfileId, '');
@@ -179,6 +180,7 @@ describe('exportTargetHelper', function () {
                 listingBrandUrlTemplate: '/marques/{brandSlug}',
                 listingSlugAmpersandToken: 'et',
                 catalogId: 'fr-catalog',
+                catalogStructureMode: 'product_only',
                 mappingProfileId: 'fr-profile',
                 enabled: true,
                 lastSync: null,
@@ -256,9 +258,71 @@ describe('exportTargetHelper', function () {
         assert.strictEqual(context.listingBrandUrlTemplate, '/marques/{brandSlug}');
         assert.strictEqual(context.listingSlugAmpersandToken, 'et');
         assert.strictEqual(context.catalogId, 'fr-catalog');
+        assert.strictEqual(context.catalogStructureMode, 'product_only');
         assert.strictEqual(context.mappingProfileId, 'fr-profile');
         assert.lengthOf(context.fieldMappings, 1);
         assert.strictEqual(requestedTarget.custom.lastSync, lastSync);
+    });
+
+    it('defaults blank target catalogStructureMode values to product_variant', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                buildFieldMappingContext: function () {
+                    return {
+                        mappingProfileId: '',
+                        mappingProfile: null,
+                        fieldMappings: []
+                    };
+                }
+            },
+            'dw/object/CustomObjectMgr': {
+                getCustomObject: function () {
+                    return {
+                        custom: {
+                            siteId: 'RefArch',
+                            locale: 'en_CA',
+                            language: 'en',
+                            coveoSourceId: 'source-en',
+                            catalogStructureMode: '',
+                            enabled: true
+                        }
+                    };
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        warn: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    ID: 'RefArch',
+                    defaultLocale: 'en_CA',
+                    preferences: {
+                        custom: {
+                            coveoOrganizationId: 'orgid',
+                            coveoSourceId: 'legacy-source',
+                            coveoCatalogLastSync: null
+                        }
+                    }
+                }
+            },
+            'dw/system/Transaction': {
+                wrap: function (callback) {
+                    callback();
+                }
+            }
+        });
+
+        var context = helper.resolveExportContext({
+            get: function (name) {
+                return name === 'targetId' ? 'en-ca' : '';
+            }
+        });
+
+        assert.strictEqual(context.catalogStructureMode, 'product_variant');
     });
 
     it('groups locale-specific targets by tracking id for listing sync', function () {
@@ -414,5 +478,66 @@ describe('exportTargetHelper', function () {
                 }
             });
         }, /invalid coveoOrganizationId value "SET_REAL_ORGANIZATION_ID"/);
+    });
+
+    it('rejects unsupported catalogStructureMode values', function () {
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                buildFieldMappingContext: function () {
+                    return {
+                        mappingProfileId: '',
+                        mappingProfile: null,
+                        fieldMappings: []
+                    };
+                }
+            },
+            'dw/object/CustomObjectMgr': {
+                getCustomObject: function () {
+                    return {
+                        custom: {
+                            siteId: 'RefArch',
+                            locale: 'en_CA',
+                            language: 'en',
+                            coveoSourceId: 'source-en',
+                            catalogStructureMode: 'variants_only',
+                            enabled: true
+                        }
+                    };
+                }
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        warn: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: {
+                    ID: 'RefArch',
+                    defaultLocale: 'en_CA',
+                    preferences: {
+                        custom: {
+                            coveoOrganizationId: 'orgid',
+                            coveoSourceId: 'legacy-source',
+                            coveoCatalogLastSync: null
+                        }
+                    }
+                }
+            },
+            'dw/system/Transaction': {
+                wrap: function (callback) {
+                    callback();
+                }
+            }
+        });
+
+        assert.throws(function () {
+            helper.resolveExportContext({
+                get: function (name) {
+                    return name === 'targetId' ? 'en-ca' : '';
+                }
+            });
+        }, /unsupported catalogStructureMode value "variants_only"/);
     });
 });
