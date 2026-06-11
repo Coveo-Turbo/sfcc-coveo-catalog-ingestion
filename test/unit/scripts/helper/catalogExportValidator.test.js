@@ -46,7 +46,9 @@ describe('catalogExportValidator', function () {
                 ec_product_id: 'MASTER-red',
                 ec_variant_id: 'SKU-1'
             }
-        ]);
+        ], {
+            catalogStructureMode: 'product_variant'
+        });
 
         assert.deepEqual(payload, {
             addOrUpdate: [
@@ -95,7 +97,9 @@ describe('catalogExportValidator', function () {
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }
-            ]);
+            ], {
+                catalogStructureMode: 'product_variant'
+            });
         }, /references missing parent ec_product_id/);
     });
 
@@ -163,7 +167,9 @@ describe('catalogExportValidator', function () {
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }
-            ]);
+            ], {
+                catalogStructureMode: 'product_variant'
+            });
         }, /missing language|permanentid/);
     });
 

@@ -19,7 +19,7 @@ function normalizeCatalogStructureMode(value) {
     var normalizedValue = normalizeString(value).toLowerCase();
 
     if (normalizedValue === '') {
-        return CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT;
+        return CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
     }
 
     return normalizedValue;
@@ -112,7 +112,7 @@ function buildLegacyExportContext() {
         listingBrandUrlTemplate: '',
         listingSlugAmpersandToken: '',
         catalogId: '',
-        catalogStructureMode: CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT,
+        catalogStructureMode: CATALOG_STRUCTURE_MODE_PRODUCT_ONLY,
         mappingProfileId: '',
         mappingProfile: null,
         fieldMappings: [],

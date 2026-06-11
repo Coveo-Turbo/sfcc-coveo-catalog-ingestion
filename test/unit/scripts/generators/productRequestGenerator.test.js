@@ -80,7 +80,7 @@ function createExportTargetHelperStub() {
     return {
         CATALOG_STRUCTURE_MODE_PRODUCT_ONLY: 'product_only',
         normalizeCatalogStructureMode: function (value) {
-            return value ? String(value).trim().toLowerCase() : 'product_variant';
+            return value ? String(value).trim().toLowerCase() : 'product_only';
         },
         getLanguageFromLocale: function (locale) {
             return locale.split(/[-_]/)[0].toLowerCase();
@@ -500,7 +500,9 @@ describe('productRequestGenerator', function () {
             }
         });
 
-        var exports = generator.processProducts('MASTER-1');
+        var exports = generator.processProducts('MASTER-1', false, {
+            catalogStructureMode: 'product_variant'
+        });
         var products = exports.filter(function (item) {
             return item.objecttype === 'Product';
         });
@@ -835,7 +837,9 @@ describe('productRequestGenerator', function () {
             }
         });
 
-        var exports = generator.processProducts('MASTER-2');
+        var exports = generator.processProducts('MASTER-2', false, {
+            catalogStructureMode: 'product_variant'
+        });
         var productExport = exports.find(function (item) {
             return item.objecttype === 'Product';
         });
@@ -1033,7 +1037,9 @@ describe('productRequestGenerator', function () {
             }
         });
 
-        var exports = generator.processProducts('MASTER-CAT');
+        var exports = generator.processProducts('MASTER-CAT', false, {
+            catalogStructureMode: 'product_variant'
+        });
         var productExport = exports.filter(function (item) {
             return item.objecttype === 'Product';
         })[0];

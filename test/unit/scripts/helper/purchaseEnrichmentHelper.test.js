@@ -282,7 +282,7 @@ function createHelper(options) {
                 }];
             },
             normalizeCatalogStructureMode: function (value) {
-                return value ? String(value).trim().toLowerCase() : 'product_variant';
+                return value ? String(value).trim().toLowerCase() : 'product_only';
             }
         },
         '*/cartridge/scripts/helper/purchaseMetricHelper': createPurchaseMetricStub(captured),
@@ -422,7 +422,10 @@ describe('purchaseEnrichmentHelper', function () {
             'missing-product': 1
         };
         var required = helper.buildRequiredProductIds(counts);
-        var rows = helper.buildProductDocumentRows({catalogId: 'catalog-1'}, required, counts);
+        var rows = helper.buildProductDocumentRows({
+            catalogId: 'catalog-1',
+            catalogStructureMode: 'product_variant'
+        }, required, counts);
 
         assert.deepEqual(rows.mappedRows, [{
             productId: 'master-red',
@@ -478,7 +481,10 @@ describe('purchaseEnrichmentHelper', function () {
             '2000999': 3
         };
         var required = helper.buildRequiredProductIds(counts);
-        var rows = helper.buildProductDocumentRows({catalogId: 'catalog-1'}, required, counts);
+        var rows = helper.buildProductDocumentRows({
+            catalogId: 'catalog-1',
+            catalogStructureMode: 'product_variant'
+        }, required, counts);
 
         assert.deepEqual(rows.mappedRows, [{
             productId: '1000879',

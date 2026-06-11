@@ -202,7 +202,7 @@ Use these values when creating the object:
 - `language`: language sent to Coveo, for example `en` or `fr`
 - `coveoSourceId`: destination Coveo source for this locale or market
 - `catalogId`: leave empty for shared-catalog mode; set it only when this target must export a specific catalog
-- `catalogStructureMode`: leave empty or set `product_variant` to keep the current `Product` plus `Variant` export; set `product_only` to emit only `Product` rows and tie `ec_product_id = permanentid = ec_sku` to the variant SKU
+- `catalogStructureMode`: leave empty or set `product_only` to emit only `Product` rows and tie `ec_product_id = permanentid = ec_sku` to the variant SKU; set `product_variant` when you want the current `Product` plus `Variant` export
 - `mappingProfileId`: leave empty to keep the built-in mapped fields only; set it when this target should add a configurable mapping profile
 - `enabled`: set to `true`
 - `lastSync`: leave empty before the first successful full export

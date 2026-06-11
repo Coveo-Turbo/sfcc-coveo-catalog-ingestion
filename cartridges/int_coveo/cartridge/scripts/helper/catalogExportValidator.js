@@ -21,7 +21,7 @@ function isMissing(value) {
  */
 function normalizeCatalogStructureMode(value) {
     if (value === null || value === undefined || value === '') {
-        return CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT;
+        return CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
     }
 
     return String(value).trim().toLowerCase();

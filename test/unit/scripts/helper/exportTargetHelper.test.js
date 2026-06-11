@@ -87,7 +87,7 @@ describe('exportTargetHelper', function () {
         assert.strictEqual(context.siteId, 'RefArch');
         assert.strictEqual(context.locale, 'en_CA');
         assert.strictEqual(context.language, 'en');
-        assert.strictEqual(context.catalogStructureMode, 'product_variant');
+        assert.strictEqual(context.catalogStructureMode, 'product_only');
         assert.strictEqual(context.coveoOrganizationId, 'orgid');
         assert.strictEqual(context.coveoSourceId, 'source-id');
         assert.strictEqual(context.mappingProfileId, '');
@@ -264,7 +264,7 @@ describe('exportTargetHelper', function () {
         assert.strictEqual(requestedTarget.custom.lastSync, lastSync);
     });
 
-    it('defaults blank target catalogStructureMode values to product_variant', function () {
+    it('defaults blank target catalogStructureMode values to product_only', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 buildFieldMappingContext: function () {
@@ -322,7 +322,7 @@ describe('exportTargetHelper', function () {
             }
         });
 
-        assert.strictEqual(context.catalogStructureMode, 'product_variant');
+        assert.strictEqual(context.catalogStructureMode, 'product_only');
     });
 
     it('groups locale-specific targets by tracking id for listing sync', function () {

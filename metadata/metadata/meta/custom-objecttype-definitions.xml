@@ -123,7 +123,7 @@
                 <mandatory-flag>false</mandatory-flag>
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>0</min-length>
-                <default-value>product_variant</default-value>
+                <default-value>product_only</default-value>
             </attribute-definition>
             <attribute-definition attribute-id="mappingProfileId">
                 <display-name xml:lang="x-default">Mapping Profile ID</display-name>
