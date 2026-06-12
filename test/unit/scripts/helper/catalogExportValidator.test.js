@@ -46,7 +46,9 @@ describe('catalogExportValidator', function () {
                 ec_product_id: 'MASTER-red',
                 ec_variant_id: 'SKU-1'
             }
-        ]);
+        ], {
+            catalogStructureMode: 'product_variant'
+        });
 
         assert.deepEqual(payload, {
             addOrUpdate: [
@@ -95,8 +97,57 @@ describe('catalogExportValidator', function () {
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }
-            ]);
+            ], {
+                catalogStructureMode: 'product_variant'
+            });
         }, /references missing parent ec_product_id/);
+    });
+
+    it('builds an addOrUpdate payload for valid product_only items without ec_variant_id', function () {
+        var payload = validator.buildAddOrUpdatePayload([
+            {
+                documentId: 'https://example.com/product/sku-1',
+                objecttype: 'Product',
+                language: 'en',
+                permanentid: 'SKU-1',
+                ec_product_id: 'SKU-1',
+                ec_sku: 'SKU-1',
+                ec_item_group_id: 'MASTER-1'
+            }
+        ], {
+            catalogStructureMode: 'product_only'
+        });
+
+        assert.deepEqual(payload, {
+            addOrUpdate: [
+                {
+                    documentId: 'https://example.com/product/sku-1',
+                    objecttype: 'Product',
+                    language: 'en',
+                    permanentid: 'SKU-1',
+                    ec_product_id: 'SKU-1',
+                    ec_sku: 'SKU-1',
+                    ec_item_group_id: 'MASTER-1'
+                }
+            ]
+        });
+    });
+
+    it('rejects Variant items in product_only mode', function () {
+        assert.throws(function () {
+            validator.buildAddOrUpdatePayload([
+                {
+                    documentId: 'https://example.com/product/red?pid=sSKU-1',
+                    objecttype: 'Variant',
+                    language: 'en',
+                    permanentid: 'SKU-1',
+                    ec_product_id: 'MASTER-red',
+                    ec_variant_id: 'SKU-1'
+                }
+            ], {
+                catalogStructureMode: 'product_only'
+            });
+        }, /not allowed in product_only mode/);
     });
 
     it('rejects items that are missing language or mismatched permanentid values', function () {
@@ -116,7 +167,9 @@ describe('catalogExportValidator', function () {
                     ec_product_id: 'MASTER-red',
                     ec_variant_id: 'SKU-1'
                 }
-            ]);
+            ], {
+                catalogStructureMode: 'product_variant'
+            });
         }, /missing language|permanentid/);
     });
 

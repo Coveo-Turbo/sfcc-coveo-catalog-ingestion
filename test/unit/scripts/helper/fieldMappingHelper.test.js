@@ -416,6 +416,7 @@ describe('fieldMappingHelper', function () {
         };
         var productPayload = helper.applyFieldMappings({}, product, 'Product', exportContext);
         var variantPayload = helper.applyFieldMappings({}, product, 'Variant', exportContext);
+        var consolidatedProductPayload = helper.applyFieldMappings({}, product, ['Product', 'Variant'], exportContext);
 
         assert.strictEqual(productPayload.ec_name, 'Chaussure FR');
         assert.strictEqual(productPayload.gender, 'unisex');
@@ -434,6 +435,15 @@ describe('fieldMappingHelper', function () {
         assert.strictEqual(variantPayload.ec_collection, 'spring-drop');
         assert.strictEqual(variantPayload.ec_department, 'footwear');
         assert.notProperty(variantPayload, 'ec_finish_label');
+
+        assert.strictEqual(consolidatedProductPayload.ec_name, 'Chaussure FR');
+        assert.strictEqual(consolidatedProductPayload.gender, 'unisex');
+        assert.strictEqual(consolidatedProductPayload.sfcc_id, 'SKU-1');
+        assert.strictEqual(consolidatedProductPayload.ec_material, 'leather');
+        assert.strictEqual(consolidatedProductPayload.ec_finish_label, 'Matte');
+        assert.deepEqual(consolidatedProductPayload.ec_size_labels, ['Small', 'Medium']);
+        assert.strictEqual(consolidatedProductPayload.ec_collection, 'spring-drop');
+        assert.strictEqual(consolidatedProductPayload.ec_department, 'footwear');
     });
 
     it('skips a failing custom mapping without preventing later payload fields', function () {

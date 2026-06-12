@@ -749,6 +749,8 @@ function buildProductDocumentRows(exportContext, requiredProductIds, counts) {
     var products = coveoHelper.buildProductQuery(false, exportContext);
     var requiredCount = requiredProductIds && typeof requiredProductIds.size === 'function' ? requiredProductIds.size() : 0;
     var resolvedCount = 0;
+    var isProductOnly = exportTargetHelper.normalizeCatalogStructureMode(exportContext && exportContext.catalogStructureMode)
+        === exportTargetHelper.CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
 
     if (requiredCount === 0) {
         return {
@@ -799,6 +801,7 @@ function buildProductDocumentRows(exportContext, requiredProductIds, counts) {
                     documentId: item.documentId
                 });
                 mapAlias(item.ec_product_id, item, rootProductId);
+                mapAlias(item.ec_sku, item, rootProductId);
 
                 var lastDashIndex = item.ec_product_id.lastIndexOf('-');
 
@@ -806,6 +809,10 @@ function buildProductDocumentRows(exportContext, requiredProductIds, counts) {
                     mapAlias(item.ec_product_id.substring(lastDashIndex + 1), item, rootProductId);
                 }
             });
+
+            if (isProductOnly) {
+                continue;
+            }
 
             exportItems.forEach(function (item) {
                 var parentRow = null;

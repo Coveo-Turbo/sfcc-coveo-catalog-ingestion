@@ -1,0 +1,241 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Target-Aware Catalog Structure Modes</title>
+  <desc id="desc">Premium PowerPoint-quality infographic that explains the latest branch changes: configurable catalog structure modes for SFCC to Coveo exports.</desc>
+  <defs>
+    <linearGradient id="navy" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f2b5b"/>
+      <stop offset="100%" stop-color="#1a4a92"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f7f89"/>
+      <stop offset="100%" stop-color="#13a1ae"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f0a81f"/>
+      <stop offset="100%" stop-color="#ffbf47"/>
+    </linearGradient>
+    <linearGradient id="softBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f6f9fc"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#e7eef5" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowNavy" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#1a4a92"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#0f8f9a"/>
+    </marker>
+    <style>
+      .title { font: 700 52px 'Aptos Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #0f2b5b; letter-spacing: -0.8px; }
+      .subtitle { font: 500 21px 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; fill: #3a556f; }
+      .eyebrow { font: 700 15px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #0f8f9a; letter-spacing: 1.3px; }
+      .metricValue { font: 700 28px 'Aptos Display', 'Segoe UI', Arial, sans-serif; fill: #0f2b5b; }
+      .metricLabel { font: 500 13px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #4b647d; }
+      .stageNo { font: 700 17px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #ffffff; }
+      .stageTitle { font: 700 20px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #0f2b5b; }
+      .stageBody { font: 400 15px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #2c3e50; }
+      .small { font: 400 13px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #51657a; }
+      .chip { font: 700 13px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #0f2b5b; letter-spacing: 0.6px; }
+      .subhead { font: 700 16px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #0f2b5b; }
+      .monoNavy { font: 700 14px Menlo, Monaco, Consolas, 'Courier New', monospace; fill: #1a4a92; }
+      .monoTeal { font: 700 14px Menlo, Monaco, Consolas, 'Courier New', monospace; fill: #0f8f9a; }
+      .monoAmber { font: 700 14px Menlo, Monaco, Consolas, 'Courier New', monospace; fill: #a96900; }
+      .calloutTitle { font: 700 18px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #0f2b5b; }
+      .calloutBody { font: 400 14px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #34495e; }
+      .footerTitle { font: 700 16px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #ffffff; }
+      .footerChip { font: 700 14px 'Aptos', 'Segoe UI', Arial, sans-serif; fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#softBg)"/>
+  <rect width="1600" height="900" fill="url(#grid)" opacity="0.55"/>
+  <rect x="0" y="0" width="1600" height="6" fill="url(#teal)"/>
+
+  <g transform="translate(34 34)">
+    <rect x="0" y="0" width="86" height="86" rx="20" fill="#ffffff" stroke="#dce8f3" stroke-width="2"/>
+    <path d="M24 54 L24 28 L45 18 L66 28 L66 54" fill="none" stroke="#1a4a92" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M34 54 L34 38 L45 32 L56 38 L56 54" fill="none" stroke="#0f8f9a" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="45" cy="61" r="4.5" fill="#f0a81f"/>
+  </g>
+
+  <text x="145" y="64" class="eyebrow">BRANCH CHANGE OVERVIEW</text>
+  <text x="145" y="116" class="title">Catalog Structure Mode Upgrade</text>
+  <text x="145" y="148" class="subtitle">Target-level control from Business Manager configuration to safe full and delta publishing</text>
+
+  <g filter="url(#shadow)">
+    <rect x="1120" y="36" width="112" height="92" rx="20" fill="#ffffff" stroke="#deebf5"/>
+    <rect x="1248" y="36" width="112" height="92" rx="20" fill="#ffffff" stroke="#deebf5"/>
+    <rect x="1376" y="36" width="112" height="92" rx="20" fill="#ffffff" stroke="#deebf5"/>
+    <rect x="1504" y="36" width="76" height="92" rx="20" fill="#ffffff" stroke="#deebf5"/>
+  </g>
+  <text x="1150" y="76" class="metricValue">2</text>
+  <text x="1150" y="98" class="metricLabel">supported modes</text>
+  <text x="1278" y="76" class="metricValue">1</text>
+  <text x="1278" y="98" class="metricLabel">target-level toggle</text>
+  <text x="1406" y="76" class="metricValue">0</text>
+  <text x="1406" y="98" class="metricLabel">Variant rows in</text>
+  <text x="1406" y="114" class="metricLabel">`product_only`</text>
+  <text x="1524" y="76" class="metricValue">1:1</text>
+  <text x="1524" y="98" class="metricLabel">Product row</text>
+  <text x="1524" y="114" class="metricLabel">per variant SKU</text>
+
+  <g filter="url(#shadow)">
+    <rect x="28" y="198" width="1544" height="348" rx="28" fill="#ffffff" stroke="#d7e6f2"/>
+  </g>
+
+  <g>
+    <rect x="52" y="224" width="214" height="270" rx="24" fill="#ffffff" stroke="#dce8f3" stroke-width="2"/>
+    <rect x="52" y="224" width="214" height="10" rx="10" fill="url(#navy)"/>
+    <circle cx="78" cy="253" r="19" fill="url(#navy)"/><text x="69" y="259" class="stageNo">01</text>
+    <text x="104" y="260" class="stageTitle">Configure target</text>
+    <text x="76" y="294" class="stageBody">
+      <tspan x="76" dy="0">Set the new export-target</tspan>
+      <tspan x="76" dy="20">attribute in Business Manager.</tspan>
+    </text>
+    <rect x="74" y="328" width="170" height="36" rx="12" fill="#eef6ff" stroke="#cfe0f0"/>
+    <text x="90" y="351" class="monoNavy">catalogStructureMode</text>
+    <rect x="74" y="382" width="170" height="32" rx="12" fill="#ecfcfe" stroke="#d5f1f4"/>
+    <text x="91" y="403" class="monoTeal">product_variant</text>
+    <rect x="74" y="424" width="170" height="32" rx="12" fill="#fff8e8" stroke="#f5ddb1"/>
+    <text x="101" y="445" class="monoAmber">product_only</text>
+    <text x="76" y="476" class="small">Default remains backward compatible.</text>
+
+    <rect x="288" y="224" width="214" height="270" rx="24" fill="#ffffff" stroke="#dce8f3" stroke-width="2"/>
+    <rect x="288" y="224" width="214" height="10" rx="10" fill="url(#teal)"/>
+    <circle cx="314" cy="253" r="19" fill="url(#teal)"/><text x="305" y="259" class="stageNo">02</text>
+    <text x="340" y="260" class="stageTitle">Resolve mode</text>
+    <text x="312" y="294" class="stageBody">
+      <tspan x="312" dy="0">Full and Delta jobs normalize</tspan>
+      <tspan x="312" dy="20">the setting and reject</tspan>
+      <tspan x="312" dy="20">unsupported values early.</tspan>
+    </text>
+    <rect x="310" y="398" width="170" height="54" rx="16" fill="#f6fbff" stroke="#dce8f3"/>
+    <text x="328" y="422" class="subhead">Jobs covered</text>
+    <text x="328" y="442" class="small">Full export job</text>
+    <text x="328" y="458" class="small">Delta export job</text>
+
+    <rect x="524" y="224" width="430" height="270" rx="24" fill="#ffffff" stroke="#dce8f3" stroke-width="2"/>
+    <rect x="524" y="224" width="430" height="10" rx="10" fill="url(#navy)"/>
+    <circle cx="550" cy="253" r="19" fill="url(#navy)"/><text x="541" y="259" class="stageNo">03</text>
+    <text x="576" y="260" class="stageTitle">Generate payload</text>
+
+    <rect x="548" y="294" width="180" height="162" rx="18" fill="#f7fbff" stroke="#d8e7f3"/>
+    <text x="566" y="320" class="subhead">`product_variant`</text>
+    <text x="566" y="346" class="stageBody">
+      <tspan x="566" dy="0">Preserves current model:</tspan>
+      <tspan x="566" dy="20">Product + Variant rows</tspan>
+    </text>
+    <text x="566" y="396" class="monoNavy">Product uses ec_product_id</text>
+    <text x="566" y="420" class="monoNavy">Variant uses ec_product_id</text>
+    <text x="566" y="440" class="monoNavy">+ ec_variant_id</text>
+
+    <rect x="748" y="294" width="182" height="162" rx="18" fill="#fffaf0" stroke="#f4dfb7"/>
+    <text x="766" y="320" class="subhead">`product_only`</text>
+    <text x="766" y="346" class="stageBody">
+      <tspan x="766" dy="0">Consolidates to Product rows</tspan>
+      <tspan x="766" dy="20">only, one per variant SKU</tspan>
+    </text>
+    <text x="766" y="396" class="monoAmber">ec_product_id = variant SKU</text>
+    <text x="766" y="420" class="monoAmber">permanentid = ec_sku</text>
+    <text x="766" y="444" class="monoAmber">keeps ec_item_group_id</text>
+
+    <rect x="976" y="224" width="240" height="270" rx="24" fill="#ffffff" stroke="#dce8f3" stroke-width="2"/>
+    <rect x="976" y="224" width="240" height="10" rx="10" fill="url(#teal)"/>
+    <circle cx="1002" cy="253" r="19" fill="url(#teal)"/><text x="993" y="259" class="stageNo">04</text>
+    <text x="1028" y="260" class="stageTitle">Guard schema</text>
+    <text x="1000" y="294" class="stageBody">
+      <tspan x="1000" dy="0">Field mappings and validation</tspan>
+      <tspan x="1000" dy="20">adapt automatically to the</tspan>
+      <tspan x="1000" dy="20">selected mode.</tspan>
+    </text>
+    <rect x="998" y="370" width="196" height="86" rx="16" fill="#f6fbff" stroke="#dce8f3"/>
+    <text x="1016" y="394" class="small">Consolidated rows can inherit</text>
+    <text x="1016" y="414" class="monoTeal">Product + Variant + Both</text>
+    <text x="1016" y="438" class="small">Validator blocks Variant rows</text>
+    <text x="1016" y="454" class="small">when mode = `product_only`</text>
+
+    <rect x="1238" y="224" width="310" height="270" rx="24" fill="#ffffff" stroke="#dce8f3" stroke-width="2"/>
+    <rect x="1238" y="224" width="310" height="10" rx="10" fill="url(#navy)"/>
+    <circle cx="1264" cy="253" r="19" fill="url(#navy)"/><text x="1255" y="259" class="stageNo">05</text>
+    <text x="1290" y="260" class="stageTitle">Enrich and publish</text>
+    <text x="1262" y="294" class="stageBody">
+      <tspan x="1262" dy="0">Purchase enrichment and the</tspan>
+      <tspan x="1262" dy="20">publishing path stay aligned</tspan>
+      <tspan x="1262" dy="20">across both modes.</tspan>
+    </text>
+    <rect x="1260" y="360" width="266" height="42" rx="14" fill="#ecfcfe" stroke="#d5f1f4"/>
+    <text x="1278" y="387" class="small">SKU-based product_only rows map directly for enrichment</text>
+    <rect x="1260" y="416" width="266" height="42" rx="14" fill="#eef6ff" stroke="#dce8f3"/>
+    <text x="1278" y="443" class="small">Same full/delta addOrUpdate path to the Coveo source</text>
+  </g>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M266 358 H 288" stroke="#1a4a92" stroke-width="4" marker-end="url(#arrowNavy)"/>
+    <path d="M502 358 H 524" stroke="#0f8f9a" stroke-width="4" marker-end="url(#arrowTeal)"/>
+    <path d="M954 358 H 976" stroke="#1a4a92" stroke-width="4" marker-end="url(#arrowNavy)"/>
+    <path d="M1216 358 H 1238" stroke="#0f8f9a" stroke-width="4" marker-end="url(#arrowTeal)"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="28" y="584" width="1544" height="218" rx="28" fill="#ffffff" stroke="#d7e6f2"/>
+  </g>
+
+  <text x="52" y="624" class="eyebrow">SUPPORTING CALLOUTS</text>
+  <text x="52" y="664" class="title" style="font-size:34px;">What changed, and why it matters</text>
+
+  <g filter="url(#shadow)">
+    <rect x="52" y="692" width="360" height="86" rx="18" fill="#ffffff" stroke="#dce8f3"/>
+    <rect x="430" y="692" width="360" height="86" rx="18" fill="#ffffff" stroke="#dce8f3"/>
+    <rect x="808" y="692" width="360" height="86" rx="18" fill="#ffffff" stroke="#dce8f3"/>
+    <rect x="1186" y="692" width="360" height="86" rx="18" fill="#ffffff" stroke="#dce8f3"/>
+  </g>
+  <text x="76" y="724" class="calloutTitle">Backward compatible rollout</text>
+  <text x="76" y="747" class="calloutBody">
+    <tspan x="76" dy="0">Blank or legacy targets default to `product_variant`.</tspan>
+    <tspan x="76" dy="18">Existing integrations keep the current Product + Variant model.</tspan>
+  </text>
+
+  <text x="454" y="724" class="calloutTitle">Executive control at the target layer</text>
+  <text x="454" y="747" class="calloutBody">
+    <tspan x="454" dy="0">Decisions move into `CoveoCatalogExportTarget`.</tspan>
+    <tspan x="454" dy="18">Teams can choose structure per locale or market.</tspan>
+  </text>
+
+  <text x="832" y="724" class="calloutTitle">Mapping continuity for product_only</text>
+  <text x="832" y="747" class="calloutBody">
+    <tspan x="832" dy="0">Consolidated Product rows can still receive</tspan>
+    <tspan x="832" dy="18">Product, Variant, and Both mappings.</tspan>
+  </text>
+
+  <text x="1210" y="724" class="calloutTitle">Safer data governance</text>
+  <text x="1210" y="747" class="calloutBody">
+    <tspan x="1210" dy="0">Unsupported modes are rejected early.</tspan>
+    <tspan x="1210" dy="18">Variant rows are blocked in `product_only`.</tspan>
+  </text>
+
+  <g>
+    <rect x="28" y="826" width="1544" height="48" rx="18" fill="url(#navy)"/>
+    <text x="52" y="856" class="footerTitle">Implementation coverage</text>
+    <rect x="240" y="838" width="126" height="24" rx="12" fill="#2d5ea8"/>
+    <rect x="378" y="838" width="126" height="24" rx="12" fill="#2d5ea8"/>
+    <rect x="516" y="838" width="126" height="24" rx="12" fill="#2d5ea8"/>
+    <rect x="654" y="838" width="126" height="24" rx="12" fill="#2d5ea8"/>
+    <rect x="792" y="838" width="126" height="24" rx="12" fill="#2d5ea8"/>
+    <rect x="930" y="838" width="126" height="24" rx="12" fill="#2d5ea8"/>
+    <rect x="1068" y="838" width="126" height="24" rx="12" fill="#0f8f9a"/>
+    <rect x="1206" y="838" width="126" height="24" rx="12" fill="#0f8f9a"/>
+    <text x="303" y="855" text-anchor="middle" class="footerChip">Metadata</text>
+    <text x="441" y="855" text-anchor="middle" class="footerChip">Target Resolver</text>
+    <text x="579" y="855" text-anchor="middle" class="footerChip">Generator</text>
+    <text x="717" y="855" text-anchor="middle" class="footerChip">Validator</text>
+    <text x="855" y="855" text-anchor="middle" class="footerChip">Mappings</text>
+    <text x="993" y="855" text-anchor="middle" class="footerChip">Enrichment</text>
+    <text x="1131" y="855" text-anchor="middle" class="footerChip">Docs</text>
+    <text x="1269" y="855" text-anchor="middle" class="footerChip">Tests</text>
+  </g>
+</svg>

@@ -100,7 +100,7 @@ exports.beforeStep = function (parameters, stepExecution) {
     purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
     purchaseMetricHelper.ensureMetricFields(exportContext, exportContext.purchaseMetrics);
     Logger.info(
-        'Resolved Coveo delta export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, legacyMode={7}',
+        'Resolved Coveo delta export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, catalogStructureMode={7}, legacyMode={8}',
         exportContext.siteId,
         exportContext.targetId || '[single target]',
         exportContext.locale,
@@ -108,6 +108,7 @@ exports.beforeStep = function (parameters, stepExecution) {
         exportContext.coveoSourceId,
         exportContext.catalogId || '[site catalog]',
         exportContext.mappingProfileId || '[built-in only]',
+        exportContext.catalogStructureMode,
         exportContext.legacyMode
     );
     products = coveoHelper.buildProductQuery(

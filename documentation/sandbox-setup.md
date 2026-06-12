@@ -160,6 +160,7 @@ Each `CoveoCatalogExportTarget` should define:
 - `language`
 - `coveoSourceId`
 - optional `catalogId`
+- optional `catalogStructureMode`
 - optional `mappingProfileId`
 - `enabled`
 - per-target `lastSync`
@@ -180,6 +181,7 @@ In practice, an export target is just a Business Manager custom object record th
 - which Coveo `language` value to emit
 - which Coveo source to push to
 - optionally which catalog to scope to
+- whether the target keeps `Product` plus `Variant` rows or consolidates everything into `Product` rows only
 
 Use this Business Manager flow:
 
@@ -200,6 +202,7 @@ Use these values when creating the object:
 - `language`: language sent to Coveo, for example `en` or `fr`
 - `coveoSourceId`: destination Coveo source for this locale or market
 - `catalogId`: leave empty for shared-catalog mode; set it only when this target must export a specific catalog
+- `catalogStructureMode`: leave empty or set `product_only` to emit only `Product` rows and tie `ec_product_id = permanentid = ec_sku` to the variant SKU; set `product_variant` when you want the current `Product` plus `Variant` export
 - `mappingProfileId`: leave empty to keep the built-in mapped fields only; set it when this target should add a configurable mapping profile
 - `enabled`: set to `true`
 - `lastSync`: leave empty before the first successful full export
@@ -235,10 +238,13 @@ Use this step only when you need extra exported fields beyond the built-in paylo
 
 The export always keeps the built-in item schema and built-in mapped fields:
 
-- built-in payload fields like `documentId`, `permanentid`, `ec_product_id`, `ec_variant_id`, `language`, and `objecttype`
+- built-in payload fields like `documentId`, `permanentid`, `ec_product_id`, `language`, and `objecttype`
+- reserved field `ec_variant_id`, emitted only when the target runs in `product_variant`
 - built-in mapped field `ec_name`
 
 Configurable mappings are additive only. They can add fields such as `ec_material`, `ec_collection`, or `ec_department`, but they cannot override reserved export fields.
+
+When a target uses `product_only`, consolidated variant-backed `Product` rows still receive the union of `Product`, `Variant`, and `Both` mappings so existing variant-specific rows keep working.
 
 Use this Business Manager flow:
 
@@ -589,9 +595,9 @@ The job metadata still ships with `RefArch` as the example site context. If your
 7. Set the real Coveo org on the target site.
 8. If you need multi-locale or market-specific exports, create the `CoveoCatalogExportTarget` objects and note their `targetId` values.
 9. If you need extra mapped fields, create `CoveoCatalogFieldMappingProfile` and `CoveoCatalogFieldMapping` objects, then assign `mappingProfileId` on the target.
-10. Verify the Commerce catalog mappings use `ec_product_id` and `ec_variant_id`.
+10. Verify the Commerce catalog mappings use `ec_product_id`, and also `ec_variant_id` when the target uses `product_variant`.
 11. Run `coveoProductExportFull`, adding `targetId` when you are exporting a specific target.
-12. Inspect the exported JSON under IMPEX and confirm the payload uses `addOrUpdate`, `ec_product_id`, `ec_variant_id`, the expected `language`, and any configured extra fields.
+12. Inspect the exported JSON under IMPEX and confirm the payload uses `addOrUpdate`, `ec_product_id`, the expected `language`, any configured extra fields, and `ec_variant_id` only for `product_variant` targets.
 13. Inspect the indexed content in the Coveo Content Browser and catalog inspection views.
 14. Only after the full sync validates, run `coveoProductExportDelta` for the same resolved target.
 
@@ -606,9 +612,9 @@ After the full catalog update, inspect at least:
 Confirm that:
 
 - `Product` items contain `ec_product_id`
-- `Variant` items contain both `ec_product_id` and `ec_variant_id`
 - `Product` items set `permanentid = ec_product_id`
-- `Variant` items set `permanentid = ec_variant_id`
+- every `Product` item contains `ec_item_group_id`
+- standalone products set `ec_item_group_id = ec_product_id`
 - every item contains `language`
 - `language` matches the configured export target
 - `ec_price` contains the base or list price
@@ -618,5 +624,8 @@ Confirm that:
 - products without catalog media fall back to the configured placeholder URL when one is set
 - standalone products export only a `Product` item
 - grouped products share `ec_item_group_id = <masterID>`
+- `product_variant` targets also emit `Variant` items with both `ec_product_id` and `ec_variant_id`, and each `Variant` sets `permanentid = ec_variant_id`
+- `product_only` targets emit no `Variant` items; each consolidated variant-backed `Product` sets `ec_product_id = permanentid = ec_sku = <variant SKU>`
+- `product_only` targets export one `Product` row per variant SKU when a master contains many variants
 - when a target uses `catalogId`, only that catalog subset reaches the configured source
 - when a target uses `mappingProfileId`, only that target receives the configured extra mapped fields

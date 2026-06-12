@@ -2,6 +2,9 @@
 
 var HashSet = require('dw/util/HashSet');
 
+var CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT = 'product_variant';
+var CATALOG_STRUCTURE_MODE_PRODUCT_ONLY = 'product_only';
+
 /**
  * Checks whether a value should be treated as missing in the export payload.
  * @param {*} value - Value to validate.
@@ -9,6 +12,21 @@ var HashSet = require('dw/util/HashSet');
  */
 function isMissing(value) {
     return value === null || value === undefined || value === '';
+}
+
+/**
+ * Returns the normalized catalog structure mode for validation.
+ * @param {*} value - Raw catalog structure mode.
+ * @returns {string} normalized mode.
+ */
+function normalizeCatalogStructureMode(value) {
+    var normalized = (value === null || value === undefined) ? '' : String(value).trim().toLowerCase();
+
+    if (normalized === '') {
+        return CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
+    }
+
+    return normalized;
 }
 
 /**
@@ -22,6 +40,7 @@ function validateCatalogItems(items, options) {
     var productIds = new HashSet();
     var variantIds = new HashSet();
     var expectedLanguage = options && options.expectedLanguage ? String(options.expectedLanguage).toLowerCase() : '';
+    var catalogStructureMode = normalizeCatalogStructureMode(options && options.catalogStructureMode);
 
     items.forEach(function (item, index) {
         if (!item || typeof item !== 'object') {
@@ -54,6 +73,11 @@ function validateCatalogItems(items, options) {
         }
 
         if (item.objecttype === 'Variant') {
+            if (catalogStructureMode === CATALOG_STRUCTURE_MODE_PRODUCT_ONLY) {
+                errors.push('Catalog item at index ' + index + ' uses objecttype Variant, which is not allowed in product_only mode.');
+                return;
+            }
+
             if (isMissing(item.ec_product_id)) {
                 errors.push('Variant item at index ' + index + ' is missing ec_product_id.');
             }
@@ -69,6 +93,10 @@ function validateCatalogItems(items, options) {
             }
         }
     });
+
+    if (catalogStructureMode === CATALOG_STRUCTURE_MODE_PRODUCT_ONLY) {
+        return errors;
+    }
 
     items.forEach(function (item, index) {
         if (item && item.objecttype === 'Variant' && !isMissing(item.ec_product_id) && !productIds.contains(item.ec_product_id)) {

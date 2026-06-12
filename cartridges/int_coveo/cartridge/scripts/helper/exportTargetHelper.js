@@ -7,6 +7,23 @@ var Site = require('dw/system/Site');
 var Transaction = require('dw/system/Transaction');
 
 var TARGET_CUSTOM_OBJECT_TYPE = 'CoveoCatalogExportTarget';
+var CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT = 'product_variant';
+var CATALOG_STRUCTURE_MODE_PRODUCT_ONLY = 'product_only';
+
+/**
+ * Returns the normalized catalog structure mode for an export target.
+ * @param {*} value - Raw catalog structure mode.
+ * @returns {string} normalized mode.
+ */
+function normalizeCatalogStructureMode(value) {
+    var normalizedValue = normalizeString(value).toLowerCase();
+
+    if (normalizedValue === '') {
+        return CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
+    }
+
+    return normalizedValue;
+}
 
 /**
  * Returns a normalized string value.
@@ -95,6 +112,7 @@ function buildLegacyExportContext() {
         listingBrandUrlTemplate: '',
         listingSlugAmpersandToken: '',
         catalogId: '',
+        catalogStructureMode: CATALOG_STRUCTURE_MODE_PRODUCT_ONLY,
         mappingProfileId: '',
         mappingProfile: null,
         fieldMappings: [],
@@ -130,6 +148,7 @@ function buildTargetExportContext(targetObject, targetId) {
         listingBrandUrlTemplate: normalizeString(custom.listingBrandUrlTemplate),
         listingSlugAmpersandToken: normalizeString(custom.listingSlugAmpersandToken),
         catalogId: normalizeString(custom.catalogId),
+        catalogStructureMode: normalizeCatalogStructureMode(custom.catalogStructureMode),
         mappingProfileId: normalizeString(custom.mappingProfileId),
         mappingProfile: null,
         fieldMappings: [],
@@ -200,6 +219,20 @@ function validateExportContext(exportContext) {
             + exportContext.coveoOrganizationId
             + '". Coveo organization ids must be alphanumeric. '
             + 'Update the site preference before running the export.'
+        );
+    }
+
+    if (exportContext.catalogStructureMode !== CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT
+        && exportContext.catalogStructureMode !== CATALOG_STRUCTURE_MODE_PRODUCT_ONLY) {
+        throw new Error(
+            'The Coveo export ' + contextLabel
+            + ' has unsupported catalogStructureMode value "'
+            + exportContext.catalogStructureMode
+            + '". Supported values are '
+            + CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT
+            + ' and '
+            + CATALOG_STRUCTURE_MODE_PRODUCT_ONLY
+            + '.'
         );
     }
 
@@ -496,12 +529,15 @@ function updateLastSync(exportContext, lastSync) {
 }
 
 module.exports = {
+    CATALOG_STRUCTURE_MODE_PRODUCT_ONLY: CATALOG_STRUCTURE_MODE_PRODUCT_ONLY,
+    CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT: CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT,
     TARGET_CUSTOM_OBJECT_TYPE: TARGET_CUSTOM_OBJECT_TYPE,
     applyRequestLocale: applyRequestLocale,
     buildLegacyExportContext: buildLegacyExportContext,
     buildListingSyncContext: buildListingSyncContext,
     getLanguageFromLocale: getLanguageFromLocale,
     getTargetsForCurrentSite: getTargetsForCurrentSite,
+    normalizeCatalogStructureMode: normalizeCatalogStructureMode,
     resolveExportContext: resolveExportContext,
     resolveListingSyncGroups: resolveListingSyncGroups,
     restoreRequestLocale: restoreRequestLocale,

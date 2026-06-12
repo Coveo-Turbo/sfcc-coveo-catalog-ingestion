@@ -460,7 +460,8 @@ function createProductFeedFile(sourcePath) {
  */
 function writeProductFile(source, products, exportContext) {
     var payload = catalogExportValidator.buildAddOrUpdatePayload(products, {
-        expectedLanguage: exportContext && exportContext.language ? exportContext.language : ''
+        expectedLanguage: exportContext && exportContext.language ? exportContext.language : '',
+        catalogStructureMode: exportContext && exportContext.catalogStructureMode ? exportContext.catalogStructureMode : ''
     });
     var productFile = createProductFeedFile(source);
     var productFileWriter = new FileWriter(productFile);
