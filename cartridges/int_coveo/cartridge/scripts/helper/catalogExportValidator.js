@@ -20,11 +20,13 @@ function isMissing(value) {
  * @returns {string} normalized mode.
  */
 function normalizeCatalogStructureMode(value) {
-    if (value === null || value === undefined || value === '') {
+    var normalized = (value === null || value === undefined) ? '' : String(value).trim().toLowerCase();
+
+    if (normalized === '') {
         return CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
     }
 
-    return String(value).trim().toLowerCase();
+    return normalized;
 }
 
 /**
