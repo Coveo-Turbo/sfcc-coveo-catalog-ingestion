@@ -145,8 +145,20 @@ Optional image fallbacks:
 
 - `coveoProductImagePlaceholderUrl`
 - `coveoProductThumbnailPlaceholderUrl`
+- `coveoProductImageViewTypes`
+- `coveoProductThumbnailViewTypes`
 
 Use absolute `https://...` URLs for those placeholder preferences. The export uses real catalog media first, falls back to the other view type when available, and only emits the placeholder when no usable image is available for that field. If `coveoProductThumbnailPlaceholderUrl` is empty, thumbnails reuse `coveoProductImagePlaceholderUrl`.
+
+Use the optional view-type preferences when a catalog does not use the cartridge defaults. The values are ordered comma-separated SFCC view types:
+
+- `coveoProductImageViewTypes` defaults to `large,medium`
+- `coveoProductThumbnailViewTypes` defaults to `medium,large`
+
+For catalogs that only assign images under `original`, a practical configuration is:
+
+- `coveoProductImageViewTypes = large,medium,original`
+- `coveoProductThumbnailViewTypes = medium,large,original`
 
 If you are using multi-target exports, create one `CoveoCatalogExportTarget` custom object per locale or market instead of relying on the site-level `coveoSourceId` and `coveoCatalogLastSync`.
 
