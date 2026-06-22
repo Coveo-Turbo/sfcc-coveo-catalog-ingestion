@@ -393,6 +393,82 @@ describe('productRequestGenerator', function () {
         ]);
     });
 
+    it('uses configured image view type order when the catalog does not use large and medium', function () {
+        var originalOnlyProduct = createProduct({
+            ID: 'SKU-ORIGINAL',
+            images: {
+                original: [
+                    'https://example.com/images/SKU-ORIGINAL/original-1.jpg',
+                    'https://example.com/images/SKU-ORIGINAL/original-2.jpg'
+                ]
+            }
+        });
+
+        var generator = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+            'dw/catalog/CatalogMgr': {
+                getCategory: function () {
+                    return null;
+                }
+            },
+            'dw/catalog/ProductMgr': {
+                getProduct: function () {
+                    return originalOnlyProduct;
+                }
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    EXTENSION: '.html',
+                    MODEL: 'Authentic',
+                    OBJECT_TYPE_PRODUCT: 'Product',
+                    OBJECT_TYPE_VARIANT: 'Variant'
+                }
+            },
+            '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/fieldMappingHelper': {
+                applyFieldMappings: function (payload, product) {
+                    payload.ec_name = product.name;
+                    return payload;
+                }
+            },
+            '*/cartridge/scripts/helper/purchaseMetricHelper': {
+                applyPurchaseMetrics: function () {}
+            },
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Site': {
+                current: createSiteCurrent({
+                    coveoProductImageViewTypes: 'large, medium, original',
+                    coveoProductThumbnailViewTypes: 'medium; large; original'
+                })
+            },
+            'dw/web/URLUtils': {
+                abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                },
+                url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                    return buildUrl(route, pid);
+                }
+            }
+        });
+
+        var exports = generator.processProducts('SKU-ORIGINAL');
+
+        assert.lengthOf(exports, 1);
+        assert.deepEqual(exports[0].ec_images, [
+            'https://example.com/images/SKU-ORIGINAL/original-1.jpg',
+            'https://example.com/images/SKU-ORIGINAL/original-2.jpg'
+        ]);
+        assert.deepEqual(exports[0].ec_thumbnails, [
+            'https://example.com/images/SKU-ORIGINAL/original-1.jpg',
+            'https://example.com/images/SKU-ORIGINAL/original-2.jpg'
+        ]);
+    });
+
     it('exports grouped products and variants with modern commerce identifiers', function () {
         var masterProduct = createProduct({
             ID: 'MASTER-1',

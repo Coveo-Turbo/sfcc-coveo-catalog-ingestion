@@ -28,8 +28,8 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
 - `ec_promo_price` stores the effective promotional price when a discounted price is active.
 - `ec_category` stores every valid online category hierarchy assigned to the exported product. Variant-backed product exports include the union of the variant and master assignments, deduplicated into a single hierarchical field value.
 - `ec_primary_category` stores only the effective primary category hierarchy for the exported product.
-- `ec_images` contains the `large` gallery image array.
-- `ec_thumbnails` contains the `medium` image array.
+- `ec_images` contains the first configured gallery image view type array, defaulting to `large` then `medium`.
+- `ec_thumbnails` contains the first configured thumbnail image view type array, defaulting to `medium` then `large`.
 - `ec_item_group_id` is populated on every exported `Product`; standalone products use their own `ec_product_id`, while grouped products use their shared parent group identifier.
 - Export scope is target-aware:
   - legacy mode uses site preferences when no export targets exist
@@ -73,6 +73,7 @@ These tests cover:
 - Put at least `int_coveo` on each export site cartridge path. Using `bm_coveo:int_coveo` on both the Business Manager site and the export site is the simplest setup.
 - Set the site-level `coveoOrganizationId`.
 - Keep using site-level `coveoSourceId` and `coveoCatalogLastSync` only for the legacy single-target fallback.
+- If a catalog uses non-default SFCC image view types, optionally set `coveoProductImageViewTypes` and `coveoProductThumbnailViewTypes` on the site as ordered comma-separated fallback lists, for example `large,medium,original` and `medium,large,original`.
 - For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target, use the default `product_only` mode or switch `catalogStructureMode` to `product_variant` when you want separate variant rows, and run the jobs with the matching `targetId`. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - If you need extra catalog fields beyond the built-in export payload, create a `CoveoCatalogFieldMappingProfile`, add `CoveoCatalogFieldMapping` rows under that profile, and assign the profile on the target `mappingProfileId`. For larger mapping sets, you can also load the profile and rows from JSON with the `coveoFieldMappingImport` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - If your mapping JSON should also create the matching Coveo fields, run `coveoPlatformFieldCreate` with the same `sourceFile`. The job creates one platform field per enabled mapping `targetField`, and the optional `coveoField` block on each mapping can set the initial field type and options.

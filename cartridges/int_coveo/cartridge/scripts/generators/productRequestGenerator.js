@@ -9,6 +9,8 @@ var Logger = require('dw/system/Logger').getLogger('Coveo');
 var purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
 var Site = require('dw/system/Site');
 var URLUtils = require('dw/web/URLUtils');
+var DEFAULT_PRODUCT_IMAGE_VIEW_TYPES = ['large', 'medium'];
+var DEFAULT_PRODUCT_THUMBNAIL_VIEW_TYPES = ['medium', 'large'];
 
 /**
  * Converts a collection, iterator, or array-like value to an array.
@@ -410,14 +412,14 @@ function getSitePreferenceValue(preferenceId) {
 }
 
 /**
- * Returns the configured fallback image URL for the requested view type.
- * @param {string} viewType - image view type.
+ * Returns the configured fallback image URL for the requested image role.
+ * @param {string} imageRole - image role, for example image or thumbnail.
  * @returns {string} fallback image URL.
  */
-function getConfiguredImagePlaceholderUrl(viewType) {
+function getConfiguredImagePlaceholderUrl(imageRole) {
     var placeholderUrl = '';
 
-    if (viewType === 'medium') {
+    if (imageRole === 'thumbnail') {
         placeholderUrl = getSitePreferenceValue('coveoProductThumbnailPlaceholderUrl');
     }
 
@@ -430,6 +432,35 @@ function getConfiguredImagePlaceholderUrl(viewType) {
     }
 
     return placeholderUrl;
+}
+
+/**
+ * Returns the ordered image view types to try for a given export field.
+ * @param {string} preferenceId - Site preference id.
+ * @param {Array} defaultViewTypes - default ordered view types.
+ * @returns {Array} ordered view types.
+ */
+function getConfiguredImageViewTypes(preferenceId, defaultViewTypes) {
+    var rawValue = getSitePreferenceValue(preferenceId);
+    var seen = {};
+    var configuredViewTypes;
+
+    if (empty(rawValue)) {
+        return defaultViewTypes.slice();
+    }
+
+    configuredViewTypes = rawValue.split(/[\r\n,;]+/).map(function (viewType) {
+        return String(viewType).trim();
+    }).filter(function (viewType) {
+        if (empty(viewType) || seen[viewType]) {
+            return false;
+        }
+
+        seen[viewType] = true;
+        return true;
+    });
+
+    return configuredViewTypes.length ? configuredViewTypes : defaultViewTypes.slice();
 }
 
 /**
@@ -505,27 +536,26 @@ function getProductSize(product) {
 }
 
 /**
- * Returns image URLs for a given SFCC image view type.
+ * Returns image URLs for a given ordered list of SFCC image view types.
  * @param {Object} product - product
- * @param {string} viewType - image view type
- * @param {Array} fallbackViewTypes - alternate view types to use when none exist for the requested one
+ * @param {Array} viewTypes - ordered image view types to try
+ * @param {string} imageRole - image role, for example image or thumbnail
  * @returns {Array} image urls
  */
-function getImageUrls(product, viewType, fallbackViewTypes) {
+function getImageUrls(product, viewTypes, imageRole) {
     var imageUrls = [];
+    var orderedViewTypes = Array.isArray(viewTypes) ? viewTypes.filter(function (viewType) {
+        return !empty(viewType);
+    }) : [];
 
     try {
-        imageUrls = collectImageUrls(product, viewType);
-
-        if (!imageUrls.length && Array.isArray(fallbackViewTypes)) {
-            fallbackViewTypes.some(function (fallbackViewType) {
-                imageUrls = collectImageUrls(product, fallbackViewType);
-                return imageUrls.length > 0;
-            });
-        }
+        orderedViewTypes.some(function (viewType) {
+            imageUrls = collectImageUrls(product, viewType);
+            return imageUrls.length > 0;
+        });
 
         if (!imageUrls.length) {
-            var configuredPlaceholderUrl = getConfiguredImagePlaceholderUrl(viewType);
+            var configuredPlaceholderUrl = getConfiguredImagePlaceholderUrl(imageRole);
             if (!empty(configuredPlaceholderUrl)) {
                 imageUrls.push(configuredPlaceholderUrl);
             }
@@ -545,7 +575,11 @@ function getImageUrls(product, viewType, fallbackViewTypes) {
  * @returns {Array} thumbnail urls
  */
 function getThumbnailUrls(product) {
-    return getImageUrls(product, 'medium', ['large']);
+    return getImageUrls(
+        product,
+        getConfiguredImageViewTypes('coveoProductThumbnailViewTypes', DEFAULT_PRODUCT_THUMBNAIL_VIEW_TYPES),
+        'thumbnail'
+    );
 }
 
 /**
@@ -688,7 +722,11 @@ function getProductsData(product, exportOptions, exportContext) {
             ? exportOptions.mappingObjectTypes
             : coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT;
         var categoryExportValues = getCategoryExportValues(product);
-        var productImages = getImageUrls(product, 'large', ['medium']);
+        var productImages = getImageUrls(
+            product,
+            getConfiguredImageViewTypes('coveoProductImageViewTypes', DEFAULT_PRODUCT_IMAGE_VIEW_TYPES),
+            'image'
+        );
         var productThumbnails = getThumbnailUrls(product);
         var swatchImage = product.getImage('swatch');
         var productRating = getProductRating(product);
