@@ -66,6 +66,23 @@ function getShardIndex(rootId) {
     return Math.abs(hashString(rootId)) % MANIFEST_SHARD_COUNT;
 }
 
+function isManifestEnabled(exportContext) {
+    return normalizeString(exportContext && exportContext.productEligibilityMode) !== ''
+        && normalizeString(exportContext && exportContext.productEligibilityMode) !== 'legacy';
+}
+
+function getDocumentIds(items) {
+    return normalizeDocumentIds((items || []).map(function (item) {
+        return item && item.documentId;
+    }));
+}
+
+function getPayloadChecksum(items) {
+    return String(hashString(JSON.stringify((items || []).filter(function (item) {
+        return !!item;
+    }))));
+}
+
 function buildFingerprint(exportContext) {
     return JSON.stringify({
         schemaVersion: MANIFEST_SCHEMA_VERSION,
@@ -384,6 +401,9 @@ module.exports = {
     closeRun: closeRun,
     forEachShardRecord: forEachShardRecord,
     getShardIndex: getShardIndex,
+    getDocumentIds: getDocumentIds,
+    getPayloadChecksum: getPayloadChecksum,
+    isManifestEnabled: isManifestEnabled,
     loadActiveManifest: loadActiveManifest,
     promoteRun: promoteRun,
     writeRootRecord: writeRootRecord

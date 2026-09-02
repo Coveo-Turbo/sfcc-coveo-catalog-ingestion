@@ -114,25 +114,82 @@ function validateCatalogItems(items, options) {
  * @returns {Object} validated payload.
  */
 function buildAddOrUpdatePayload(items, options) {
+    return buildStreamPayload(items, [], options);
+}
+
+/**
+ * Builds a validated Stream API payload containing updates, deletes, or both.
+ * @param {Array} items - Catalog items to upload.
+ * @param {Array} deletes - Document ids or delete operations.
+ * @param {Object} options - Validation options.
+ * @returns {Object} validated payload.
+ */
+function buildStreamPayload(items, deletes, options) {
     var addOrUpdate = (items || []).filter(function (item) {
         return !!item;
     });
+    var addDocumentIds = new HashSet();
+    var deleteDocumentIds = new HashSet();
+    var deleteOperations = [];
 
-    if (!addOrUpdate.length) {
-        throw new Error('Catalog export does not contain any valid addOrUpdate operations.');
+    addOrUpdate.forEach(function (item) {
+        if (item && !isMissing(item.documentId)) {
+            addDocumentIds.add(String(item.documentId));
+        }
+    });
+
+    (deletes || []).forEach(function (operation, index) {
+        var documentId = typeof operation === 'string'
+            ? operation
+            : (operation && operation.documentId);
+
+        if (isMissing(documentId)) {
+            throw new Error('Catalog delete operation at index ' + index + ' is missing documentId.');
+        }
+
+        documentId = String(documentId);
+
+        if (addDocumentIds.contains(documentId)) {
+            throw new Error('Catalog document ' + documentId + ' cannot be added and deleted in the same Stream operation.');
+        }
+
+        if (deleteDocumentIds.contains(documentId)) {
+            return;
+        }
+
+        deleteDocumentIds.add(documentId);
+        deleteOperations.push({
+            documentId: documentId,
+            deleteChildren: !!(operation && operation.deleteChildren)
+        });
+    });
+
+    if (!addOrUpdate.length && !deleteOperations.length) {
+        throw new Error('Catalog export does not contain any valid Stream operations.');
     }
 
-    var errors = validateCatalogItems(addOrUpdate, options);
-    if (errors.length) {
-        throw new Error(errors.join(' '));
+    if (addOrUpdate.length) {
+        var errors = validateCatalogItems(addOrUpdate, options);
+        if (errors.length) {
+            throw new Error(errors.join(' '));
+        }
     }
 
-    return {
-        addOrUpdate: addOrUpdate
-    };
+    var payload = {};
+
+    if (addOrUpdate.length) {
+        payload.addOrUpdate = addOrUpdate;
+    }
+
+    if (deleteOperations.length) {
+        payload.delete = deleteOperations;
+    }
+
+    return payload;
 }
 
 module.exports = {
     buildAddOrUpdatePayload: buildAddOrUpdatePayload,
+    buildStreamPayload: buildStreamPayload,
     validateCatalogItems: validateCatalogItems
 };

@@ -151,6 +151,17 @@ describe('coveoHelper', function () {
         }
 
         assert.deepEqual(values, ['MASTER-1', 'STANDALONE-1']);
+
+        iterator = helper.buildProductQuery(true, {
+            productEligibilityMode: 'online_and_searchable'
+        });
+        values = [];
+
+        while (iterator.hasNext()) {
+            values.push(iterator.next());
+        }
+
+        assert.deepEqual(values, ['MASTER-1', 'STANDALONE-1', 'OLD-1']);
     });
 
     it('requires a successful full sync before delta exports can run', function () {

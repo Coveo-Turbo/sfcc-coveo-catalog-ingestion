@@ -318,6 +318,12 @@ function buildDeltaProductQuery(exportContext) {
 
     products = getScopedProductsIterator(exportContext) || ProductMgr.queryAllSiteProducts();
 
+    if (!empty(exportContext)
+        && !empty(exportContext.productEligibilityMode)
+        && exportContext.productEligibilityMode !== 'legacy') {
+        return createFullExportRootProductIterator(products);
+    }
+
     try {
         while (products.hasNext()) {
             var product = products.next();
@@ -394,10 +400,26 @@ function buildProductQuery(isDelta, exportContext, additionalRootIds) {
         Logger.info('Starting product search...');
 
         if (isDelta) {
-            return mergeRootIdIterators(buildDeltaProductQuery(exportContext), additionalRootIds);
+            var deltaIterator = buildDeltaProductQuery(exportContext);
+
+            if (!empty(exportContext)
+                && !empty(exportContext.productEligibilityMode)
+                && exportContext.productEligibilityMode !== 'legacy') {
+                return deltaIterator;
+            }
+
+            return mergeRootIdIterators(deltaIterator, additionalRootIds);
         }
 
-        return mergeRootIdIterators(buildFullProductQuery(exportContext), additionalRootIds);
+        var fullIterator = buildFullProductQuery(exportContext);
+
+        if (!empty(exportContext)
+            && !empty(exportContext.productEligibilityMode)
+            && exportContext.productEligibilityMode !== 'legacy') {
+            return fullIterator;
+        }
+
+        return mergeRootIdIterators(fullIterator, additionalRootIds);
     } catch (ex) {
         Logger.error('(coveoHelper-buildProductQuery) -> Error occured while bulding the product query and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
         throw ex;
@@ -465,7 +487,19 @@ function createProductFeedFile(sourcePath) {
  * @returns {file} - productFile
  */
 function writeProductFile(source, products, exportContext) {
-    var payload = catalogExportValidator.buildAddOrUpdatePayload(products, {
+    return writeProductOperationsFile(source, products, [], exportContext);
+}
+
+/**
+ * Writes validated catalog update and delete operations to an IMPEX feed file.
+ * @param {string} source - Source directory.
+ * @param {Array} products - Catalog items to add or update.
+ * @param {Array} deletes - Document ids or delete operations.
+ * @param {Object} exportContext - Export context.
+ * @returns {File} product feed file.
+ */
+function writeProductOperationsFile(source, products, deletes, exportContext) {
+    var payload = catalogExportValidator.buildStreamPayload(products, deletes, {
         expectedLanguage: exportContext && exportContext.language ? exportContext.language : '',
         catalogStructureMode: exportContext && exportContext.catalogStructureMode ? exportContext.catalogStructureMode : ''
     });
@@ -495,6 +529,7 @@ module.exports = {
     createProductFeedFile: createProductFeedFile,
     buildProductQuery: buildProductQuery,
     writeProductFile: writeProductFile,
+    writeProductOperationsFile: writeProductOperationsFile,
     archiveFeedFile: archiveFeedFile,
     getExportRootProductId: getExportRootProductId,
     isModifiedSince: isModifiedSince

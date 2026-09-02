@@ -16,6 +16,14 @@ var exportContext = null;
 var previousLocale = null;
 var purchaseMetricHelper = null;
 var exportedRootIds = {};
+var catalogExportStateHelper = null;
+var activeManifest = null;
+var stateRun = null;
+var manifestEnabled = false;
+var statePromoted = false;
+var syncStartedAt = null;
+var deletesToExport = [];
+var MAX_OPERATIONS_PER_UPLOAD = 1000;
 
 /**
  * Formats service failure details for logs and thrown errors.
@@ -81,6 +89,110 @@ function closeProductsIterator() {
     }
 }
 
+function cleanupProductFile(parameters, file) {
+    if (parameters.get('deleteFile')) {
+        file.remove();
+        Logger.info('File uploaded successfully and removed - ' + file.path + '');
+    } else if (!empty(parameters.get('archivePath'))) {
+        coveoHelper.archiveFeedFile(parameters, file);
+    }
+}
+
+function uploadPendingOperations(parameters) {
+    if (!productsToExport.length && !deletesToExport.length) {
+        return;
+    }
+
+    productFile = coveoHelper.writeProductOperationsFile(
+        sourceFolder,
+        productsToExport,
+        deletesToExport,
+        exportContext
+    );
+    Logger.info(
+        'Uploading Coveo delta operations - addOrUpdate={0}, delete={1}',
+        productsToExport.length,
+        deletesToExport.length
+    );
+
+    var fileContainer = ensureSuccessfulResponse(streamHelper.createFileContainer(exportContext), 'file container creation');
+    var uploadUri = fileContainer.object.uploadUri;
+    var requiredHeaders = fileContainer.object.requiredHeaders || {};
+    ensureSuccessfulResponse(streamHelper.uploadStreamService(productFile, uploadUri, requiredHeaders), 'file upload');
+    ensureSuccessfulResponse(streamHelper.sendFileContainer(fileContainer.object.fileId, exportContext), 'stream update');
+    cleanupProductFile(parameters, productFile);
+    productsToExport = [];
+    deletesToExport = [];
+}
+
+function appendRootOperations(rootId, currentRecord, previousRecord, parameters) {
+    var currentDocumentIds = {};
+    var previousDocumentIds = previousRecord && previousRecord.documentIds ? previousRecord.documentIds : [];
+
+    (currentRecord.documentIds || []).forEach(function (documentId) {
+        currentDocumentIds['$' + documentId] = true;
+    });
+
+    previousDocumentIds.forEach(function (documentId) {
+        if (!currentDocumentIds['$' + documentId]) {
+            deletesToExport.push(documentId);
+        }
+    });
+
+    if (!previousRecord || previousRecord.payloadChecksum !== currentRecord.payloadChecksum) {
+        var currentItems = productRequestGenerator.processProducts(rootId, isDelta, exportContext);
+        currentItems.forEach(function (item) {
+            if (item) {
+                productsToExport.push(item);
+            }
+        });
+        exportedRootIds[rootId] = true;
+    }
+
+    if ((productsToExport.length + deletesToExport.length) >= MAX_OPERATIONS_PER_UPLOAD) {
+        uploadPendingOperations(parameters);
+    }
+}
+
+function reconcileManifestRun(parameters) {
+    var shardIndex;
+
+    catalogExportStateHelper.closeRun(stateRun);
+
+    for (shardIndex = 0; shardIndex < catalogExportStateHelper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
+        var previousRecords = {};
+
+        catalogExportStateHelper.forEachShardRecord(activeManifest, shardIndex, function (record) {
+            previousRecords['$' + record.rootId] = record;
+        });
+
+        catalogExportStateHelper.forEachShardRecord(stateRun, shardIndex, function (currentRecord) {
+            var key = '$' + currentRecord.rootId;
+            var previousRecord = previousRecords[key] || null;
+
+            appendRootOperations(currentRecord.rootId, currentRecord, previousRecord, parameters);
+            delete previousRecords[key];
+        });
+
+        Object.keys(previousRecords).forEach(function (key) {
+            var removedRecord = previousRecords[key];
+
+            (removedRecord.documentIds || []).forEach(function (documentId) {
+                deletesToExport.push(documentId);
+            });
+            exportedRootIds[removedRecord.rootId] = true;
+
+            if ((productsToExport.length + deletesToExport.length) >= MAX_OPERATIONS_PER_UPLOAD) {
+                uploadPendingOperations(parameters);
+            }
+        });
+
+        previousRecords = null;
+    }
+
+    uploadPendingOperations(parameters);
+}
+
 /**
  * Initialize readers and writers for job processing
  * @param {Object} parameters job parameters
@@ -92,30 +204,56 @@ exports.beforeStep = function (parameters, stepExecution) {
     productRequestGenerator = require('*/cartridge/scripts/generators/productRequestGenerator');
     streamHelper = require('*/cartridge/scripts/helper/streamHelper');
     purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
+    catalogExportStateHelper = require('*/cartridge/scripts/helper/catalogExportStateHelper');
+    syncStartedAt = new Date();
     sourceFolder = parameters.get('srcFolder');
     productsToExport = [];
+    deletesToExport = [];
     exportedRootIds = {};
+    activeManifest = null;
+    stateRun = null;
+    statePromoted = false;
     exportContext = exportTargetHelper.resolveExportContext(parameters);
     previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
-    purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
-    purchaseMetricHelper.ensureMetricFields(exportContext, exportContext.purchaseMetrics);
-    Logger.info(
-        'Resolved Coveo delta export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, catalogStructureMode={7}, legacyMode={8}',
-        exportContext.siteId,
-        exportContext.targetId || '[single target]',
-        exportContext.locale,
-        exportContext.language,
-        exportContext.coveoSourceId,
-        exportContext.catalogId || '[site catalog]',
-        exportContext.mappingProfileId || '[built-in only]',
-        exportContext.catalogStructureMode,
-        exportContext.legacyMode
-    );
-    products = coveoHelper.buildProductQuery(
-        isDelta,
-        exportContext,
-        purchaseMetricHelper.getSnapshotDrivenRootIds(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH)
-    );
+    manifestEnabled = catalogExportStateHelper.isManifestEnabled(exportContext);
+
+    try {
+        purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
+        purchaseMetricHelper.ensureMetricFields(exportContext, exportContext.purchaseMetrics);
+        Logger.info(
+            'Resolved Coveo delta export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, catalogStructureMode={7}, productEligibilityMode={8}, legacyMode={9}',
+            exportContext.siteId,
+            exportContext.targetId || '[single target]',
+            exportContext.locale,
+            exportContext.language,
+            exportContext.coveoSourceId,
+            exportContext.catalogId || '[site catalog]',
+            exportContext.mappingProfileId || '[built-in only]',
+            exportContext.catalogStructureMode,
+            exportContext.productEligibilityMode,
+            exportContext.legacyMode
+        );
+
+        if (manifestEnabled) {
+            activeManifest = catalogExportStateHelper.loadActiveManifest(exportContext, catalogExportStateHelper.DEFAULT_STATE_PATH);
+            catalogExportStateHelper.assertCompatibleManifest(exportContext, activeManifest);
+            stateRun = catalogExportStateHelper.beginRun(exportContext, syncStartedAt, catalogExportStateHelper.DEFAULT_STATE_PATH);
+        }
+
+        products = coveoHelper.buildProductQuery(
+            isDelta,
+            exportContext,
+            purchaseMetricHelper.getSnapshotDrivenRootIds(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH)
+        );
+    } catch (error) {
+        if (stateRun) {
+            catalogExportStateHelper.abortRun(stateRun);
+            stateRun = null;
+        }
+
+        exportTargetHelper.restoreRequestLocale(previousLocale);
+        throw error;
+    }
 };
 
 exports.read = function (parameters, stepExecution) { // eslint-disable-line
@@ -125,12 +263,36 @@ exports.read = function (parameters, stepExecution) { // eslint-disable-line
 };
 
 exports.process = function (product, parameters, stepExecution) {
+    var items = productRequestGenerator.processProducts(product, isDelta, exportContext);
+
+    if (manifestEnabled) {
+        return {
+            rootId: product,
+            items: items
+        };
+    }
+
     exportedRootIds[product] = true;
-    return productRequestGenerator.processProducts(product, isDelta, exportContext);
+    return items;
 };
 
 exports.write = function (lines, parameters, stepExecution) {
     var productsList = new ArrayList(lines).toArray();
+
+    if (manifestEnabled) {
+        productsList.forEach(function (result) {
+            catalogExportStateHelper.writeRootRecord(
+                stateRun,
+                result.rootId,
+                catalogExportStateHelper.getDocumentIds(result.items),
+                {
+                    payloadChecksum: catalogExportStateHelper.getPayloadChecksum(result.items)
+                }
+            );
+        });
+        return;
+    }
+
     productsList.forEach(function (item) {
         var id = item;
         if (id && id.length >= 1) {
@@ -145,10 +307,22 @@ exports.afterStep = function (success, parameters) {
     try {
         if (success === false) {
             Logger.error('Skipping final Coveo delta export upload and reconciliation because a previous chunk already failed.');
+
+            if (stateRun) {
+                catalogExportStateHelper.abortRun(stateRun);
+                stateRun = null;
+            }
+
             return;
         }
 
-        if (!empty(productsToExport) && productsToExport.length > 0) {
+        if (manifestEnabled) {
+            closeProductsIterator();
+            reconcileManifestRun(parameters);
+            catalogExportStateHelper.promoteRun(stateRun);
+            statePromoted = true;
+            stateRun = null;
+        } else if (!empty(productsToExport) && productsToExport.length > 0) {
             productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
             Logger.info('exportProducts-write - Total products Exported: {0}', productsToExport.length);
 
@@ -157,13 +331,7 @@ exports.afterStep = function (success, parameters) {
             var requiredHeaders = fileContainer.object.requiredHeaders || {};
             ensureSuccessfulResponse(streamHelper.uploadStreamService(productFile, uploadUri, requiredHeaders), 'file upload');
             ensureSuccessfulResponse(streamHelper.sendFileContainer(fileContainer.object.fileId, exportContext), 'stream update');
-
-            if (parameters.get('deleteFile')) {
-                productFile.remove();
-                Logger.info('File uploaded successfully and removed - ' + productFile.path + '');
-            } else if (!empty(parameters.get('archivePath'))) {
-                coveoHelper.archiveFeedFile(parameters, productFile);
-            }
+            cleanupProductFile(parameters, productFile);
         } else {
             Logger.info('No delta products were exported to Coveo.');
         }
@@ -174,7 +342,14 @@ exports.afterStep = function (success, parameters) {
             purchaseMetricHelper.DEFAULT_STATE_PATH,
             Object.keys(exportedRootIds)
         );
-        exportTargetHelper.updateLastSync(exportContext, new Date());
+        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
+    } catch (error) {
+        if (manifestEnabled && stateRun && !statePromoted) {
+            catalogExportStateHelper.abortRun(stateRun);
+            stateRun = null;
+        }
+
+        throw error;
     } finally {
         closeProductsIterator();
         exportTargetHelper.restoreRequestLocale(previousLocale);
