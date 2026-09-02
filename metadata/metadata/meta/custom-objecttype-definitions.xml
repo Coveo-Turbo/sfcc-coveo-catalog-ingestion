@@ -125,6 +125,15 @@
                 <min-length>0</min-length>
                 <default-value>product_only</default-value>
             </attribute-definition>
+            <attribute-definition attribute-id="productEligibilityMode">
+                <display-name xml:lang="x-default">Product Eligibility Mode</display-name>
+                <description xml:lang="x-default">Controls whether the target preserves legacy selection, exports all assigned products, or exports only products that are online and searchable.</description>
+                <type>string</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+                <min-length>0</min-length>
+                <default-value>legacy</default-value>
+            </attribute-definition>
             <attribute-definition attribute-id="mappingProfileId">
                 <display-name xml:lang="x-default">Mapping Profile ID</display-name>
                 <description xml:lang="x-default">Optional field-mapping profile applied to this export target.</description>
@@ -181,6 +190,7 @@
                 <attribute attribute-id="listingSlugAmpersandToken"/>
                 <attribute attribute-id="catalogId"/>
                 <attribute attribute-id="catalogStructureMode"/>
+                <attribute attribute-id="productEligibilityMode"/>
                 <attribute attribute-id="mappingProfileId"/>
                 <attribute attribute-id="enabled"/>
                 <attribute attribute-id="lastSync"/>

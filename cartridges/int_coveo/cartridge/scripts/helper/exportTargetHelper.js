@@ -9,6 +9,9 @@ var Transaction = require('dw/system/Transaction');
 var TARGET_CUSTOM_OBJECT_TYPE = 'CoveoCatalogExportTarget';
 var CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT = 'product_variant';
 var CATALOG_STRUCTURE_MODE_PRODUCT_ONLY = 'product_only';
+var PRODUCT_ELIGIBILITY_MODE_LEGACY = 'legacy';
+var PRODUCT_ELIGIBILITY_MODE_ALL = 'all';
+var PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE = 'online_and_searchable';
 
 /**
  * Returns the normalized catalog structure mode for an export target.
@@ -20,6 +23,22 @@ function normalizeCatalogStructureMode(value) {
 
     if (normalizedValue === '') {
         return CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
+    }
+
+    return normalizedValue;
+}
+
+/**
+ * Returns the normalized product eligibility mode for an export target.
+ * Blank values preserve the behavior of targets created before this setting existed.
+ * @param {*} value - Raw product eligibility mode.
+ * @returns {string} normalized mode.
+ */
+function normalizeProductEligibilityMode(value) {
+    var normalizedValue = normalizeString(value).toLowerCase();
+
+    if (normalizedValue === '') {
+        return PRODUCT_ELIGIBILITY_MODE_LEGACY;
     }
 
     return normalizedValue;
@@ -113,6 +132,7 @@ function buildLegacyExportContext() {
         listingSlugAmpersandToken: '',
         catalogId: '',
         catalogStructureMode: CATALOG_STRUCTURE_MODE_PRODUCT_ONLY,
+        productEligibilityMode: PRODUCT_ELIGIBILITY_MODE_LEGACY,
         mappingProfileId: '',
         mappingProfile: null,
         fieldMappings: [],
@@ -149,6 +169,7 @@ function buildTargetExportContext(targetObject, targetId) {
         listingSlugAmpersandToken: normalizeString(custom.listingSlugAmpersandToken),
         catalogId: normalizeString(custom.catalogId),
         catalogStructureMode: normalizeCatalogStructureMode(custom.catalogStructureMode),
+        productEligibilityMode: normalizeProductEligibilityMode(custom.productEligibilityMode),
         mappingProfileId: normalizeString(custom.mappingProfileId),
         mappingProfile: null,
         fieldMappings: [],
@@ -232,6 +253,23 @@ function validateExportContext(exportContext) {
             + CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT
             + ' and '
             + CATALOG_STRUCTURE_MODE_PRODUCT_ONLY
+            + '.'
+        );
+    }
+
+    if (exportContext.productEligibilityMode !== PRODUCT_ELIGIBILITY_MODE_LEGACY
+        && exportContext.productEligibilityMode !== PRODUCT_ELIGIBILITY_MODE_ALL
+        && exportContext.productEligibilityMode !== PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE) {
+        throw new Error(
+            'The Coveo export ' + contextLabel
+            + ' has unsupported productEligibilityMode value "'
+            + exportContext.productEligibilityMode
+            + '". Supported values are '
+            + PRODUCT_ELIGIBILITY_MODE_LEGACY
+            + ', '
+            + PRODUCT_ELIGIBILITY_MODE_ALL
+            + ', and '
+            + PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE
             + '.'
         );
     }
@@ -531,6 +569,9 @@ function updateLastSync(exportContext, lastSync) {
 module.exports = {
     CATALOG_STRUCTURE_MODE_PRODUCT_ONLY: CATALOG_STRUCTURE_MODE_PRODUCT_ONLY,
     CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT: CATALOG_STRUCTURE_MODE_PRODUCT_VARIANT,
+    PRODUCT_ELIGIBILITY_MODE_ALL: PRODUCT_ELIGIBILITY_MODE_ALL,
+    PRODUCT_ELIGIBILITY_MODE_LEGACY: PRODUCT_ELIGIBILITY_MODE_LEGACY,
+    PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE: PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE,
     TARGET_CUSTOM_OBJECT_TYPE: TARGET_CUSTOM_OBJECT_TYPE,
     applyRequestLocale: applyRequestLocale,
     buildLegacyExportContext: buildLegacyExportContext,
@@ -538,6 +579,7 @@ module.exports = {
     getLanguageFromLocale: getLanguageFromLocale,
     getTargetsForCurrentSite: getTargetsForCurrentSite,
     normalizeCatalogStructureMode: normalizeCatalogStructureMode,
+    normalizeProductEligibilityMode: normalizeProductEligibilityMode,
     resolveExportContext: resolveExportContext,
     resolveListingSyncGroups: resolveListingSyncGroups,
     restoreRequestLocale: restoreRequestLocale,
