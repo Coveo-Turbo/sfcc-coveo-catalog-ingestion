@@ -13,7 +13,7 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
 ## Export Behavior
 
 - Full exports upload validated `addOrUpdate` batches through file containers and finish with `deleteolderthan`.
-- Delta exports use the resolved export target baseline and only export changed root products.
+- Manifest-enabled delta exports scan current root products, compare them with sharded target state, and upload only changed `addOrUpdate` and `delete` operations. This detects deleted, unassigned, offline, non-searchable, and scheduled-status transitions.
 - Purchase enrichment can generate a rolling Usage Analytics export, aggregate purchased units by `ec_product_id`, store a shared snapshot per `trackingId`, and let full or delta exports emit dynamic `ec_units_sold_<window>d` fields on exported `Product` items.
 - Catalog structure is target-aware:
   - `product_only` is the default and emits only `Product` items; variant-backed rows merge the variant attributes into the `Product`, set `ec_product_id = permanentid = ec_sku = <variant SKU>`, omit `ec_variant_id`, and keep grouping through `ec_item_group_id = <master ID>`
@@ -33,8 +33,14 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
 - `ec_item_group_id` is populated on every exported `Product`; standalone products use their own `ec_product_id`, while grouped products use their shared parent group identifier.
 - Export scope is target-aware:
   - legacy mode uses site preferences when no export targets exist
-  - target mode uses `CoveoCatalogExportTarget` custom objects for `locale`, `language`, `coveoSourceId`, optional `catalogId`, optional `catalogStructureMode`, optional `mappingProfileId`, and per-target `lastSync`
+  - target mode uses `CoveoCatalogExportTarget` custom objects for `locale`, `language`, `coveoSourceId`, optional `catalogId`, optional `catalogStructureMode`, optional `productEligibilityMode`, optional `mappingProfileId`, and per-target `lastSync`
   - jobs accept an optional `targetId`; if multiple targets exist and no `targetId` is provided, the job fails fast
+- Product eligibility is target-aware:
+  - `legacy` is the compatibility default and preserves the historical full/delta selection behavior
+  - `all` consistently exports all assigned standalone products and master variants
+  - `online_and_searchable` exports only products that are effectively online and searchable in the target site context; variants also require an eligible master
+  - `all` and `online_and_searchable` maintain versioned, SHA-256-checked manifest shards under `IMPEX/src/coveo/state/catalog-export/`
+  - a successful full export creates the initial manifest; later deltas remove documents for products that disappear or become ineligible
 - Extra mapped fields can be configured in Business Manager:
   - built-in mappings still emit `ec_name`
   - optional mapping profiles add extra fields without code changes
@@ -56,6 +62,9 @@ These tests cover:
 - required `permanentid` and `language` behavior
 - image gallery and thumbnail arrays
 - delta baseline behavior
+- online/searchable master and variant eligibility
+- sharded manifest promotion, locking, and recovery
+- delta add/update/delete reconciliation
 - catalog-scoped target selection
 - full export ordering id and `deleteolderthan` flow
 
@@ -74,13 +83,16 @@ These tests cover:
 - Set the site-level `coveoOrganizationId`.
 - Keep using site-level `coveoSourceId` and `coveoCatalogLastSync` only for the legacy single-target fallback.
 - If a catalog uses non-default SFCC image view types, optionally set `coveoProductImageViewTypes` and `coveoProductThumbnailViewTypes` on the site as ordered comma-separated fallback lists, for example `large,medium,original` and `medium,large,original`.
-- For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target, use the default `product_only` mode or switch `catalogStructureMode` to `product_variant` when you want separate variant rows, and run the jobs with the matching `targetId`. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
+- For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target, use the default `product_only` mode or switch `catalogStructureMode` to `product_variant`, and select `productEligibilityMode=online_and_searchable` when Coveo must mirror storefront visibility. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
+- Assign a distinct Coveo source to every export target. Full reconciliation is source-wide, and manifest-enabled runs enforce one target owner per source.
 - If you need extra catalog fields beyond the built-in export payload, create a `CoveoCatalogFieldMappingProfile`, add `CoveoCatalogFieldMapping` rows under that profile, and assign the profile on the target `mappingProfileId`. For larger mapping sets, you can also load the profile and rows from JSON with the `coveoFieldMappingImport` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - If your mapping JSON should also create the matching Coveo fields, run `coveoPlatformFieldCreate` with the same `sourceFile`. The job creates one platform field per enabled mapping `targetField`, and the optional `coveoField` block on each mapping can set the initial field type and options.
 - To maintain best-seller sort fields from Coveo Usage Analytics purchase events, run `coveoPurchaseEnrichmentSync` per target. The job creates or reuses a rolling export for one `trackingId`, stores a shared snapshot in IMPEX, and writes target-specific mapped or skipped reports. Subsequent full exports emit `ec_units_sold_<window>d` values for every product, and delta exports also include products whose units-sold values changed in the snapshot state.
 - To upload a field-mapping JSON file to IMPEX with the credentials in `dw.json`, run `npm run uploadFieldMappingsJson -- documentation/examples/default-commerce-fields.sample.json`.
 - To inspect which catalog attributes are actually populated before you build mappings, run the `coveoCatalogAttributeAudit` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - To sync CMH listing pages, set the target's `coveoTrackingId`, `coveoCountry`, `coveoCurrency`, `storefrontBaseUrl`, and `listingCategoryUrlTemplate`, then run `coveoListingPagesSync`. If you need existing brand landing page URLs to keep resolving to `Brands|...` category pages, also set `listingBrandUrlTemplate` as an optional legacy URL alias.
-- Run a full export before trusting any delta export.
+- Run a full export after enabling a manifest-backed eligibility mode and after changing target scope, locale, source, structure, eligibility, or mapping profile. Delta fails fast when its active manifest fingerprint is incompatible.
+- Keep `IMPEX/src/coveo/state/catalog-export/` available to all job executions. Do not delete active manifest, source-ownership, or lock files while a job is running.
+- Stream updates are asynchronous after API acceptance. Validate the first full export and major policy changes in Coveo before relying on subsequent delta schedules.
 
 See [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md) for the full ingestion setup and validation flow.
