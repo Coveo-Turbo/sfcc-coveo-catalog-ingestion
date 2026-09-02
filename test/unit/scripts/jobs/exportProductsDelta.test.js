@@ -120,7 +120,8 @@ function createFixture(options) {
             stateRun.records.push({
                 rootId: rootId,
                 documentIds: documentIds,
-                payloadChecksum: state.payloadChecksum
+                payloadChecksum: state.payloadChecksum,
+                items: state.items
             });
         }
     };
@@ -176,6 +177,10 @@ function createFixture(options) {
         },
         '*/cartridge/scripts/generators/productRequestGenerator': {
             processProducts: function (rootId) {
+                if (fixtureOptions.failRoot === rootId) {
+                    throw new Error('payload generation failed');
+                }
+
                 calls.processCounts[rootId] = (calls.processCounts[rootId] || 0) + 1;
                 return currentItems[rootId] || [];
             }
@@ -190,6 +195,10 @@ function createFixture(options) {
                 return [];
             },
             markDeltaExportApplied: function (context, metrics, statePath, rootIds) {
+                if (fixtureOptions.failMarkApplied) {
+                    throw new Error('purchase state failed');
+                }
+
                 calls.markedRoots = rootIds;
             }
         },
@@ -272,8 +281,8 @@ describe('exportProductsDelta job', function () {
         }), ['doc-change', 'doc-new']);
         assert.sameMembers(fixture.calls.operations[0].deletes, ['doc-offline', 'doc-deleted']);
         assert.strictEqual(fixture.calls.processCounts.KEEP, 1);
-        assert.strictEqual(fixture.calls.processCounts.CHANGE, 2);
-        assert.strictEqual(fixture.calls.processCounts.NEW, 2);
+        assert.strictEqual(fixture.calls.processCounts.CHANGE, 1);
+        assert.strictEqual(fixture.calls.processCounts.NEW, 1);
         assert.isTrue(fixture.calls.promoted);
         assert.isFalse(fixture.calls.aborted);
         assert.instanceOf(fixture.calls.updatedLastSync, Date);
@@ -327,6 +336,38 @@ describe('exportProductsDelta job', function () {
             fixture.job.beforeStep(fixture.parameters);
         }, /missing manifest/);
         assert.isTrue(fixture.calls.localeRestored);
+        assert.isFalse(fixture.calls.promoted);
+    });
+
+    it('does not promote the manifest when purchase state persistence fails', function () {
+        var fixture = createFixture({
+            failMarkApplied: true
+        });
+
+        assert.throws(function () {
+            executeJob(fixture);
+        }, /purchase state failed/);
+        assert.isTrue(fixture.calls.aborted);
+        assert.isFalse(fixture.calls.promoted);
+        assert.isNull(fixture.calls.updatedLastSync);
+    });
+
+    it('does not delete prior documents when payload generation fails', function () {
+        var fixture = createFixture({
+            currentRootIds: ['CHANGE'],
+            failRoot: 'CHANGE'
+        });
+
+        fixture.job.beforeStep(fixture.parameters);
+
+        assert.throws(function () {
+            fixture.job.process(fixture.job.read());
+        }, /payload generation failed/);
+
+        fixture.job.afterStep(false, fixture.parameters);
+
+        assert.lengthOf(fixture.calls.operations, 0);
+        assert.isTrue(fixture.calls.aborted);
         assert.isFalse(fixture.calls.promoted);
     });
 });

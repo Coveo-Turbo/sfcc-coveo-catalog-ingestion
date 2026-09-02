@@ -118,7 +118,15 @@ function mergeRootIdIterators(baseIterator, extraRootIds) {
  * @returns {boolean} whether the product should be read by the full export.
  */
 function isFullExportRootProduct(product) {
-    return !empty(product) && product.variant !== true;
+    if (empty(product) || product.variant === true || product.variationGroup === true) {
+        return false;
+    }
+
+    if (typeof product.isVariationGroup === 'function' && product.isVariationGroup()) {
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -312,7 +320,10 @@ function buildDeltaProductQuery(exportContext) {
     var rootIds = [];
     var seen = new HashSet();
 
-    if (empty(lastSync)) {
+    if (empty(lastSync)
+        && (empty(exportContext)
+            || empty(exportContext.productEligibilityMode)
+            || exportContext.productEligibilityMode === 'legacy')) {
         throw new Error('The Coveo delta export requires a successful full catalog sync before it can run.');
     }
 

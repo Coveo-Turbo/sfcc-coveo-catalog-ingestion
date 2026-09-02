@@ -336,14 +336,14 @@ exports.afterStep = function (success, parameters) {
         }, 'delete older than');
         Logger.info('Coveo deleteolderthan request accepted for source={0}, orderingId={1}', exportContext.coveoSourceId, firstOrderingId);
 
+        purchaseMetricHelper.markFullExportApplied(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH);
+        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
+
         if (manifestEnabled) {
             catalogExportStateHelper.promoteRun(stateRun);
             statePromoted = true;
             stateRun = null;
         }
-
-        purchaseMetricHelper.markFullExportApplied(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH);
-        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
     } catch (error) {
         if (manifestEnabled && stateRun && !statePromoted) {
             catalogExportStateHelper.abortRun(stateRun);

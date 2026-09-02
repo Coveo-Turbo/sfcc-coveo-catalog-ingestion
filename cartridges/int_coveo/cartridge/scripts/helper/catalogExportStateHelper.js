@@ -3,6 +3,10 @@
 var File = require('dw/io/File');
 var FileReader = require('dw/io/FileReader');
 var FileWriter = require('dw/io/FileWriter');
+var Encoding = require('dw/crypto/Encoding');
+var MessageDigest = require('dw/crypto/MessageDigest');
+var Bytes = require('dw/util/Bytes');
+var UUIDUtils = require('dw/util/UUIDUtils');
 
 var DEFAULT_STATE_PATH = '/src/coveo/state/catalog-export/';
 var MANIFEST_SCHEMA_VERSION = 1;
@@ -12,15 +16,25 @@ function normalizeString(value) {
     return value === null || value === undefined ? '' : String(value).trim();
 }
 
-function sanitizeFileSegment(value) {
-    var normalized = normalizeString(value).replace(/[^A-Za-z0-9_-]+/g, '_');
-    return normalized || 'default';
+function digestText(value) {
+    var digest = new MessageDigest(MessageDigest.DIGEST_SHA_256);
+    return Encoding.toHex(digest.digestBytes(new Bytes(String(value), 'UTF-8')));
 }
 
 function getTargetKey(exportContext) {
-    return sanitizeFileSegment(exportContext && exportContext.siteId)
-        + '_'
-        + sanitizeFileSegment(exportContext && (exportContext.targetId || exportContext.locale || 'legacy'));
+    return digestText(
+        normalizeString(exportContext && exportContext.siteId)
+        + '\u0000'
+        + normalizeString(exportContext && (exportContext.targetId || exportContext.locale || 'legacy'))
+    );
+}
+
+function getSourceKey(exportContext) {
+    return digestText(
+        normalizeString(exportContext && exportContext.coveoOrganizationId)
+        + '\u0000'
+        + normalizeString(exportContext && exportContext.coveoSourceId)
+    );
 }
 
 function getDirectory(directoryPath) {
@@ -37,6 +51,10 @@ function getPointerFileName(targetKey) {
 
 function getLockFileName(targetKey) {
     return 'coveo_catalog_manifest_' + targetKey + '.lock';
+}
+
+function getSourceOwnershipFileName(sourceKey) {
+    return 'coveo_catalog_source_' + sourceKey + '.json';
 }
 
 function getShardFileName(targetKey, generation, shardIndex) {
@@ -78,9 +96,10 @@ function getDocumentIds(items) {
 }
 
 function getPayloadChecksum(items) {
-    return String(hashString(JSON.stringify((items || []).filter(function (item) {
+    var serializedPayload = JSON.stringify((items || []).filter(function (item) {
         return !!item;
-    }))));
+    }));
+    return digestText(serializedPayload);
 }
 
 function buildFingerprint(exportContext) {
@@ -88,6 +107,7 @@ function buildFingerprint(exportContext) {
         schemaVersion: MANIFEST_SCHEMA_VERSION,
         siteId: normalizeString(exportContext && exportContext.siteId),
         targetId: normalizeString(exportContext && exportContext.targetId),
+        organizationId: normalizeString(exportContext && exportContext.coveoOrganizationId),
         sourceId: normalizeString(exportContext && exportContext.coveoSourceId),
         catalogId: normalizeString(exportContext && exportContext.catalogId),
         locale: normalizeString(exportContext && exportContext.locale),
@@ -134,6 +154,7 @@ function writeTextFile(file, contents) {
 function writeJsonFileAtomically(directoryPath, fileName, value) {
     var targetFile = getFile(directoryPath, fileName);
     var temporaryFile = getFile(directoryPath, fileName + '.tmp');
+    var backupFile = getFile(directoryPath, fileName + '.bak');
 
     if (temporaryFile.exists()) {
         temporaryFile.remove();
@@ -141,43 +162,96 @@ function writeJsonFileAtomically(directoryPath, fileName, value) {
 
     writeTextFile(temporaryFile, JSON.stringify(value, null, 2) + '\n');
 
-    if (targetFile.exists() && !targetFile.remove()) {
+    if (backupFile.exists()) {
+        backupFile.remove();
+    }
+
+    if (targetFile.exists() && !targetFile.renameTo(backupFile)) {
         temporaryFile.remove();
-        throw new Error('Unable to replace catalog export manifest pointer ' + targetFile.fullPath + '.');
+        throw new Error('Unable to preserve the previous catalog export manifest pointer ' + targetFile.fullPath + '.');
     }
 
     if (!temporaryFile.renameTo(targetFile)) {
         temporaryFile.remove();
+
+        if (backupFile.exists()) {
+            backupFile.renameTo(targetFile);
+        }
+
         throw new Error('Unable to promote catalog export manifest pointer ' + targetFile.fullPath + '.');
+    }
+
+    if (backupFile.exists()) {
+        backupFile.remove();
     }
 }
 
-function acquireLock(directoryPath, targetKey) {
+function acquireLock(directoryPath, sourceKey, lockToken) {
     var directory = getDirectory(directoryPath);
-    var lockFile = getFile(directoryPath, getLockFileName(targetKey));
+    var lockFile = getFile(directoryPath, getLockFileName(sourceKey));
 
     directory.mkdirs();
 
-    if (lockFile.exists() || (typeof lockFile.createNewFile === 'function' && !lockFile.createNewFile())) {
-        throw new Error('A Coveo catalog export is already running for target ' + targetKey + '. Remove the manifest lock only after confirming that no export job is active.');
+    if (lockFile.exists()) {
+        throw new Error('A Coveo catalog export is already running for source ' + sourceKey + '. Remove the manifest lock only after confirming that no export job is active.');
+    }
+
+    if (typeof lockFile.createNewFile === 'function' && !lockFile.createNewFile()) {
+        throw new Error('A Coveo catalog export is already running for source ' + sourceKey + '.');
     }
 
     if (typeof lockFile.createNewFile !== 'function') {
         writeTextFile(lockFile, '');
     }
 
-    writeTextFile(lockFile, new Date().toISOString() + '\n');
+    writeTextFile(lockFile, JSON.stringify({
+        token: lockToken,
+        acquiredAt: new Date().toISOString()
+    }) + '\n');
     return lockFile;
 }
 
 function releaseLock(run) {
     if (run && run.lockFile && run.lockFile.exists()) {
-        run.lockFile.remove();
+        var lockContents = readTextFile(run.lockFile);
+        var lockState = lockContents === '' ? null : JSON.parse(lockContents);
+
+        if (lockState && lockState.token === run.lockToken) {
+            run.lockFile.remove();
+        }
     }
+}
+
+function ensureSourceOwnership(directoryPath, sourceKey, targetKey) {
+    var ownershipFileName = getSourceOwnershipFileName(sourceKey);
+    var ownershipFile = getFile(directoryPath, ownershipFileName);
+    var contents = readTextFile(ownershipFile);
+    var ownership;
+
+    if (contents !== '') {
+        ownership = JSON.parse(contents);
+
+        if (ownership.targetKey !== targetKey) {
+            throw new Error('Coveo source ' + sourceKey + ' is already owned by another catalog export target. Configure a distinct coveoSourceId for each target.');
+        }
+
+        return;
+    }
+
+    writeJsonFileAtomically(directoryPath, ownershipFileName, {
+        targetKey: targetKey,
+        claimedAt: new Date().toISOString()
+    });
 }
 
 function loadManifestForTargetKey(targetKey, directoryPath) {
     var pointerFile = getFile(directoryPath, getPointerFileName(targetKey));
+    var backupFile = getFile(directoryPath, getPointerFileName(targetKey) + '.bak');
+
+    if (!pointerFile.exists() && backupFile.exists()) {
+        backupFile.renameTo(pointerFile);
+    }
+
     var contents = readTextFile(pointerFile);
     var manifest;
 
@@ -212,12 +286,26 @@ function assertCompatibleManifest(exportContext, manifest) {
 
 function beginRun(exportContext, startedAt, directoryPath) {
     var targetKey = getTargetKey(exportContext);
+    var sourceKey = getSourceKey(exportContext);
     var resolvedDirectoryPath = directoryPath || DEFAULT_STATE_PATH;
+    var generation = buildGeneration(startedAt);
+    var lockToken = UUIDUtils.createUUID().toString();
+    var lockFile = acquireLock(resolvedDirectoryPath, sourceKey, lockToken);
+
+    try {
+        ensureSourceOwnership(resolvedDirectoryPath, sourceKey, targetKey);
+    } catch (error) {
+        if (lockFile.exists()) {
+            lockFile.remove();
+        }
+
+        throw error;
+    }
 
     return {
         directoryPath: resolvedDirectoryPath,
         targetKey: targetKey,
-        generation: buildGeneration(startedAt),
+        generation: generation,
         fingerprint: buildFingerprint(exportContext),
         startedAt: (startedAt instanceof Date ? startedAt : new Date()).toISOString(),
         writers: {},
@@ -225,7 +313,8 @@ function beginRun(exportContext, startedAt, directoryPath) {
         rootCount: 0,
         documentCount: 0,
         closed: false,
-        lockFile: acquireLock(resolvedDirectoryPath, targetKey)
+        lockFile: lockFile,
+        lockToken: lockToken
     };
 }
 
@@ -288,10 +377,63 @@ function writeRootRecord(run, rootId, documentIds, state) {
         eligibilitySignature: normalizeString(state && state.eligibilitySignature),
         payloadChecksum: normalizeString(state && state.payloadChecksum)
     };
+
+    if (state && Array.isArray(state.items)) {
+        record.items = state.items.filter(function (item) {
+            return !!item;
+        });
+    }
+
     writer.write(JSON.stringify(record) + '\n');
     run.rootCount += 1;
     run.documentCount += normalizedDocumentIds.length;
     return record;
+}
+
+function compactRunShards(run) {
+    Object.keys(run.shardFiles).forEach(function (shardIndex) {
+        var fileName = run.shardFiles[shardIndex];
+        var sourceFile = getFile(run.directoryPath, fileName);
+        var temporaryFile = getFile(run.directoryPath, fileName + '.tmp');
+        var reader = null;
+        var writer = null;
+        var line;
+
+        if (temporaryFile.exists()) {
+            temporaryFile.remove();
+        }
+
+        reader = new FileReader(sourceFile, 'UTF-8');
+        writer = new FileWriter(temporaryFile, 'UTF-8');
+
+        try {
+            line = reader.readLine();
+
+            while (line !== null) {
+                if (normalizeString(line) !== '') {
+                    var record = JSON.parse(line);
+                    delete record.items;
+                    writer.write(JSON.stringify(record) + '\n');
+                }
+
+                line = reader.readLine();
+            }
+
+            writer.flush();
+        } finally {
+            closeQuietly(reader);
+            closeQuietly(writer);
+        }
+
+        if (!sourceFile.remove()) {
+            temporaryFile.remove();
+            throw new Error('Unable to compact catalog export manifest shard ' + fileName + '.');
+        }
+
+        if (!temporaryFile.renameTo(sourceFile)) {
+            throw new Error('Unable to promote compacted catalog export manifest shard ' + fileName + '.');
+        }
+    });
 }
 
 function closeRun(run) {
@@ -332,6 +474,7 @@ function promoteRun(run) {
     var manifest;
 
     closeRun(run);
+    compactRunShards(run);
     previousManifest = loadManifestForTargetKey(run.targetKey, run.directoryPath);
     manifest = {
         schemaVersion: MANIFEST_SCHEMA_VERSION,

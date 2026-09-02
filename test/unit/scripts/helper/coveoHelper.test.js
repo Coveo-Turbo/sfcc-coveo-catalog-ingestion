@@ -571,6 +571,10 @@ describe('coveoHelper', function () {
                         {
                             ID: 'OFFLINE-STANDALONE',
                             online: false
+                        },
+                        {
+                            ID: 'MASTER-1-RED',
+                            variationGroup: true
                         }
                     ]);
                 },

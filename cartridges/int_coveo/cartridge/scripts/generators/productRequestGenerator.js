@@ -373,6 +373,17 @@ function isProductOnlyCatalogStructureMode(exportContext) {
 }
 
 /**
+ * Returns whether payload-generation errors must abort reconciliation.
+ * Legacy exports preserve their historical best-effort behavior.
+ * @param {Object} exportContext - Export context.
+ * @returns {boolean} whether errors must propagate.
+ */
+function shouldPropagatePayloadError(exportContext) {
+    return exportTargetHelper.normalizeProductEligibilityMode(exportContext && exportContext.productEligibilityMode)
+        !== exportTargetHelper.PRODUCT_ELIGIBILITY_MODE_LEGACY;
+}
+
+/**
  * Returns the source text from an SFCC markup-like value when available.
  * @param {*} markupValue - Markup or string value.
  * @returns {string} source text.
@@ -774,6 +785,10 @@ function getProductsData(product, exportOptions, exportContext) {
         }, exportContext);
     } catch (ex) {
         Logger.error('(productRequestGenerator-getProductsData) -> Error occured while generating products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+
+        if (shouldPropagatePayloadError(exportContext)) {
+            throw ex;
+        }
     }
     return prdObj;
 }
@@ -808,6 +823,10 @@ function getVariantsData(product, productId, exportContext) {
         }, exportContext);
     } catch (ex) {
         Logger.error('(productRequestGenerator-getVariantsData) -> Error occured while generating Product variants and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+
+        if (shouldPropagatePayloadError(exportContext)) {
+            throw ex;
+        }
     }
     return variantObj;
 }
@@ -924,6 +943,10 @@ function processProducts(product, isDelta, exportContext) {
         }
     } catch (ex) {
         Logger.error('(productRequestGenerator-processProducts) -> Error occured while processing products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+
+        if (shouldPropagatePayloadError(exportContext)) {
+            throw ex;
+        }
     }
     return coveoProducts;
 }

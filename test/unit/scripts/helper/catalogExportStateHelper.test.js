@@ -1,6 +1,7 @@
 'use strict';
 
 var path = require('path');
+var crypto = require('crypto');
 var assert = require('chai').assert;
 var proxyquire = require('proxyquire').noCallThru();
 
@@ -8,9 +9,9 @@ function createFileSystemStubs() {
     var files = {};
 
     function File(filePath) {
-        this.fullPath = filePath;
-        this.path = filePath;
-        this.name = filePath.split('/').pop();
+        this.fullPath = filePath.replace(/\/{2,}/g, '/');
+        this.path = this.fullPath;
+        this.name = this.fullPath.split('/').pop();
     }
 
     File.IMPEX = '/IMPEX';
@@ -90,6 +91,7 @@ function createContext(overrides) {
     var context = {
         siteId: 'RefArch',
         targetId: 'mondou-en',
+        coveoOrganizationId: 'organization-id',
         coveoSourceId: 'source-id',
         catalogId: 'storefront-catalog',
         locale: 'en_CA',
@@ -108,10 +110,38 @@ function createContext(overrides) {
 
 function createHelper() {
     var fileSystem = createFileSystemStubs();
+    var uuidCounter = 0;
+    function Bytes(value) {
+        this.value = value;
+    }
+    function MessageDigest() {}
+
+    MessageDigest.DIGEST_SHA_256 = 'SHA-256';
+    MessageDigest.prototype.digestBytes = function (bytes) {
+        return bytes;
+    };
+
     var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/catalogExportStateHelper'), {
+        'dw/crypto/Encoding': {
+            toHex: function (bytes) {
+                return crypto.createHash('sha256').update(bytes.value, 'utf8').digest('hex');
+            }
+        },
+        'dw/crypto/MessageDigest': MessageDigest,
         'dw/io/File': fileSystem.File,
         'dw/io/FileReader': fileSystem.FileReader,
-        'dw/io/FileWriter': fileSystem.FileWriter
+        'dw/io/FileWriter': fileSystem.FileWriter,
+        'dw/util/Bytes': Bytes,
+        'dw/util/UUIDUtils': {
+            createUUID: function () {
+                uuidCounter += 1;
+                return {
+                    toString: function () {
+                        return 'uuid-' + uuidCounter;
+                    }
+                };
+            }
+        }
     });
 
     return {
@@ -131,7 +161,8 @@ describe('catalogExportStateHelper', function () {
         helper.writeRootRecord(run, 'MASTER-1', ['https://example.com/sku-1', 'https://example.com/sku-2'], {
             modifiedAt: '2026-09-01T00:00:00.000Z',
             eligibilitySignature: 'sku-1|sku-2',
-            payloadChecksum: '123'
+            payloadChecksum: '123',
+            items: [{ documentId: 'https://example.com/sku-1' }]
         });
         helper.writeRootRecord(run, 'STANDALONE-1', [], {
             modifiedAt: '2026-08-01T00:00:00.000Z',
@@ -158,6 +189,10 @@ describe('catalogExportStateHelper', function () {
         assert.deepEqual(records.filter(function (record) {
             return record.rootId === 'MASTER-1';
         })[0].documentIds, ['https://example.com/sku-1', 'https://example.com/sku-2']);
+        assert.notProperty(records.filter(function (record) {
+            return record.rootId === 'MASTER-1';
+        })[0], 'items');
+        assert.notStrictEqual(helper.getPayloadChecksum([{ value: 'Aa' }]), helper.getPayloadChecksum([{ value: 'BB' }]));
     });
 
     it('rejects delta use when target settings differ from the active manifest', function () {
@@ -207,6 +242,99 @@ describe('catalogExportStateHelper', function () {
         helper.abortRun(run);
     });
 
+    it('prevents overlapping runs for different targets that share a Coveo source', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var run = helper.beginRun(createContext(), new Date('2026-09-02T18:00:00Z'));
+
+        assert.throws(function () {
+            helper.beginRun(createContext({
+                targetId: 'mondou-fr',
+                locale: 'fr_CA',
+                language: 'fr'
+            }), new Date('2026-09-02T19:00:00Z'));
+        }, /already running/);
+
+        helper.abortRun(run);
+
+        assert.throws(function () {
+            helper.beginRun(createContext({
+                targetId: 'mondou-fr',
+                locale: 'fr_CA',
+                language: 'fr'
+            }), new Date('2026-09-02T20:00:00Z'));
+        }, /already owned by another catalog export target/);
+    });
+
+    it('does not steal an old source lock automatically', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var context = createContext();
+        var firstRun = helper.beginRun(context, new Date('2026-09-02T18:00:00Z'));
+
+        fixture.fileSystem.files[firstRun.lockFile.fullPath] = JSON.stringify({
+            token: firstRun.lockToken,
+            acquiredAt: '2000-01-01T00:00:00.000Z'
+        }) + '\n';
+
+        assert.throws(function () {
+            helper.beginRun(context, new Date('2026-09-02T19:00:00Z'));
+        }, /already running/);
+
+        helper.abortRun(firstRun);
+    });
+
+    it('releases only the lock owned by the current run', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var run = helper.beginRun(createContext(), new Date('2026-09-02T18:00:00Z'));
+
+        fixture.fileSystem.files[run.lockFile.fullPath] = JSON.stringify({
+            token: 'replacement-run',
+            acquiredAt: '2026-09-02T18:01:00.000Z'
+        }) + '\n';
+        helper.abortRun(run);
+
+        assert.isTrue(run.lockFile.exists());
+        run.lockFile.remove();
+    });
+
+    it('invalidates the manifest when the Coveo organization changes', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var context = createContext();
+        var run = helper.beginRun(context, new Date('2026-09-02T18:00:00Z'));
+
+        helper.promoteRun(run);
+
+        assert.throws(function () {
+            helper.assertCompatibleManifest(createContext({
+                coveoOrganizationId: 'different-organization'
+            }), helper.loadActiveManifest(context));
+        }, /configuration changed/);
+    });
+
+    it('recovers the previous manifest pointer when promotion was interrupted', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var context = createContext();
+        var run = helper.beginRun(context, new Date('2026-09-02T18:00:00Z'));
+
+        helper.writeRootRecord(run, 'ROOT-1', ['doc-1']);
+        helper.promoteRun(run);
+
+        var pointerPath = Object.keys(fixture.fileSystem.files).filter(function (filePath) {
+            return /coveo_catalog_manifest_.*\.json$/.test(filePath);
+        })[0];
+        var pointerFile = new fixture.fileSystem.File(pointerPath);
+        var backupFile = new fixture.fileSystem.File(pointerPath + '.bak');
+
+        assert.isTrue(pointerFile.renameTo(backupFile));
+        assert.isFalse(pointerFile.exists());
+        assert.strictEqual(helper.loadActiveManifest(context).generation, run.generation);
+        assert.isTrue(pointerFile.exists());
+    });
+
     it('removes shards from the replaced generation after pointer promotion', function () {
         var fixture = createHelper();
         var helper = fixture.helper;
@@ -216,6 +344,8 @@ describe('catalogExportStateHelper', function () {
         helper.writeRootRecord(firstRun, 'ROOT-1', ['doc-1']);
         var firstManifest = helper.promoteRun(firstRun);
         var firstShardPath = '/IMPEX' + helper.DEFAULT_STATE_PATH + firstManifest.shardFiles[Object.keys(firstManifest.shardFiles)[0]];
+
+        assert.isTrue(Object.prototype.hasOwnProperty.call(fixture.fileSystem.files, firstShardPath));
 
         var secondRun = helper.beginRun(context, new Date('2026-09-02T19:00:00Z'));
         helper.writeRootRecord(secondRun, 'ROOT-2', ['doc-2']);

@@ -79,6 +79,7 @@ function createSiteCurrent(customPreferences) {
 function createExportTargetHelperStub() {
     return {
         CATALOG_STRUCTURE_MODE_PRODUCT_ONLY: 'product_only',
+        PRODUCT_ELIGIBILITY_MODE_LEGACY: 'legacy',
         PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE: 'online_and_searchable',
         normalizeCatalogStructureMode: function (value) {
             return value ? String(value).trim().toLowerCase() : 'product_only';
@@ -1599,5 +1600,24 @@ describe('productRequestGenerator', function () {
         assert.deepEqual(createGeneratorForProduct(offlineStandalone).processProducts('OFFLINE-STANDALONE', false, context), []);
         assert.deepEqual(createGeneratorForProduct(offlineMaster).processProducts('OFFLINE-MASTER', false, context), []);
         assert.deepEqual(createGeneratorForProduct(eligibleVariant).processProducts('CHILD-SKU', false, context), []);
+    });
+
+    it('propagates payload generation failures for manifest-enabled modes', function () {
+        var failingProduct = createProduct({
+            ID: 'FAILING-SKU'
+        });
+        var generator;
+
+        failingProduct.getImage = function () {
+            throw new Error('catalog media unavailable');
+        };
+        generator = createGeneratorForProduct(failingProduct);
+
+        assert.throws(function () {
+            generator.processProducts('FAILING-SKU', false, {
+                catalogStructureMode: 'product_only',
+                productEligibilityMode: 'online_and_searchable'
+            });
+        }, /catalog media unavailable/);
     });
 });

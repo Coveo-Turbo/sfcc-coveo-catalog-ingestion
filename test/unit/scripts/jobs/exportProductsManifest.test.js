@@ -170,6 +170,10 @@ function createFixture(options) {
             },
             ensureMetricFields: function () {},
             markFullExportApplied: function () {
+                if (fixtureOptions.failMarkApplied) {
+                    throw new Error('purchase state failed');
+                }
+
                 calls.markedApplied = true;
             }
         },
@@ -301,5 +305,18 @@ describe('exportProducts manifest reconciliation', function () {
         assert.isFalse(fixture.calls.promoted);
         assert.isNull(fixture.calls.updatedLastSync);
         assert.isTrue(fixture.calls.localeRestored);
+    });
+
+    it('keeps the previous manifest active when purchase state persistence fails', function () {
+        var fixture = createFixture({
+            failMarkApplied: true
+        });
+
+        assert.throws(function () {
+            executeJob(fixture);
+        }, /purchase state failed/);
+        assert.isTrue(fixture.calls.aborted);
+        assert.isFalse(fixture.calls.promoted);
+        assert.isNull(fixture.calls.updatedLastSync);
     });
 });

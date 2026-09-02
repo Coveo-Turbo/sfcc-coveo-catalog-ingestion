@@ -24,6 +24,8 @@ var statePromoted = false;
 var syncStartedAt = null;
 var deletesToExport = [];
 var MAX_OPERATIONS_PER_UPLOAD = 1000;
+var MAX_OPERATION_PAYLOAD_BYTES = 5 * 1024 * 1024;
+var pendingOperationBytes = 0;
 
 /**
  * Formats service failure details for logs and thrown errors.
@@ -123,11 +125,22 @@ function uploadPendingOperations(parameters) {
     cleanupProductFile(parameters, productFile);
     productsToExport = [];
     deletesToExport = [];
+    pendingOperationBytes = 0;
+}
+
+function getEstimatedSerializedBytes(value) {
+    return JSON.stringify(value).length * 3;
 }
 
 function appendRootOperations(rootId, currentRecord, previousRecord, parameters) {
     var currentDocumentIds = {};
     var previousDocumentIds = previousRecord && previousRecord.documentIds ? previousRecord.documentIds : [];
+    var rootDeletes = [];
+    var currentItems = (!previousRecord || previousRecord.payloadChecksum !== currentRecord.payloadChecksum)
+        ? (currentRecord.items || [])
+        : [];
+    var rootOperationCount;
+    var rootOperationBytes;
 
     (currentRecord.documentIds || []).forEach(function (documentId) {
         currentDocumentIds['$' + documentId] = true;
@@ -135,23 +148,51 @@ function appendRootOperations(rootId, currentRecord, previousRecord, parameters)
 
     previousDocumentIds.forEach(function (documentId) {
         if (!currentDocumentIds['$' + documentId]) {
-            deletesToExport.push(documentId);
+            rootDeletes.push(documentId);
         }
     });
 
-    if (!previousRecord || previousRecord.payloadChecksum !== currentRecord.payloadChecksum) {
-        var currentItems = productRequestGenerator.processProducts(rootId, isDelta, exportContext);
-        currentItems.forEach(function (item) {
-            if (item) {
-                productsToExport.push(item);
-            }
-        });
-        exportedRootIds[rootId] = true;
+    rootOperationCount = currentItems.length + rootDeletes.length;
+    rootOperationBytes = rootOperationCount ? getEstimatedSerializedBytes({
+        addOrUpdate: currentItems,
+        delete: rootDeletes
+    }) : 0;
+
+    if (rootOperationBytes > MAX_OPERATION_PAYLOAD_BYTES) {
+        throw new Error('The Coveo delta payload for root product ' + rootId + ' exceeds the safe per-upload size. Reduce mapped payload size or variant count for this root.');
     }
 
-    if ((productsToExport.length + deletesToExport.length) >= MAX_OPERATIONS_PER_UPLOAD) {
+    if ((productsToExport.length || deletesToExport.length)
+        && ((productsToExport.length + deletesToExport.length + rootOperationCount) > MAX_OPERATIONS_PER_UPLOAD
+            || (pendingOperationBytes + rootOperationBytes) > MAX_OPERATION_PAYLOAD_BYTES)) {
         uploadPendingOperations(parameters);
     }
+
+    currentItems.forEach(function (item) {
+        if (item) {
+            productsToExport.push(item);
+        }
+    });
+    rootDeletes.forEach(function (documentId) {
+        deletesToExport.push(documentId);
+    });
+    pendingOperationBytes += rootOperationBytes;
+
+    if (rootOperationCount) {
+        exportedRootIds[rootId] = true;
+    }
+}
+
+function appendDeletedDocument(documentId, parameters) {
+    var operationBytes = getEstimatedSerializedBytes(documentId);
+
+    if ((productsToExport.length + deletesToExport.length) >= MAX_OPERATIONS_PER_UPLOAD
+        || (pendingOperationBytes + operationBytes) > MAX_OPERATION_PAYLOAD_BYTES) {
+        uploadPendingOperations(parameters);
+    }
+
+    deletesToExport.push(documentId);
+    pendingOperationBytes += operationBytes;
 }
 
 function reconcileManifestRun(parameters) {
@@ -178,13 +219,9 @@ function reconcileManifestRun(parameters) {
             var removedRecord = previousRecords[key];
 
             (removedRecord.documentIds || []).forEach(function (documentId) {
-                deletesToExport.push(documentId);
+                appendDeletedDocument(documentId, parameters);
             });
             exportedRootIds[removedRecord.rootId] = true;
-
-            if ((productsToExport.length + deletesToExport.length) >= MAX_OPERATIONS_PER_UPLOAD) {
-                uploadPendingOperations(parameters);
-            }
         });
 
         previousRecords = null;
@@ -209,6 +246,7 @@ exports.beforeStep = function (parameters, stepExecution) {
     sourceFolder = parameters.get('srcFolder');
     productsToExport = [];
     deletesToExport = [];
+    pendingOperationBytes = 0;
     exportedRootIds = {};
     activeManifest = null;
     stateRun = null;
@@ -286,7 +324,8 @@ exports.write = function (lines, parameters, stepExecution) {
                 result.rootId,
                 catalogExportStateHelper.getDocumentIds(result.items),
                 {
-                    payloadChecksum: catalogExportStateHelper.getPayloadChecksum(result.items)
+                    payloadChecksum: catalogExportStateHelper.getPayloadChecksum(result.items),
+                    items: result.items
                 }
             );
         });
@@ -319,9 +358,6 @@ exports.afterStep = function (success, parameters) {
         if (manifestEnabled) {
             closeProductsIterator();
             reconcileManifestRun(parameters);
-            catalogExportStateHelper.promoteRun(stateRun);
-            statePromoted = true;
-            stateRun = null;
         } else if (!empty(productsToExport) && productsToExport.length > 0) {
             productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
             Logger.info('exportProducts-write - Total products Exported: {0}', productsToExport.length);
@@ -343,6 +379,12 @@ exports.afterStep = function (success, parameters) {
             Object.keys(exportedRootIds)
         );
         exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
+
+        if (manifestEnabled) {
+            catalogExportStateHelper.promoteRun(stateRun);
+            statePromoted = true;
+            stateRun = null;
+        }
     } catch (error) {
         if (manifestEnabled && stateRun && !statePromoted) {
             catalogExportStateHelper.abortRun(stateRun);
