@@ -226,7 +226,7 @@ describe('coveoHelper', function () {
         }, /requires a successful full catalog sync/);
     });
 
-    it('returns deduplicated root product ids for full exports when search hits include variants', function () {
+    it('returns deduplicated master roots when full-export search hits include variants and variation groups', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
             'dw/catalog/CatalogMgr': {
                 getCatalog: function () {
@@ -271,6 +271,19 @@ describe('coveoHelper', function () {
                                 ID: 'MASTER-1'
                             }
                         },
+                        'MASTER-1-GROUP': {
+                            ID: 'MASTER-1-GROUP',
+                            variationGroup: true,
+                            masterProduct: {
+                                ID: 'MASTER-1'
+                            }
+                        },
+                        'ORPHAN-GROUP': {
+                            ID: 'ORPHAN-GROUP',
+                            isVariationGroup: function () {
+                                return true;
+                            }
+                        },
                         'STANDALONE-1': {
                             ID: 'STANDALONE-1'
                         }
@@ -296,6 +309,12 @@ describe('coveoHelper', function () {
                         },
                         {
                             productID: 'MASTER-1-RED-M'
+                        },
+                        {
+                            productID: 'MASTER-1-GROUP'
+                        },
+                        {
+                            productID: 'ORPHAN-GROUP'
                         },
                         {
                             productID: 'STANDALONE-1'

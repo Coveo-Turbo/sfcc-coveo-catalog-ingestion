@@ -113,16 +113,23 @@ function mergeRootIdIterators(baseIterator, extraRootIds) {
 }
 
 /**
+ * Returns whether a product represents a variation group.
+ * @param {Object} product - Product to inspect.
+ * @returns {boolean} whether the product is a variation group.
+ */
+function isVariationGroupProduct(product) {
+    return !empty(product)
+        && (product.variationGroup === true
+            || (typeof product.isVariationGroup === 'function' && product.isVariationGroup()));
+}
+
+/**
  * Returns whether the product can be used as a full-export root item.
  * @param {Object} product - Product to inspect.
  * @returns {boolean} whether the product should be read by the full export.
  */
 function isFullExportRootProduct(product) {
-    if (empty(product) || product.variant === true || product.variationGroup === true) {
-        return false;
-    }
-
-    if (typeof product.isVariationGroup === 'function' && product.isVariationGroup()) {
+    if (empty(product) || product.variant === true || isVariationGroupProduct(product)) {
         return false;
     }
 
@@ -273,8 +280,12 @@ function getExportRootProductId(product) {
         return null;
     }
 
-    if (product.variant && !empty(product.masterProduct)) {
+    if ((product.variant || isVariationGroupProduct(product)) && !empty(product.masterProduct)) {
         return product.masterProduct.ID;
+    }
+
+    if (isVariationGroupProduct(product)) {
+        return null;
     }
 
     return product.ID;
