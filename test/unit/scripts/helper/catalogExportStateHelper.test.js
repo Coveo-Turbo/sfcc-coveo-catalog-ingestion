@@ -193,6 +193,9 @@ describe('catalogExportStateHelper', function () {
             return record.rootId === 'MASTER-1';
         })[0], 'items');
         assert.notStrictEqual(helper.getPayloadChecksum([{ value: 'Aa' }]), helper.getPayloadChecksum([{ value: 'BB' }]));
+        Object.keys(fixture.fileSystem.files).forEach(function (filePath) {
+            assert.notMatch(filePath, /_(documents|deletes)_\d\d\.jsonl$/);
+        });
     });
 
     it('rejects delta use when target settings differ from the active manifest', function () {
@@ -208,6 +211,41 @@ describe('catalogExportStateHelper', function () {
                 productEligibilityMode: 'all'
             }), helper.loadActiveManifest(context));
         }, /configuration changed/);
+    });
+
+    it('shards current document ids and delete candidates for bounded reconciliation', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var run = helper.beginRun(createContext(), new Date('2026-09-02T18:00:00Z'));
+        var currentDocumentIds = [];
+        var deleteCandidates = [];
+        var shardIndex;
+
+        helper.writeRootRecord(run, 'ROOT-1', ['doc-current'], {
+            payloadChecksum: 'checksum',
+            items: [{ documentId: 'doc-current' }]
+        });
+        helper.closeRun(run);
+        helper.writeDeleteCandidate(run, 'doc-current');
+        helper.writeDeleteCandidate(run, 'doc-deleted');
+        helper.closeDeleteCandidates(run);
+
+        for (shardIndex = 0; shardIndex < helper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
+            helper.forEachCurrentDocumentId(run, shardIndex, function (documentId) {
+                currentDocumentIds.push(documentId);
+            });
+            helper.forEachDeleteCandidate(run, shardIndex, function (documentId) {
+                deleteCandidates.push(documentId);
+            });
+        }
+
+        assert.deepEqual(currentDocumentIds, ['doc-current']);
+        assert.sameMembers(deleteCandidates, ['doc-current', 'doc-deleted']);
+
+        helper.abortRun(run);
+        Object.keys(fixture.fileSystem.files).forEach(function (filePath) {
+            assert.notMatch(filePath, /_(documents|deletes)_\d\d\.jsonl$/);
+        });
     });
 
     it('keeps the active generation when a later run is aborted', function () {

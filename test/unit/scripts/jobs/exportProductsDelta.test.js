@@ -50,7 +50,9 @@ function createFixture(options) {
     ];
     var currentRootIds = fixtureOptions.currentRootIds || ['KEEP', 'CHANGE', 'NEW', 'INELIGIBLE'];
     var run = {
-        records: []
+        records: [],
+        currentDocumentIds: [],
+        deleteCandidates: []
     };
     var calls = {
         aborted: false,
@@ -70,7 +72,7 @@ function createFixture(options) {
         language: 'en',
         coveoSourceId: 'source-id',
         catalogId: 'catalog',
-        catalogStructureMode: 'product_only',
+        catalogStructureMode: fixtureOptions.catalogStructureMode || 'product_only',
         productEligibilityMode: 'online_and_searchable',
         purchaseMetrics: []
     };
@@ -88,7 +90,18 @@ function createFixture(options) {
         beginRun: function () {
             return run;
         },
+        closeDeleteCandidates: function () {},
         closeRun: function () {},
+        forEachCurrentDocumentId: function (stateRun, shardIndex, callback) {
+            if (shardIndex === 0) {
+                stateRun.currentDocumentIds.forEach(callback);
+            }
+        },
+        forEachDeleteCandidate: function (stateRun, shardIndex, callback) {
+            if (shardIndex === 0) {
+                stateRun.deleteCandidates.forEach(callback);
+            }
+        },
         forEachShardRecord: function (manifest, shardIndex, callback) {
             if (shardIndex !== 0) {
                 return;
@@ -116,6 +129,9 @@ function createFixture(options) {
         promoteRun: function () {
             calls.promoted = true;
         },
+        writeDeleteCandidate: function (stateRun, documentId) {
+            stateRun.deleteCandidates.push(documentId);
+        },
         writeRootRecord: function (stateRun, rootId, documentIds, state) {
             stateRun.records.push({
                 rootId: rootId,
@@ -123,6 +139,7 @@ function createFixture(options) {
                 payloadChecksum: state.payloadChecksum,
                 items: state.items
             });
+            stateRun.currentDocumentIds = stateRun.currentDocumentIds.concat(documentIds);
         }
     };
     var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/exportProductsDelta'), {
@@ -311,6 +328,102 @@ describe('exportProductsDelta job', function () {
         assert.isTrue(fixture.calls.promoted);
         assert.deepEqual(fixture.calls.markedRoots, []);
         assert.instanceOf(fixture.calls.updatedLastSync, Date);
+    });
+
+    it('does not delete a document that moved from a removed root to a current root', function () {
+        var fixture = createFixture({
+            currentItems: {
+                NEW_ROOT: [{ documentId: 'doc-reassigned', value: 'current' }]
+            },
+            currentRootIds: ['NEW_ROOT'],
+            previousRecords: [{
+                rootId: 'OLD_ROOT',
+                documentIds: ['doc-reassigned'],
+                payloadChecksum: 'old-checksum'
+            }]
+        });
+
+        executeJob(fixture);
+
+        assert.lengthOf(fixture.calls.operations, 1);
+        assert.deepEqual(fixture.calls.operations[0].additions.map(function (item) {
+            return item.documentId;
+        }), ['doc-reassigned']);
+        assert.deepEqual(fixture.calls.operations[0].deletes, []);
+        assert.isTrue(fixture.calls.promoted);
+    });
+
+    it('splits a product-only root with more than the per-upload operation limit', function () {
+        var items = [];
+        var index;
+
+        for (index = 0; index < 1001; index += 1) {
+            items.push({
+                documentId: 'doc-' + index
+            });
+        }
+
+        var fixture = createFixture({
+            currentItems: {
+                LARGE_ROOT: items
+            },
+            currentRootIds: ['LARGE_ROOT'],
+            previousRecords: []
+        });
+
+        executeJob(fixture);
+
+        assert.lengthOf(fixture.calls.operations, 2);
+        assert.strictEqual(fixture.calls.operations.reduce(function (count, operation) {
+            assert.isAtMost(operation.additions.length + operation.deletes.length, 1000);
+            return count + operation.additions.length;
+        }, 0), 1001);
+        assert.isTrue(fixture.calls.promoted);
+        assert.isFalse(fixture.calls.aborted);
+    });
+
+    it('splits large product-variant roots and repeats each Variant parent', function () {
+        var items = [{
+            documentId: 'parent-document',
+            objecttype: 'Product',
+            ec_product_id: 'PARENT'
+        }];
+        var index;
+
+        for (index = 0; index < 1000; index += 1) {
+            items.push({
+                documentId: 'variant-document-' + index,
+                objecttype: 'Variant',
+                ec_product_id: 'PARENT',
+                ec_variant_id: 'VARIANT-' + index
+            });
+        }
+
+        var fixture = createFixture({
+            catalogStructureMode: 'product_variant',
+            currentItems: {
+                LARGE_ROOT: items
+            },
+            currentRootIds: ['LARGE_ROOT'],
+            previousRecords: []
+        });
+
+        executeJob(fixture);
+
+        assert.lengthOf(fixture.calls.operations, 2);
+        assert.strictEqual(fixture.calls.operations.reduce(function (variantCount, operation) {
+            var parentItems = operation.additions.filter(function (item) {
+                return item.objecttype === 'Product' && item.ec_product_id === 'PARENT';
+            });
+            var variantItems = operation.additions.filter(function (item) {
+                return item.objecttype === 'Variant';
+            });
+
+            assert.lengthOf(parentItems, 1);
+            assert.isAtMost(operation.additions.length + operation.deletes.length, 1000);
+            return variantCount + variantItems.length;
+        }, 0), 1000);
+        assert.isTrue(fixture.calls.promoted);
     });
 
     it('aborts the candidate manifest and does not advance lastSync when upload fails', function () {

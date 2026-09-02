@@ -62,6 +62,11 @@ function getShardFileName(targetKey, generation, shardIndex) {
     return 'coveo_catalog_manifest_' + targetKey + '_' + generation + '_' + paddedShard + '.jsonl';
 }
 
+function getTransientShardFileName(targetKey, generation, kind, shardIndex) {
+    var paddedShard = shardIndex < 10 ? '0' + shardIndex : String(shardIndex);
+    return 'coveo_catalog_manifest_' + targetKey + '_' + generation + '_' + kind + '_' + paddedShard + '.jsonl';
+}
+
 function buildGeneration(startedAt) {
     var value = startedAt instanceof Date ? startedAt : new Date();
     return String(value.getTime());
@@ -310,6 +315,11 @@ function beginRun(exportContext, startedAt, directoryPath) {
         startedAt: (startedAt instanceof Date ? startedAt : new Date()).toISOString(),
         writers: {},
         shardFiles: {},
+        documentIndexWriters: {},
+        documentIndexFiles: {},
+        deleteCandidateWriters: {},
+        deleteCandidateFiles: {},
+        deleteCandidatesClosed: false,
         rootCount: 0,
         documentCount: 0,
         closed: false,
@@ -336,6 +346,38 @@ function getRunWriter(run, shardIndex) {
     run.writers[shardIndex] = writer;
     run.shardFiles[shardIndex] = fileName;
     return writer;
+}
+
+function getTransientRunWriter(run, kind, shardIndex) {
+    var writerCollection = kind === 'documents' ? run.documentIndexWriters : run.deleteCandidateWriters;
+    var fileCollection = kind === 'documents' ? run.documentIndexFiles : run.deleteCandidateFiles;
+    var writer = writerCollection[shardIndex];
+
+    if (writer) {
+        return writer;
+    }
+
+    var fileName = getTransientShardFileName(run.targetKey, run.generation, kind, shardIndex);
+    var file = getFile(run.directoryPath, fileName);
+
+    if (file.exists()) {
+        file.remove();
+    }
+
+    writer = new FileWriter(file, 'UTF-8');
+    writerCollection[shardIndex] = writer;
+    fileCollection[shardIndex] = fileName;
+    return writer;
+}
+
+function writeCurrentDocumentIds(run, documentIds) {
+    (documentIds || []).forEach(function (documentId) {
+        var shardIndex = getShardIndex(documentId);
+        var writer = getTransientRunWriter(run, 'documents', shardIndex);
+        writer.write(JSON.stringify({
+            documentId: documentId
+        }) + '\n');
+    });
 }
 
 function normalizeDocumentIds(documentIds) {
@@ -382,6 +424,7 @@ function writeRootRecord(run, rootId, documentIds, state) {
         record.items = state.items.filter(function (item) {
             return !!item;
         });
+        writeCurrentDocumentIds(run, normalizedDocumentIds);
     }
 
     writer.write(JSON.stringify(record) + '\n');
@@ -447,8 +490,71 @@ function closeRun(run) {
         closeQuietly(writer);
     });
 
+    Object.keys(run.documentIndexWriters).forEach(function (shardIndex) {
+        var writer = run.documentIndexWriters[shardIndex];
+        writer.flush();
+        closeQuietly(writer);
+    });
+
     run.writers = {};
+    run.documentIndexWriters = {};
     run.closed = true;
+}
+
+function writeDeleteCandidate(run, documentId) {
+    var normalizedDocumentId = normalizeString(documentId);
+
+    if (!run || !run.closed) {
+        throw new Error('Catalog export delete candidates can only be written after the candidate manifest is closed.');
+    }
+
+    if (run.deleteCandidatesClosed) {
+        throw new Error('Cannot write to closed Coveo catalog export delete candidate shards.');
+    }
+
+    if (normalizedDocumentId === '') {
+        throw new Error('Catalog export delete candidates require a document id.');
+    }
+
+    var shardIndex = getShardIndex(normalizedDocumentId);
+    var writer = getTransientRunWriter(run, 'deletes', shardIndex);
+    writer.write(JSON.stringify({
+        documentId: normalizedDocumentId
+    }) + '\n');
+}
+
+function closeDeleteCandidates(run) {
+    if (!run || run.deleteCandidatesClosed) {
+        return;
+    }
+
+    Object.keys(run.deleteCandidateWriters).forEach(function (shardIndex) {
+        var writer = run.deleteCandidateWriters[shardIndex];
+        writer.flush();
+        closeQuietly(writer);
+    });
+
+    run.deleteCandidateWriters = {};
+    run.deleteCandidatesClosed = true;
+}
+
+function removeFileCollection(directoryPath, fileCollection) {
+    Object.keys(fileCollection || {}).forEach(function (shardIndex) {
+        var file = getFile(directoryPath || DEFAULT_STATE_PATH, fileCollection[shardIndex]);
+
+        if (file.exists()) {
+            file.remove();
+        }
+    });
+}
+
+function removeTransientFiles(run) {
+    if (!run) {
+        return;
+    }
+
+    removeFileCollection(run.directoryPath, run.documentIndexFiles);
+    removeFileCollection(run.directoryPath, run.deleteCandidateFiles);
 }
 
 function removeGenerationFiles(manifest) {
@@ -465,7 +571,9 @@ function removeGenerationFiles(manifest) {
 
 function abortRun(run) {
     closeRun(run);
+    closeDeleteCandidates(run);
     removeGenerationFiles(run);
+    removeTransientFiles(run);
     releaseLock(run);
 }
 
@@ -474,7 +582,9 @@ function promoteRun(run) {
     var manifest;
 
     closeRun(run);
+    closeDeleteCandidates(run);
     compactRunShards(run);
+    removeTransientFiles(run);
     previousManifest = loadManifestForTargetKey(run.targetKey, run.directoryPath);
     manifest = {
         schemaVersion: MANIFEST_SCHEMA_VERSION,
@@ -533,6 +643,51 @@ function forEachShardRecord(manifest, shardIndex, callback) {
     }
 }
 
+function forEachTransientRecord(run, fileCollection, shardIndex, callback) {
+    var fileName = fileCollection ? fileCollection[shardIndex] : '';
+    var file;
+    var reader;
+    var line;
+
+    if (!fileName) {
+        return;
+    }
+
+    file = getFile(run.directoryPath || DEFAULT_STATE_PATH, fileName);
+
+    if (!file.exists()) {
+        throw new Error('The Coveo catalog export transient shard ' + fileName + ' is missing.');
+    }
+
+    reader = new FileReader(file, 'UTF-8');
+
+    try {
+        line = reader.readLine();
+
+        while (line !== null) {
+            if (normalizeString(line) !== '') {
+                callback(JSON.parse(line));
+            }
+
+            line = reader.readLine();
+        }
+    } finally {
+        closeQuietly(reader);
+    }
+}
+
+function forEachCurrentDocumentId(run, shardIndex, callback) {
+    forEachTransientRecord(run, run && run.documentIndexFiles, shardIndex, function (record) {
+        callback(record.documentId);
+    });
+}
+
+function forEachDeleteCandidate(run, shardIndex, callback) {
+    forEachTransientRecord(run, run && run.deleteCandidateFiles, shardIndex, function (record) {
+        callback(record.documentId);
+    });
+}
+
 module.exports = {
     DEFAULT_STATE_PATH: DEFAULT_STATE_PATH,
     MANIFEST_SCHEMA_VERSION: MANIFEST_SCHEMA_VERSION,
@@ -541,7 +696,10 @@ module.exports = {
     assertCompatibleManifest: assertCompatibleManifest,
     beginRun: beginRun,
     buildFingerprint: buildFingerprint,
+    closeDeleteCandidates: closeDeleteCandidates,
     closeRun: closeRun,
+    forEachCurrentDocumentId: forEachCurrentDocumentId,
+    forEachDeleteCandidate: forEachDeleteCandidate,
     forEachShardRecord: forEachShardRecord,
     getShardIndex: getShardIndex,
     getDocumentIds: getDocumentIds,
@@ -549,5 +707,6 @@ module.exports = {
     isManifestEnabled: isManifestEnabled,
     loadActiveManifest: loadActiveManifest,
     promoteRun: promoteRun,
+    writeDeleteCandidate: writeDeleteCandidate,
     writeRootRecord: writeRootRecord
 };

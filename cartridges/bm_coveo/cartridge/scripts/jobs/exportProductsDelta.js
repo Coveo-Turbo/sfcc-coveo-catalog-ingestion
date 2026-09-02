@@ -132,15 +132,127 @@ function getEstimatedSerializedBytes(value) {
     return JSON.stringify(value).length * 3;
 }
 
+function buildBoundedItemBatches(rootId, items, requiredItems) {
+    var batches = [];
+    var required = (requiredItems || []).slice();
+    var batch = required.slice();
+    var batchBytes = getEstimatedSerializedBytes({
+        addOrUpdate: batch,
+        delete: []
+    });
+
+    if (batch.length > MAX_OPERATIONS_PER_UPLOAD || batchBytes > MAX_OPERATION_PAYLOAD_BYTES) {
+        throw new Error('The Coveo delta payload for root product ' + rootId + ' has a required Product item that exceeds the safe per-upload limits.');
+    }
+
+    (items || []).forEach(function (item) {
+        var itemBytes = getEstimatedSerializedBytes(item) + (batch.length ? 3 : 0);
+
+        if (batch.length >= MAX_OPERATIONS_PER_UPLOAD || (batchBytes + itemBytes) > MAX_OPERATION_PAYLOAD_BYTES) {
+            if (batch.length === required.length) {
+                throw new Error('The Coveo delta payload for root product ' + rootId + ' contains an item that exceeds the safe per-upload size. Reduce mapped payload size for this root.');
+            }
+
+            batches.push(batch);
+            batch = required.slice();
+            batchBytes = getEstimatedSerializedBytes({
+                addOrUpdate: batch,
+                delete: []
+            });
+            itemBytes = getEstimatedSerializedBytes(item) + (batch.length ? 3 : 0);
+
+            if (batch.length >= MAX_OPERATIONS_PER_UPLOAD || (batchBytes + itemBytes) > MAX_OPERATION_PAYLOAD_BYTES) {
+                throw new Error('The Coveo delta payload for root product ' + rootId + ' contains an item that exceeds the safe per-upload size. Reduce mapped payload size for this root.');
+            }
+        }
+
+        batch.push(item);
+        batchBytes += itemBytes;
+    });
+
+    if (batch.length > required.length || (required.length && !(items || []).length)) {
+        batches.push(batch);
+    }
+
+    return batches;
+}
+
+function buildRootItemBatches(rootId, items) {
+    if (exportContext.catalogStructureMode !== 'product_variant') {
+        return buildBoundedItemBatches(rootId, items, []);
+    }
+
+    var parentGroups = [];
+    var parentGroupsById = {};
+    var otherItems = [];
+
+    (items || []).forEach(function (item) {
+        if (item && item.objecttype === 'Product') {
+            var group = {
+                parent: item,
+                variants: []
+            };
+
+            parentGroups.push(group);
+            parentGroupsById['$' + item.ec_product_id] = group;
+        } else if (!item || item.objecttype !== 'Variant') {
+            otherItems.push(item);
+        }
+    });
+
+    (items || []).forEach(function (item) {
+        if (item && item.objecttype === 'Variant') {
+            var parentGroup = parentGroupsById['$' + item.ec_product_id];
+
+            if (!parentGroup) {
+                throw new Error('The Coveo delta payload for root product ' + rootId + ' contains a Variant without its Product parent.');
+            }
+
+            parentGroup.variants.push(item);
+        }
+    });
+
+    var batches = [];
+
+    parentGroups.forEach(function (group) {
+        batches = batches.concat(buildBoundedItemBatches(rootId, group.variants, [group.parent]));
+    });
+
+    return batches.concat(buildBoundedItemBatches(rootId, otherItems, []));
+}
+
+function appendRootItemBatch(rootId, items, parameters) {
+    var operationBytes = getEstimatedSerializedBytes({
+        addOrUpdate: items,
+        delete: []
+    });
+
+    if (items.length > MAX_OPERATIONS_PER_UPLOAD || operationBytes > MAX_OPERATION_PAYLOAD_BYTES) {
+        throw new Error('The Coveo delta payload batch for root product ' + rootId + ' exceeds the safe per-upload limits.');
+    }
+
+    if ((productsToExport.length || deletesToExport.length)
+        && ((productsToExport.length + deletesToExport.length + items.length) > MAX_OPERATIONS_PER_UPLOAD
+            || (pendingOperationBytes + operationBytes) > MAX_OPERATION_PAYLOAD_BYTES)) {
+        uploadPendingOperations(parameters);
+    }
+
+    items.forEach(function (item) {
+        if (item) {
+            productsToExport.push(item);
+        }
+    });
+    pendingOperationBytes += operationBytes;
+}
+
 function appendRootOperations(rootId, currentRecord, previousRecord, parameters) {
     var currentDocumentIds = {};
     var previousDocumentIds = previousRecord && previousRecord.documentIds ? previousRecord.documentIds : [];
-    var rootDeletes = [];
     var currentItems = (!previousRecord || previousRecord.payloadChecksum !== currentRecord.payloadChecksum)
         ? (currentRecord.items || [])
         : [];
-    var rootOperationCount;
-    var rootOperationBytes;
+    var deleteCandidateCount = 0;
+    var rootItemBatches;
 
     (currentRecord.documentIds || []).forEach(function (documentId) {
         currentDocumentIds['$' + documentId] = true;
@@ -148,37 +260,17 @@ function appendRootOperations(rootId, currentRecord, previousRecord, parameters)
 
     previousDocumentIds.forEach(function (documentId) {
         if (!currentDocumentIds['$' + documentId]) {
-            rootDeletes.push(documentId);
+            catalogExportStateHelper.writeDeleteCandidate(stateRun, documentId);
+            deleteCandidateCount += 1;
         }
     });
 
-    rootOperationCount = currentItems.length + rootDeletes.length;
-    rootOperationBytes = rootOperationCount ? getEstimatedSerializedBytes({
-        addOrUpdate: currentItems,
-        delete: rootDeletes
-    }) : 0;
-
-    if (rootOperationBytes > MAX_OPERATION_PAYLOAD_BYTES) {
-        throw new Error('The Coveo delta payload for root product ' + rootId + ' exceeds the safe per-upload size. Reduce mapped payload size or variant count for this root.');
-    }
-
-    if ((productsToExport.length || deletesToExport.length)
-        && ((productsToExport.length + deletesToExport.length + rootOperationCount) > MAX_OPERATIONS_PER_UPLOAD
-            || (pendingOperationBytes + rootOperationBytes) > MAX_OPERATION_PAYLOAD_BYTES)) {
-        uploadPendingOperations(parameters);
-    }
-
-    currentItems.forEach(function (item) {
-        if (item) {
-            productsToExport.push(item);
-        }
+    rootItemBatches = buildRootItemBatches(rootId, currentItems);
+    rootItemBatches.forEach(function (batch) {
+        appendRootItemBatch(rootId, batch, parameters);
     });
-    rootDeletes.forEach(function (documentId) {
-        deletesToExport.push(documentId);
-    });
-    pendingOperationBytes += rootOperationBytes;
 
-    if (rootOperationCount) {
+    if (currentItems.length || deleteCandidateCount) {
         exportedRootIds[rootId] = true;
     }
 }
@@ -193,6 +285,31 @@ function appendDeletedDocument(documentId, parameters) {
 
     deletesToExport.push(documentId);
     pendingOperationBytes += operationBytes;
+}
+
+function appendEligibleDeleteCandidates(parameters) {
+    var shardIndex;
+
+    catalogExportStateHelper.closeDeleteCandidates(stateRun);
+
+    for (shardIndex = 0; shardIndex < catalogExportStateHelper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
+        var currentDocumentIds = {};
+        var processedDeleteCandidates = {};
+
+        catalogExportStateHelper.forEachCurrentDocumentId(stateRun, shardIndex, function (documentId) {
+            currentDocumentIds['$' + documentId] = true;
+        });
+
+        catalogExportStateHelper.forEachDeleteCandidate(stateRun, shardIndex, function (documentId) {
+            var key = '$' + documentId;
+
+            if (!processedDeleteCandidates[key] && !currentDocumentIds[key]) {
+                appendDeletedDocument(documentId, parameters);
+            }
+
+            processedDeleteCandidates[key] = true;
+        });
+    }
 }
 
 function reconcileManifestRun(parameters) {
@@ -219,7 +336,7 @@ function reconcileManifestRun(parameters) {
             var removedRecord = previousRecords[key];
 
             (removedRecord.documentIds || []).forEach(function (documentId) {
-                appendDeletedDocument(documentId, parameters);
+                catalogExportStateHelper.writeDeleteCandidate(stateRun, documentId);
             });
             exportedRootIds[removedRecord.rootId] = true;
         });
@@ -227,6 +344,7 @@ function reconcileManifestRun(parameters) {
         previousRecords = null;
     }
 
+    appendEligibleDeleteCandidates(parameters);
     uploadPendingOperations(parameters);
 }
 
