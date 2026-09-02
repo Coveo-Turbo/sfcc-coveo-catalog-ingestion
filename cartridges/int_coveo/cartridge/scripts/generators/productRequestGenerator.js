@@ -4,6 +4,7 @@ var CatalogMgr = require('dw/catalog/CatalogMgr');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
+var productEligibilityHelper = require('*/cartridge/scripts/helper/productEligibilityHelper');
 var fieldMappingHelper = require('*/cartridge/scripts/helper/fieldMappingHelper');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 var purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
@@ -826,9 +827,19 @@ function processProducts(product, isDelta, exportContext) {
     try {
         var coveoPrd = ProductMgr.getProduct(product);
 
+        if (empty(coveoPrd)) {
+            return coveoProducts;
+        }
+
         if (coveoPrd.master) {
+            if (!productEligibilityHelper.isProductEligible(coveoPrd, exportContext)) {
+                return coveoProducts;
+            }
+
+            var eligibleVariants = productEligibilityHelper.getEligibleVariants(coveoPrd, exportContext);
+
             if (isProductOnly) {
-                coveoPrd.variants.toArray().forEach(function (variant) {
+                eligibleVariants.forEach(function (variant) {
                     coveoProducts.push(getProductsData(variant, {
                         productId: variant.ID,
                         itemGroupId: coveoPrd.ID,
@@ -843,7 +854,7 @@ function processProducts(product, isDelta, exportContext) {
                 return coveoProducts;
             }
 
-            var variants = coveoPrd.variants.toArray();
+            var variants = eligibleVariants;
             var groupedVariants = {};
 
             variants.forEach(function (variant) {
@@ -876,6 +887,10 @@ function processProducts(product, isDelta, exportContext) {
                 });
             });
         } else if (coveoPrd.variant && !empty(coveoPrd.masterProduct)) {
+            if (!productEligibilityHelper.isVariantEligible(coveoPrd, coveoPrd.masterProduct, exportContext)) {
+                return coveoProducts;
+            }
+
             if (isProductOnly) {
                 coveoProducts.push(getProductsData(coveoPrd, {
                     productId: coveoPrd.ID,
@@ -898,6 +913,10 @@ function processProducts(product, isDelta, exportContext) {
             }, exportContext));
             coveoProducts.push(getVariantsData(coveoPrd, groupedProductId, exportContext));
         } else {
+            if (!productEligibilityHelper.isProductEligible(coveoPrd, exportContext)) {
+                return coveoProducts;
+            }
+
             coveoProducts.push(getProductsData(coveoPrd, {
                 productId: coveoPrd.ID,
                 metricAliases: [coveoPrd.ID]

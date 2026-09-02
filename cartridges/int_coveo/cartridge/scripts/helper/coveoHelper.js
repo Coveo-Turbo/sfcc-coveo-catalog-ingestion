@@ -350,6 +350,12 @@ function buildFullProductQuery(exportContext) {
         return createFullExportRootProductIterator(scopedProducts);
     }
 
+    if (!empty(exportContext)
+        && !empty(exportContext.productEligibilityMode)
+        && exportContext.productEligibilityMode !== 'legacy') {
+        return createFullExportRootProductIterator(ProductMgr.queryAllSiteProducts());
+    }
+
     productSearchModel.setCategoryID('root');
     productSearchModel.setRecursiveCategorySearch(true);
     productSearchModel.search();

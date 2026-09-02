@@ -516,4 +516,88 @@ describe('coveoHelper', function () {
         assert.strictEqual(firstValue, 'STANDALONE-0');
         assert.strictEqual(lastValue, 'STANDALONE-20049');
     });
+
+    it('uses assigned site products for explicit full-export eligibility modes', function () {
+        var queriedAssignedProducts = false;
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return null;
+                }
+            },
+            'dw/util/Calendar': function Calendar() {},
+            'dw/io/File': function File() {},
+            'dw/io/FileWriter': function FileWriter() {},
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/StringUtils': {
+                formatCalendar: function () {
+                    return '2026-01-01t000000.000';
+                }
+            },
+            'dw/util/HashSet': createHashSet(),
+            'dw/catalog/ProductMgr': {
+                queryAllSiteProducts: function () {
+                    queriedAssignedProducts = true;
+                    return createIterator([
+                        {
+                            ID: 'MASTER-1',
+                            master: true
+                        },
+                        {
+                            ID: 'MASTER-1-RED-S',
+                            variant: true,
+                            masterProduct: {
+                                ID: 'MASTER-1'
+                            }
+                        },
+                        {
+                            ID: 'OFFLINE-STANDALONE',
+                            online: false
+                        }
+                    ]);
+                },
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
+                }
+            },
+            'dw/catalog/ProductSearchModel': function ProductSearchModel() {
+                this.setCategoryID = function () {
+                    throw new Error('Explicit eligibility must not depend on the SFCC search index.');
+                };
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    COVEO_FILE_FORMAT: '.json'
+                },
+                CoveoFeedType: {
+                    PRODUCT_FEED: 'PRODUCT_FEED'
+                }
+            },
+            '*/cartridge/scripts/helper/catalogExportValidator': {
+                buildAddOrUpdatePayload: function (items) {
+                    return {
+                        addOrUpdate: items
+                    };
+                }
+            }
+        });
+        var iterator = helper.buildProductQuery(false, {
+            productEligibilityMode: 'online_and_searchable'
+        });
+        var values = [];
+
+        while (iterator.hasNext()) {
+            values.push(iterator.next());
+        }
+
+        assert.isTrue(queriedAssignedProducts);
+        assert.deepEqual(values, ['MASTER-1', 'OFFLINE-STANDALONE']);
+    });
 });

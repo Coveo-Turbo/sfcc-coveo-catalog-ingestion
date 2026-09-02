@@ -79,12 +79,45 @@ function createSiteCurrent(customPreferences) {
 function createExportTargetHelperStub() {
     return {
         CATALOG_STRUCTURE_MODE_PRODUCT_ONLY: 'product_only',
+        PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE: 'online_and_searchable',
         normalizeCatalogStructureMode: function (value) {
             return value ? String(value).trim().toLowerCase() : 'product_only';
+        },
+        normalizeProductEligibilityMode: function (value) {
+            return value ? String(value).trim().toLowerCase() : 'legacy';
         },
         getLanguageFromLocale: function (locale) {
             return locale.split(/[-_]/)[0].toLowerCase();
         }
+    };
+}
+
+function createProductEligibilityHelperStub() {
+    function isProductEligible(product, exportContext) {
+        if (!product) {
+            return false;
+        }
+
+        if (!exportContext || exportContext.productEligibilityMode !== 'online_and_searchable') {
+            return true;
+        }
+
+        return product.online === true && product.searchable === true;
+    }
+
+    function isVariantEligible(variant, master, exportContext) {
+        return isProductEligible(variant, exportContext)
+            && (!master || isProductEligible(master, exportContext));
+    }
+
+    return {
+        getEligibleVariants: function (master, exportContext) {
+            return master.variants.toArray().filter(function (variant) {
+                return isVariantEligible(variant, master, exportContext);
+            });
+        },
+        isProductEligible: isProductEligible,
+        isVariantEligible: isVariantEligible
     };
 }
 
@@ -136,6 +169,8 @@ function createProduct(options) {
         name: options.name || ('Name ' + options.ID),
         master: !!options.master,
         variant: !!options.variant,
+        online: options.online !== false,
+        searchable: options.searchable !== false,
         masterProduct: options.masterProduct || null,
         primaryCategory: primaryCategory,
         categories: createArrayWrapper(categoryAssignments),
@@ -216,6 +251,62 @@ function createProduct(options) {
     };
 }
 
+function createGeneratorForProduct(product) {
+    return proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
+        'dw/util/ArrayList': function ArrayList(values) {
+            return createArrayWrapper(values);
+        },
+        'dw/catalog/CatalogMgr': {
+            getCategory: function () {
+                return null;
+            }
+        },
+        'dw/catalog/ProductMgr': {
+            getProduct: function () {
+                return product;
+            }
+        },
+        '*/cartridge/scripts/utils/coveoConstant': {
+            COVEO_CONSTANTS: {
+                EXTENSION: '.html',
+                MODEL: 'Authentic',
+                OBJECT_TYPE_PRODUCT: 'Product',
+                OBJECT_TYPE_VARIANT: 'Variant'
+            }
+        },
+        '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+        '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
+        '*/cartridge/scripts/helper/fieldMappingHelper': {
+            applyFieldMappings: function (payload, sourceProduct) {
+                payload.ec_name = sourceProduct.name;
+                return payload;
+            }
+        },
+        '*/cartridge/scripts/helper/purchaseMetricHelper': {
+            applyPurchaseMetrics: function () {}
+        },
+        'dw/system/Logger': {
+            getLogger: function () {
+                return {
+                    error: function () {}
+                };
+            }
+        },
+        'dw/system/Site': {
+            current: createSiteCurrent()
+        },
+        'dw/object/ObjectAttributeDefinition': {},
+        'dw/web/URLUtils': {
+            abs: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                return buildUrl(route, pid);
+            },
+            url: function (route, key, pid) { // eslint-disable-line no-unused-vars
+                return buildUrl(route, pid);
+            }
+        }
+    });
+}
+
 describe('productRequestGenerator', function () {
     beforeEach(function () {
         global.empty = function (value) {
@@ -268,6 +359,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -350,6 +442,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -424,6 +517,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -544,6 +638,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -660,6 +755,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -767,6 +863,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -868,6 +965,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -983,6 +1081,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1081,6 +1180,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1156,6 +1256,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1224,6 +1325,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1289,6 +1391,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1355,6 +1458,7 @@ describe('productRequestGenerator', function () {
                 }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+            '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
             '*/cartridge/scripts/helper/fieldMappingHelper': {
                 applyFieldMappings: function (payload, product) {
                     payload.ec_name = product.name;
@@ -1391,5 +1495,109 @@ describe('productRequestGenerator', function () {
         assert.lengthOf(exports, 1);
         assert.strictEqual(exports[0].ec_price, 120);
         assert.strictEqual(exports[0].ec_promo_price, 89);
+    });
+
+    it('exports only eligible master variants in product_only mode', function () {
+        var masterProduct = createProduct({
+            ID: 'MASTER-ELIGIBILITY',
+            master: true
+        });
+        var eligibleVariant = createProduct({
+            ID: 'ELIGIBLE-SKU',
+            variant: true,
+            masterProduct: masterProduct
+        });
+        var offlineVariant = createProduct({
+            ID: 'OFFLINE-SKU',
+            variant: true,
+            masterProduct: masterProduct,
+            online: false
+        });
+        var unsearchableVariant = createProduct({
+            ID: 'UNSEARCHABLE-SKU',
+            variant: true,
+            masterProduct: masterProduct,
+            searchable: false
+        });
+
+        masterProduct.variants = createArrayWrapper([
+            eligibleVariant,
+            offlineVariant,
+            unsearchableVariant
+        ]);
+
+        var generator = createGeneratorForProduct(masterProduct);
+        var exports = generator.processProducts('MASTER-ELIGIBILITY', false, {
+            catalogStructureMode: 'product_only',
+            productEligibilityMode: 'online_and_searchable'
+        });
+
+        assert.lengthOf(exports, 1);
+        assert.strictEqual(exports[0].ec_product_id, 'ELIGIBLE-SKU');
+    });
+
+    it('builds product_variant groups from eligible variants only', function () {
+        var masterProduct = createProduct({
+            ID: 'MASTER-GROUP',
+            master: true
+        });
+        var eligibleVariant = createProduct({
+            ID: 'MASTER-GROUP-RED-S',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'red',
+                size: 'small'
+            }
+        });
+        var offlineVariant = createProduct({
+            ID: 'MASTER-GROUP-RED-M',
+            variant: true,
+            masterProduct: masterProduct,
+            online: false,
+            custom: {
+                color: 'red',
+                size: 'medium'
+            }
+        });
+
+        masterProduct.variants = createArrayWrapper([offlineVariant, eligibleVariant]);
+
+        var generator = createGeneratorForProduct(masterProduct);
+        var exports = generator.processProducts('MASTER-GROUP', false, {
+            catalogStructureMode: 'product_variant',
+            productEligibilityMode: 'online_and_searchable'
+        });
+
+        assert.lengthOf(exports, 2);
+        assert.strictEqual(exports[0].documentId, 'https://example.com/Product-Show?pid=MASTER-GROUP-RED-S');
+        assert.strictEqual(exports[1].ec_variant_id, 'MASTER-GROUP-RED-S');
+    });
+
+    it('omits standalone products and variants whose parent master is ineligible', function () {
+        var offlineStandalone = createProduct({
+            ID: 'OFFLINE-STANDALONE',
+            online: false
+        });
+        var offlineMaster = createProduct({
+            ID: 'OFFLINE-MASTER',
+            master: true,
+            searchable: false
+        });
+        var eligibleVariant = createProduct({
+            ID: 'CHILD-SKU',
+            variant: true,
+            masterProduct: offlineMaster
+        });
+        var context = {
+            catalogStructureMode: 'product_only',
+            productEligibilityMode: 'online_and_searchable'
+        };
+
+        offlineMaster.variants = createArrayWrapper([eligibleVariant]);
+
+        assert.deepEqual(createGeneratorForProduct(offlineStandalone).processProducts('OFFLINE-STANDALONE', false, context), []);
+        assert.deepEqual(createGeneratorForProduct(offlineMaster).processProducts('OFFLINE-MASTER', false, context), []);
+        assert.deepEqual(createGeneratorForProduct(eligibleVariant).processProducts('CHILD-SKU', false, context), []);
     });
 });
