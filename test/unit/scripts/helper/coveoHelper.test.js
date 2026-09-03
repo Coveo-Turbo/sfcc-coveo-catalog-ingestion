@@ -50,6 +50,18 @@ function createIterator(values) {
     };
 }
 
+function createBaseProduct(properties) {
+    var product = properties || {};
+
+    Object.defineProperty(product, 'masterProduct', {
+        get: function () {
+            throw new Error("Unknown property 'masterProduct' for class 'class dw.catalog.Product'.");
+        }
+    });
+
+    return product;
+}
+
 describe('coveoHelper', function () {
     beforeEach(function () {
         global.empty = function (value) {
@@ -64,7 +76,7 @@ describe('coveoHelper', function () {
         delete global.empty;
     });
 
-    it('returns deduplicated root product ids for delta exports', function () {
+    it('returns deduplicated root product ids without reading variant-only properties from base products', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
             'dw/catalog/CatalogMgr': {
                 getCatalog: function () {
@@ -91,11 +103,11 @@ describe('coveoHelper', function () {
             'dw/catalog/ProductMgr': {
                 queryAllSiteProducts: function () {
                     return createIterator([
-                        {
+                        createBaseProduct({
                             ID: 'MASTER-1',
                             master: true,
                             lastModified: new Date('2026-01-02T00:00:00Z')
-                        },
+                        }),
                         {
                             ID: 'MASTER-1-RED-S',
                             variant: true,
@@ -104,14 +116,14 @@ describe('coveoHelper', function () {
                             },
                             lastModified: new Date('2026-01-03T00:00:00Z')
                         },
-                        {
+                        createBaseProduct({
                             ID: 'STANDALONE-1',
                             lastModified: new Date('2026-01-04T00:00:00Z')
-                        },
-                        {
+                        }),
+                        createBaseProduct({
                             ID: 'OLD-1',
                             lastModified: new Date('2025-12-31T00:00:00Z')
-                        }
+                        })
                     ]);
                 },
                 queryProductsInCatalog: function () {

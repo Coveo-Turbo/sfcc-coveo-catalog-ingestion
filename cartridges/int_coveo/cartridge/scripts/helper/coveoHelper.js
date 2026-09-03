@@ -299,6 +299,8 @@ function getExportRootProductId(product) {
  */
 function isModifiedSince(product, lastSync) {
     var timestamps = [];
+    var hasMasterProduct = !empty(product)
+        && (product.variant || isVariationGroupProduct(product));
 
     if (!empty(product) && !empty(product.lastModified)) {
         timestamps.push(product.lastModified);
@@ -308,7 +310,7 @@ function isModifiedSince(product, lastSync) {
         timestamps.push(product.creationDate);
     }
 
-    if (!empty(product) && !empty(product.masterProduct) && !empty(product.masterProduct.lastModified)) {
+    if (hasMasterProduct && !empty(product.masterProduct) && !empty(product.masterProduct.lastModified)) {
         timestamps.push(product.masterProduct.lastModified);
     }
 
