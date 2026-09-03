@@ -101,6 +101,9 @@ describe('exportProducts job', function () {
                 ensureMetricFields: function () {},
                 markFullExportApplied: function () {}
             },
+            '*/cartridge/scripts/helper/catalogExportStateHelper': {
+                isManifestEnabled: function () { return false; }
+            },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {
                     return {
@@ -243,6 +246,9 @@ describe('exportProducts job', function () {
                 ensureMetricFields: function () {},
                 markFullExportApplied: function () {}
             },
+            '*/cartridge/scripts/helper/catalogExportStateHelper': {
+                isManifestEnabled: function () { return false; }
+            },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {
                     return {
@@ -353,6 +359,9 @@ describe('exportProducts job', function () {
                 attachSnapshotsToExportContext: function () { return []; },
                 ensureMetricFields: function () {},
                 markFullExportApplied: function () {}
+            },
+            '*/cartridge/scripts/helper/catalogExportStateHelper': {
+                isManifestEnabled: function () { return false; }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {
@@ -503,6 +512,9 @@ describe('exportProducts job', function () {
                 attachSnapshotsToExportContext: function () { return []; },
                 ensureMetricFields: function () {},
                 markFullExportApplied: function () {}
+            },
+            '*/cartridge/scripts/helper/catalogExportStateHelper': {
+                isManifestEnabled: function () { return false; }
             },
             '*/cartridge/scripts/helper/exportTargetHelper': {
                 resolveExportContext: function () {

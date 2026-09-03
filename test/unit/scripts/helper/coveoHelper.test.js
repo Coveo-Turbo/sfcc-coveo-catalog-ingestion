@@ -50,6 +50,18 @@ function createIterator(values) {
     };
 }
 
+function createBaseProduct(properties) {
+    var product = properties || {};
+
+    Object.defineProperty(product, 'masterProduct', {
+        get: function () {
+            throw new Error("Unknown property 'masterProduct' for class 'class dw.catalog.Product'.");
+        }
+    });
+
+    return product;
+}
+
 describe('coveoHelper', function () {
     beforeEach(function () {
         global.empty = function (value) {
@@ -64,7 +76,7 @@ describe('coveoHelper', function () {
         delete global.empty;
     });
 
-    it('returns deduplicated root product ids for delta exports', function () {
+    it('returns deduplicated root product ids without reading variant-only properties from base products', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
             'dw/catalog/CatalogMgr': {
                 getCatalog: function () {
@@ -91,11 +103,11 @@ describe('coveoHelper', function () {
             'dw/catalog/ProductMgr': {
                 queryAllSiteProducts: function () {
                     return createIterator([
-                        {
+                        createBaseProduct({
                             ID: 'MASTER-1',
                             master: true,
                             lastModified: new Date('2026-01-02T00:00:00Z')
-                        },
+                        }),
                         {
                             ID: 'MASTER-1-RED-S',
                             variant: true,
@@ -104,14 +116,14 @@ describe('coveoHelper', function () {
                             },
                             lastModified: new Date('2026-01-03T00:00:00Z')
                         },
-                        {
+                        createBaseProduct({
                             ID: 'STANDALONE-1',
                             lastModified: new Date('2026-01-04T00:00:00Z')
-                        },
-                        {
+                        }),
+                        createBaseProduct({
                             ID: 'OLD-1',
                             lastModified: new Date('2025-12-31T00:00:00Z')
-                        }
+                        })
                     ]);
                 },
                 queryProductsInCatalog: function () {
@@ -151,6 +163,17 @@ describe('coveoHelper', function () {
         }
 
         assert.deepEqual(values, ['MASTER-1', 'STANDALONE-1']);
+
+        iterator = helper.buildProductQuery(true, {
+            productEligibilityMode: 'online_and_searchable'
+        });
+        values = [];
+
+        while (iterator.hasNext()) {
+            values.push(iterator.next());
+        }
+
+        assert.deepEqual(values, ['MASTER-1', 'STANDALONE-1', 'OLD-1']);
     });
 
     it('requires a successful full sync before delta exports can run', function () {
@@ -215,7 +238,7 @@ describe('coveoHelper', function () {
         }, /requires a successful full catalog sync/);
     });
 
-    it('returns deduplicated root product ids for full exports when search hits include variants', function () {
+    it('returns deduplicated master roots when full-export search hits include variants and variation groups', function () {
         var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
             'dw/catalog/CatalogMgr': {
                 getCatalog: function () {
@@ -260,6 +283,19 @@ describe('coveoHelper', function () {
                                 ID: 'MASTER-1'
                             }
                         },
+                        'MASTER-1-GROUP': {
+                            ID: 'MASTER-1-GROUP',
+                            variationGroup: true,
+                            masterProduct: {
+                                ID: 'MASTER-1'
+                            }
+                        },
+                        'ORPHAN-GROUP': {
+                            ID: 'ORPHAN-GROUP',
+                            isVariationGroup: function () {
+                                return true;
+                            }
+                        },
                         'STANDALONE-1': {
                             ID: 'STANDALONE-1'
                         }
@@ -285,6 +321,12 @@ describe('coveoHelper', function () {
                         },
                         {
                             productID: 'MASTER-1-RED-M'
+                        },
+                        {
+                            productID: 'MASTER-1-GROUP'
+                        },
+                        {
+                            productID: 'ORPHAN-GROUP'
                         },
                         {
                             productID: 'STANDALONE-1'
@@ -515,5 +557,93 @@ describe('coveoHelper', function () {
         assert.strictEqual(count, 20050);
         assert.strictEqual(firstValue, 'STANDALONE-0');
         assert.strictEqual(lastValue, 'STANDALONE-20049');
+    });
+
+    it('uses assigned site products for explicit full-export eligibility modes', function () {
+        var queriedAssignedProducts = false;
+        var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/coveoHelper'), {
+            'dw/catalog/CatalogMgr': {
+                getCatalog: function () {
+                    return null;
+                }
+            },
+            'dw/util/Calendar': function Calendar() {},
+            'dw/io/File': function File() {},
+            'dw/io/FileWriter': function FileWriter() {},
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/util/StringUtils': {
+                formatCalendar: function () {
+                    return '2026-01-01t000000.000';
+                }
+            },
+            'dw/util/HashSet': createHashSet(),
+            'dw/catalog/ProductMgr': {
+                queryAllSiteProducts: function () {
+                    queriedAssignedProducts = true;
+                    return createIterator([
+                        {
+                            ID: 'MASTER-1',
+                            master: true
+                        },
+                        {
+                            ID: 'MASTER-1-RED-S',
+                            variant: true,
+                            masterProduct: {
+                                ID: 'MASTER-1'
+                            }
+                        },
+                        {
+                            ID: 'OFFLINE-STANDALONE',
+                            online: false
+                        },
+                        {
+                            ID: 'MASTER-1-RED',
+                            variationGroup: true
+                        }
+                    ]);
+                },
+                queryProductsInCatalog: function () {
+                    return createIterator([]);
+                }
+            },
+            'dw/catalog/ProductSearchModel': function ProductSearchModel() {
+                this.setCategoryID = function () {
+                    throw new Error('Explicit eligibility must not depend on the SFCC search index.');
+                };
+            },
+            '*/cartridge/scripts/utils/coveoConstant': {
+                COVEO_CONSTANTS: {
+                    COVEO_FILE_FORMAT: '.json'
+                },
+                CoveoFeedType: {
+                    PRODUCT_FEED: 'PRODUCT_FEED'
+                }
+            },
+            '*/cartridge/scripts/helper/catalogExportValidator': {
+                buildAddOrUpdatePayload: function (items) {
+                    return {
+                        addOrUpdate: items
+                    };
+                }
+            }
+        });
+        var iterator = helper.buildProductQuery(false, {
+            productEligibilityMode: 'online_and_searchable'
+        });
+        var values = [];
+
+        while (iterator.hasNext()) {
+            values.push(iterator.next());
+        }
+
+        assert.isTrue(queriedAssignedProducts);
+        assert.deepEqual(values, ['MASTER-1', 'OFFLINE-STANDALONE']);
     });
 });

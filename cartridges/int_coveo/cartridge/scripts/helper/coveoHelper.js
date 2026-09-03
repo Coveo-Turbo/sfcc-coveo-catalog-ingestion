@@ -113,12 +113,27 @@ function mergeRootIdIterators(baseIterator, extraRootIds) {
 }
 
 /**
+ * Returns whether a product represents a variation group.
+ * @param {Object} product - Product to inspect.
+ * @returns {boolean} whether the product is a variation group.
+ */
+function isVariationGroupProduct(product) {
+    return !empty(product)
+        && (product.variationGroup === true
+            || (typeof product.isVariationGroup === 'function' && product.isVariationGroup()));
+}
+
+/**
  * Returns whether the product can be used as a full-export root item.
  * @param {Object} product - Product to inspect.
  * @returns {boolean} whether the product should be read by the full export.
  */
 function isFullExportRootProduct(product) {
-    return !empty(product) && product.variant !== true;
+    if (empty(product) || product.variant === true || isVariationGroupProduct(product)) {
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -265,8 +280,12 @@ function getExportRootProductId(product) {
         return null;
     }
 
-    if (product.variant && !empty(product.masterProduct)) {
+    if ((product.variant || isVariationGroupProduct(product)) && !empty(product.masterProduct)) {
         return product.masterProduct.ID;
+    }
+
+    if (isVariationGroupProduct(product)) {
+        return null;
     }
 
     return product.ID;
@@ -280,6 +299,8 @@ function getExportRootProductId(product) {
  */
 function isModifiedSince(product, lastSync) {
     var timestamps = [];
+    var hasMasterProduct = !empty(product)
+        && (product.variant || isVariationGroupProduct(product));
 
     if (!empty(product) && !empty(product.lastModified)) {
         timestamps.push(product.lastModified);
@@ -289,7 +310,7 @@ function isModifiedSince(product, lastSync) {
         timestamps.push(product.creationDate);
     }
 
-    if (!empty(product) && !empty(product.masterProduct) && !empty(product.masterProduct.lastModified)) {
+    if (hasMasterProduct && !empty(product.masterProduct) && !empty(product.masterProduct.lastModified)) {
         timestamps.push(product.masterProduct.lastModified);
     }
 
@@ -312,11 +333,20 @@ function buildDeltaProductQuery(exportContext) {
     var rootIds = [];
     var seen = new HashSet();
 
-    if (empty(lastSync)) {
+    if (empty(lastSync)
+        && (empty(exportContext)
+            || empty(exportContext.productEligibilityMode)
+            || exportContext.productEligibilityMode === 'legacy')) {
         throw new Error('The Coveo delta export requires a successful full catalog sync before it can run.');
     }
 
     products = getScopedProductsIterator(exportContext) || ProductMgr.queryAllSiteProducts();
+
+    if (!empty(exportContext)
+        && !empty(exportContext.productEligibilityMode)
+        && exportContext.productEligibilityMode !== 'legacy') {
+        return createFullExportRootProductIterator(products);
+    }
 
     try {
         while (products.hasNext()) {
@@ -348,6 +378,12 @@ function buildFullProductQuery(exportContext) {
     scopedProducts = getScopedProductsIterator(exportContext);
     if (scopedProducts) {
         return createFullExportRootProductIterator(scopedProducts);
+    }
+
+    if (!empty(exportContext)
+        && !empty(exportContext.productEligibilityMode)
+        && exportContext.productEligibilityMode !== 'legacy') {
+        return createFullExportRootProductIterator(ProductMgr.queryAllSiteProducts());
     }
 
     productSearchModel.setCategoryID('root');
@@ -388,10 +424,26 @@ function buildProductQuery(isDelta, exportContext, additionalRootIds) {
         Logger.info('Starting product search...');
 
         if (isDelta) {
-            return mergeRootIdIterators(buildDeltaProductQuery(exportContext), additionalRootIds);
+            var deltaIterator = buildDeltaProductQuery(exportContext);
+
+            if (!empty(exportContext)
+                && !empty(exportContext.productEligibilityMode)
+                && exportContext.productEligibilityMode !== 'legacy') {
+                return deltaIterator;
+            }
+
+            return mergeRootIdIterators(deltaIterator, additionalRootIds);
         }
 
-        return mergeRootIdIterators(buildFullProductQuery(exportContext), additionalRootIds);
+        var fullIterator = buildFullProductQuery(exportContext);
+
+        if (!empty(exportContext)
+            && !empty(exportContext.productEligibilityMode)
+            && exportContext.productEligibilityMode !== 'legacy') {
+            return fullIterator;
+        }
+
+        return mergeRootIdIterators(fullIterator, additionalRootIds);
     } catch (ex) {
         Logger.error('(coveoHelper-buildProductQuery) -> Error occured while bulding the product query and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
         throw ex;
@@ -459,7 +511,19 @@ function createProductFeedFile(sourcePath) {
  * @returns {file} - productFile
  */
 function writeProductFile(source, products, exportContext) {
-    var payload = catalogExportValidator.buildAddOrUpdatePayload(products, {
+    return writeProductOperationsFile(source, products, [], exportContext);
+}
+
+/**
+ * Writes validated catalog update and delete operations to an IMPEX feed file.
+ * @param {string} source - Source directory.
+ * @param {Array} products - Catalog items to add or update.
+ * @param {Array} deletes - Document ids or delete operations.
+ * @param {Object} exportContext - Export context.
+ * @returns {File} product feed file.
+ */
+function writeProductOperationsFile(source, products, deletes, exportContext) {
+    var payload = catalogExportValidator.buildStreamPayload(products, deletes, {
         expectedLanguage: exportContext && exportContext.language ? exportContext.language : '',
         catalogStructureMode: exportContext && exportContext.catalogStructureMode ? exportContext.catalogStructureMode : ''
     });
@@ -489,6 +553,7 @@ module.exports = {
     createProductFeedFile: createProductFeedFile,
     buildProductQuery: buildProductQuery,
     writeProductFile: writeProductFile,
+    writeProductOperationsFile: writeProductOperationsFile,
     archiveFeedFile: archiveFeedFile,
     getExportRootProductId: getExportRootProductId,
     isModifiedSince: isModifiedSince

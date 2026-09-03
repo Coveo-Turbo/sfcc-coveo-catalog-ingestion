@@ -188,4 +188,59 @@ describe('catalogExportValidator', function () {
             });
         }, /expects en/);
     });
+
+    it('builds delete-only Stream payloads and deduplicates document ids', function () {
+        assert.deepEqual(validator.buildStreamPayload([], [
+            'https://example.com/deleted',
+            {
+                documentId: 'https://example.com/deleted'
+            }
+        ]), {
+            delete: [{
+                documentId: 'https://example.com/deleted',
+                deleteChildren: false
+            }]
+        });
+    });
+
+    it('builds mixed update and delete Stream payloads', function () {
+        var product = {
+            documentId: 'https://example.com/current',
+            objecttype: 'Product',
+            language: 'en',
+            permanentid: 'CURRENT',
+            ec_product_id: 'CURRENT'
+        };
+
+        assert.deepEqual(validator.buildStreamPayload([product], [{
+            documentId: 'https://example.com/removed',
+            deleteChildren: true
+        }]), {
+            addOrUpdate: [product],
+            delete: [{
+                documentId: 'https://example.com/removed',
+                deleteChildren: true
+            }]
+        });
+    });
+
+    it('rejects missing delete ids and conflicting operations', function () {
+        var product = {
+            documentId: 'https://example.com/current',
+            objecttype: 'Product',
+            language: 'en',
+            permanentid: 'CURRENT',
+            ec_product_id: 'CURRENT'
+        };
+
+        assert.throws(function () {
+            validator.buildStreamPayload([], [{}]);
+        }, /missing documentId/);
+        assert.throws(function () {
+            validator.buildStreamPayload([product], [product.documentId]);
+        }, /cannot be added and deleted/);
+        assert.throws(function () {
+            validator.buildStreamPayload([], []);
+        }, /does not contain any valid Stream operations/);
+    });
 });

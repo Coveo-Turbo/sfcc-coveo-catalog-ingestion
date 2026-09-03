@@ -16,7 +16,14 @@ var firstOrderingId = null;
 var exportContext = null;
 var previousLocale = null;
 var purchaseMetricHelper = null;
+var catalogExportStateHelper = null;
+var stateRun = null;
+var manifestEnabled = false;
+var statePromoted = false;
+var syncStartedAt = null;
+var deletesToExport = [];
 var MAX_RETRYABLE_REQUEST_ATTEMPTS = 3;
+var EMPTY_FULL_RECONCILIATION_DOCUMENT_ID = 'coveo://catalog-export/empty-full-reconciliation-boundary';
 
 /**
  * Formats service failure details for logs and thrown errors.
@@ -145,12 +152,19 @@ function cleanupProductFile(parameters, file) {
  * @param {Object} parameters - Job parameters.
  */
 function uploadPendingProducts(parameters) {
-    if (empty(productsToExport) || productsToExport.length === 0) {
+    if ((!productsToExport || productsToExport.length === 0)
+        && (!deletesToExport || deletesToExport.length === 0)) {
         return;
     }
 
-    productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
-    Logger.info('exportProducts-write - Total products Exported: {0}', productsToExport.length);
+    productFile = deletesToExport.length
+        ? coveoHelper.writeProductOperationsFile(sourceFolder, productsToExport, deletesToExport, exportContext)
+        : coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
+    Logger.info(
+        'Uploading Coveo full export operations - addOrUpdate={0}, delete={1}',
+        productsToExport.length,
+        deletesToExport.length
+    );
 
     var fileContainer = callCoveoRequestWithRetry(function () {
         return streamHelper.createFileContainer(exportContext);
@@ -172,6 +186,7 @@ function uploadPendingProducts(parameters) {
 
     cleanupProductFile(parameters, productFile);
     productsToExport = [];
+    deletesToExport = [];
 }
 
 /**
@@ -194,26 +209,49 @@ exports.beforeStep = function (parameters, stepExecution) {
     productRequestGenerator = require('*/cartridge/scripts/generators/productRequestGenerator');
     streamHelper = require('*/cartridge/scripts/helper/streamHelper');
     purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
+    catalogExportStateHelper = require('*/cartridge/scripts/helper/catalogExportStateHelper');
+    syncStartedAt = new Date();
     sourceFolder = parameters.get('srcFolder');
     firstOrderingId = null;
     productsToExport = [];
+    deletesToExport = [];
+    stateRun = null;
+    statePromoted = false;
     exportContext = exportTargetHelper.resolveExportContext(parameters);
     previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
-    purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
-    purchaseMetricHelper.ensureMetricFields(exportContext, exportContext.purchaseMetrics);
-    Logger.info(
-        'Resolved Coveo full export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, catalogStructureMode={7}, legacyMode={8}',
-        exportContext.siteId,
-        exportContext.targetId || '[single target]',
-        exportContext.locale,
-        exportContext.language,
-        exportContext.coveoSourceId,
-        exportContext.catalogId || '[site catalog]',
-        exportContext.mappingProfileId || '[built-in only]',
-        exportContext.catalogStructureMode,
-        exportContext.legacyMode
-    );
-    products = coveoHelper.buildProductQuery(isDelta, exportContext);
+    manifestEnabled = catalogExportStateHelper.isManifestEnabled(exportContext);
+
+    try {
+        purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
+        purchaseMetricHelper.ensureMetricFields(exportContext, exportContext.purchaseMetrics);
+        Logger.info(
+            'Resolved Coveo full export context - site={0}, targetId={1}, locale={2}, language={3}, source={4}, catalog={5}, mappingProfile={6}, catalogStructureMode={7}, productEligibilityMode={8}, legacyMode={9}',
+            exportContext.siteId,
+            exportContext.targetId || '[single target]',
+            exportContext.locale,
+            exportContext.language,
+            exportContext.coveoSourceId,
+            exportContext.catalogId || '[site catalog]',
+            exportContext.mappingProfileId || '[built-in only]',
+            exportContext.catalogStructureMode,
+            exportContext.productEligibilityMode,
+            exportContext.legacyMode
+        );
+
+        if (manifestEnabled) {
+            stateRun = catalogExportStateHelper.beginRun(exportContext, syncStartedAt, catalogExportStateHelper.DEFAULT_STATE_PATH);
+        }
+
+        products = coveoHelper.buildProductQuery(isDelta, exportContext);
+    } catch (error) {
+        if (stateRun) {
+            catalogExportStateHelper.abortRun(stateRun);
+            stateRun = null;
+        }
+
+        exportTargetHelper.restoreRequestLocale(previousLocale);
+        throw error;
+    }
 };
 
 exports.read = function (parameters, stepExecution) { // eslint-disable-line
@@ -223,11 +261,41 @@ exports.read = function (parameters, stepExecution) { // eslint-disable-line
 };
 
 exports.process = function (product, parameters, stepExecution) {
-    return productRequestGenerator.processProducts(product, isDelta, exportContext);
+    var items = productRequestGenerator.processProducts(product, isDelta, exportContext);
+
+    if (manifestEnabled) {
+        return {
+            rootId: product,
+            items: items
+        };
+    }
+
+    return items;
 };
 
 exports.write = function (lines, parameters, stepExecution) {
     var productsList = new ArrayList(lines).toArray();
+
+    if (manifestEnabled) {
+        productsList.forEach(function (result) {
+            catalogExportStateHelper.writeRootRecord(
+                stateRun,
+                result.rootId,
+                catalogExportStateHelper.getDocumentIds(result.items),
+                {
+                    payloadChecksum: catalogExportStateHelper.getPayloadChecksum(result.items)
+                }
+            );
+
+            (result.items || []).forEach(function (item) {
+                if (item) {
+                    productsToExport.push(item);
+                }
+            });
+        });
+        return;
+    }
+
     productsList.forEach(function (item) {
         var id = item;
         if (id && id.length >= 1) {
@@ -246,13 +314,20 @@ exports.afterStep = function (success, parameters) {
     try {
         if (success === false) {
             Logger.error('Skipping final Coveo full export upload and reconciliation because a previous chunk already failed.');
+
+            if (stateRun) {
+                catalogExportStateHelper.abortRun(stateRun);
+                stateRun = null;
+            }
+
             return;
         }
 
         uploadPendingProducts(parameters);
 
         if (empty(firstOrderingId)) {
-            throw new Error('The Coveo full export did not upload any catalog payload.');
+            deletesToExport.push(EMPTY_FULL_RECONCILIATION_DOCUMENT_ID);
+            uploadPendingProducts(parameters);
         }
 
         Logger.info('Submitting Coveo deleteolderthan request for source={0}, orderingId={1}', exportContext.coveoSourceId, firstOrderingId);
@@ -260,8 +335,22 @@ exports.afterStep = function (success, parameters) {
             return streamHelper.deleteOlderThan(firstOrderingId, exportContext);
         }, 'delete older than');
         Logger.info('Coveo deleteolderthan request accepted for source={0}, orderingId={1}', exportContext.coveoSourceId, firstOrderingId);
+
         purchaseMetricHelper.markFullExportApplied(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH);
-        exportTargetHelper.updateLastSync(exportContext, new Date());
+        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
+
+        if (manifestEnabled) {
+            catalogExportStateHelper.promoteRun(stateRun);
+            statePromoted = true;
+            stateRun = null;
+        }
+    } catch (error) {
+        if (manifestEnabled && stateRun && !statePromoted) {
+            catalogExportStateHelper.abortRun(stateRun);
+            stateRun = null;
+        }
+
+        throw error;
     } finally {
         closeProductsIterator();
         exportTargetHelper.restoreRequestLocale(previousLocale);

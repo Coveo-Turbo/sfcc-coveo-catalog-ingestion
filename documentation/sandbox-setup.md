@@ -173,6 +173,7 @@ Each `CoveoCatalogExportTarget` should define:
 - `coveoSourceId`
 - optional `catalogId`
 - optional `catalogStructureMode`
+- optional `productEligibilityMode`
 - optional `mappingProfileId`
 - `enabled`
 - per-target `lastSync`
@@ -194,6 +195,7 @@ In practice, an export target is just a Business Manager custom object record th
 - which Coveo source to push to
 - optionally which catalog to scope to
 - whether the target keeps `Product` plus `Variant` rows or consolidates everything into `Product` rows only
+- whether Coveo retains all assigned products or only products visible to storefront shoppers
 
 Use this Business Manager flow:
 
@@ -215,6 +217,7 @@ Use these values when creating the object:
 - `coveoSourceId`: destination Coveo source for this locale or market
 - `catalogId`: leave empty for shared-catalog mode; set it only when this target must export a specific catalog
 - `catalogStructureMode`: leave empty or set `product_only` to emit only `Product` rows and tie `ec_product_id = permanentid = ec_sku` to the variant SKU; set `product_variant` when you want the current `Product` plus `Variant` export
+- `productEligibilityMode`: use `legacy` for compatibility, `all` to export every assigned product, or `online_and_searchable` to require effective SFCC online and searchable status; storefront variants must also have an eligible master
 - `mappingProfileId`: leave empty to keep the built-in mapped fields only; set it when this target should add a configurable mapping profile
 - `enabled`: set to `true`
 - `lastSync`: leave empty before the first successful full export
@@ -243,6 +246,18 @@ Important behavior:
 - if one target exists for the site, the jobs can resolve it automatically
 - if multiple targets exist for the site, pass `targetId` explicitly or the job fails with a configuration error
 - each target maintains its own `lastSync`, so delta runs stay isolated per locale or market
+- each target must use a distinct `coveoSourceId`; full reconciliation uses source-wide `deleteolderthan`, and manifest state prevents a second target from claiming the same source
+- `all` and `online_and_searchable` create sharded state under `IMPEX/src/coveo/state/catalog-export/`; do not remove these files between full and delta runs
+- changing catalog scope, locale, source, structure mode, eligibility mode, or mapping profile requires another successful full export before delta
+
+Eligibility details:
+
+- `online_and_searchable` uses effective online status, including `onlineFrom` and `onlineTo`
+- standalone products must be online and searchable
+- masters must be online and searchable
+- variants must be online and searchable and must belong to an eligible master
+- variation groups are not exported as standalone products
+- inventory, ATS, orderability, price, and offline category assignment are not eligibility inputs
 
 ## 7B. Create configurable field mappings in Business Manager
 
@@ -586,9 +601,22 @@ Both jobs now accept an optional `targetId` parameter:
 - when one target exists, the jobs automatically use that target
 - when multiple targets exist, pass `targetId` explicitly or the job fails fast
 
-For a first test, run the full export once. The full job performs update-based uploads and finishes with `deleteolderthan` to reconcile removed items for the resolved target source only.
+For a first test, run the full export once. The full job performs update-based uploads and finishes with `deleteolderthan` to reconcile removed items for the resolved target source. A full export with zero eligible products uses a delete-only ordering boundary and still clears older source content.
 
-Do not run the delta job before the first successful full sync because the delta export uses the resolved target `lastSync` baseline.
+Do not run the delta job before the first successful full sync. Manifest-enabled modes require the compatible active manifest created by that full run.
+
+For `all` and `online_and_searchable`, the delta job scans current root products and compares SHA-256 payload checksums and document IDs one manifest shard at a time. It sends only changed additions/updates and removals. This allows it to detect physical deletion, catalog unassignment, variant removal, representative-document changes, and time-based online transitions even when `lastModified` did not change.
+
+Catalog export state is stored under `IMPEX/src/coveo/state/catalog-export/`:
+
+- immutable generation shards contain root IDs, document IDs, and payload checksums
+- a small pointer identifies the active successful generation
+- a source-ownership file prevents multiple targets from reconciling the same source
+- an owner-token-protected source lock prevents overlapping full and delta runs
+- candidate payload data is removed from shards before promotion
+- failed runs remove their candidate generation and leave the active generation unchanged
+
+Do not manually remove a current lock until you have confirmed that no full or delta job is active. SFCC jobs can legitimately run for many hours, so locks are never stolen automatically based only on age. If an instance restart or cancelled execution leaves a stale lock, confirm that the target source has no active export and then remove only that `.lock` file. Preserve the rest of the manifest directory when copying or restoring IMPEX operational state.
 
 ## Important note about the imported job site context
 
@@ -605,13 +633,14 @@ The job metadata still ships with `RefArch` as the example site context. If your
 5. Activate the uploaded code version.
 6. Configure the `int.coveo.api.cred` service credential URL and password.
 7. Set the real Coveo org on the target site.
-8. If you need multi-locale or market-specific exports, create the `CoveoCatalogExportTarget` objects and note their `targetId` values.
+8. If you need multi-locale or market-specific exports, create the `CoveoCatalogExportTarget` objects, assign a distinct Coveo source to each, select the required `productEligibilityMode`, and note their `targetId` values.
 9. If you need extra mapped fields, create `CoveoCatalogFieldMappingProfile` and `CoveoCatalogFieldMapping` objects, then assign `mappingProfileId` on the target.
 10. Verify the Commerce catalog mappings use `ec_product_id`, and also `ec_variant_id` when the target uses `product_variant`.
 11. Run `coveoProductExportFull`, adding `targetId` when you are exporting a specific target.
 12. Inspect the exported JSON under IMPEX and confirm the payload uses `addOrUpdate`, `ec_product_id`, the expected `language`, any configured extra fields, and `ec_variant_id` only for `product_variant` targets.
 13. Inspect the indexed content in the Coveo Content Browser and catalog inspection views.
-14. Only after the full sync validates, run `coveoProductExportDelta` for the same resolved target.
+14. Confirm the manifest files were created under `IMPEX/src/coveo/state/catalog-export/` for `all` or `online_and_searchable`.
+15. Only after the full sync validates, run `coveoProductExportDelta` for the same resolved target.
 
 ## Validation checklist
 
@@ -641,3 +670,8 @@ Confirm that:
 - `product_only` targets export one `Product` row per variant SKU when a master contains many variants
 - when a target uses `catalogId`, only that catalog subset reaches the configured source
 - when a target uses `mappingProfileId`, only that target receives the configured extra mapped fields
+- `online_and_searchable` omits offline or non-searchable standalone products
+- `online_and_searchable` omits offline or non-searchable variants even when their master remains eligible
+- changing an indexed product to offline or non-searchable produces a delta `delete`
+- deleting or unassigning an indexed product produces a delta `delete`
+- products crossing `onlineFrom` or `onlineTo` are reconciled on the next delta even without a new `lastModified`

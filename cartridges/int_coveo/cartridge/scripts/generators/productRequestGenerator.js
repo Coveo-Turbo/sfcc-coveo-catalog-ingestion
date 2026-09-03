@@ -4,6 +4,7 @@ var CatalogMgr = require('dw/catalog/CatalogMgr');
 var ProductMgr = require('dw/catalog/ProductMgr');
 var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
+var productEligibilityHelper = require('*/cartridge/scripts/helper/productEligibilityHelper');
 var fieldMappingHelper = require('*/cartridge/scripts/helper/fieldMappingHelper');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 var purchaseMetricHelper = require('*/cartridge/scripts/helper/purchaseMetricHelper');
@@ -369,6 +370,17 @@ function getExportLanguage(exportContext) {
 function isProductOnlyCatalogStructureMode(exportContext) {
     return exportTargetHelper.normalizeCatalogStructureMode(exportContext && exportContext.catalogStructureMode)
         === exportTargetHelper.CATALOG_STRUCTURE_MODE_PRODUCT_ONLY;
+}
+
+/**
+ * Returns whether payload-generation errors must abort reconciliation.
+ * Legacy exports preserve their historical best-effort behavior.
+ * @param {Object} exportContext - Export context.
+ * @returns {boolean} whether errors must propagate.
+ */
+function shouldPropagatePayloadError(exportContext) {
+    return exportTargetHelper.normalizeProductEligibilityMode(exportContext && exportContext.productEligibilityMode)
+        !== exportTargetHelper.PRODUCT_ELIGIBILITY_MODE_LEGACY;
 }
 
 /**
@@ -773,6 +785,10 @@ function getProductsData(product, exportOptions, exportContext) {
         }, exportContext);
     } catch (ex) {
         Logger.error('(productRequestGenerator-getProductsData) -> Error occured while generating products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+
+        if (shouldPropagatePayloadError(exportContext)) {
+            throw ex;
+        }
     }
     return prdObj;
 }
@@ -807,6 +823,10 @@ function getVariantsData(product, productId, exportContext) {
         }, exportContext);
     } catch (ex) {
         Logger.error('(productRequestGenerator-getVariantsData) -> Error occured while generating Product variants and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+
+        if (shouldPropagatePayloadError(exportContext)) {
+            throw ex;
+        }
     }
     return variantObj;
 }
@@ -826,9 +846,19 @@ function processProducts(product, isDelta, exportContext) {
     try {
         var coveoPrd = ProductMgr.getProduct(product);
 
+        if (empty(coveoPrd)) {
+            return coveoProducts;
+        }
+
         if (coveoPrd.master) {
+            if (!productEligibilityHelper.isProductEligible(coveoPrd, exportContext)) {
+                return coveoProducts;
+            }
+
+            var eligibleVariants = productEligibilityHelper.getEligibleVariants(coveoPrd, exportContext);
+
             if (isProductOnly) {
-                coveoPrd.variants.toArray().forEach(function (variant) {
+                eligibleVariants.forEach(function (variant) {
                     coveoProducts.push(getProductsData(variant, {
                         productId: variant.ID,
                         itemGroupId: coveoPrd.ID,
@@ -843,7 +873,7 @@ function processProducts(product, isDelta, exportContext) {
                 return coveoProducts;
             }
 
-            var variants = coveoPrd.variants.toArray();
+            var variants = eligibleVariants;
             var groupedVariants = {};
 
             variants.forEach(function (variant) {
@@ -876,6 +906,10 @@ function processProducts(product, isDelta, exportContext) {
                 });
             });
         } else if (coveoPrd.variant && !empty(coveoPrd.masterProduct)) {
+            if (!productEligibilityHelper.isVariantEligible(coveoPrd, coveoPrd.masterProduct, exportContext)) {
+                return coveoProducts;
+            }
+
             if (isProductOnly) {
                 coveoProducts.push(getProductsData(coveoPrd, {
                     productId: coveoPrd.ID,
@@ -898,6 +932,10 @@ function processProducts(product, isDelta, exportContext) {
             }, exportContext));
             coveoProducts.push(getVariantsData(coveoPrd, groupedProductId, exportContext));
         } else {
+            if (!productEligibilityHelper.isProductEligible(coveoPrd, exportContext)) {
+                return coveoProducts;
+            }
+
             coveoProducts.push(getProductsData(coveoPrd, {
                 productId: coveoPrd.ID,
                 metricAliases: [coveoPrd.ID]
@@ -905,6 +943,10 @@ function processProducts(product, isDelta, exportContext) {
         }
     } catch (ex) {
         Logger.error('(productRequestGenerator-processProducts) -> Error occured while processing products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+
+        if (shouldPropagatePayloadError(exportContext)) {
+            throw ex;
+        }
     }
     return coveoProducts;
 }
