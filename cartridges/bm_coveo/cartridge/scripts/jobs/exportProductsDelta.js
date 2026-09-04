@@ -271,7 +271,7 @@ function appendRootOperations(rootId, currentRecord, previousRecord, parameters)
     });
 
     if (currentItems.length || deleteCandidateCount) {
-        exportedRootIds[rootId] = true;
+        purchaseMetricHelper.putMapValue(exportedRootIds, rootId, true);
     }
 }
 
@@ -338,7 +338,7 @@ function reconcileManifestRun(parameters) {
             (removedRecord.documentIds || []).forEach(function (documentId) {
                 catalogExportStateHelper.writeDeleteCandidate(stateRun, documentId);
             });
-            exportedRootIds[removedRecord.rootId] = true;
+            purchaseMetricHelper.putMapValue(exportedRootIds, removedRecord.rootId, true);
         });
 
         previousRecords = null;
@@ -365,13 +365,14 @@ exports.beforeStep = function (parameters, stepExecution) {
     productsToExport = [];
     deletesToExport = [];
     pendingOperationBytes = 0;
-    exportedRootIds = {};
+    exportedRootIds = null;
     activeManifest = null;
     stateRun = null;
     statePromoted = false;
     exportContext = exportTargetHelper.resolveExportContext(parameters);
     previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
     manifestEnabled = catalogExportStateHelper.isManifestEnabled(exportContext);
+    exportedRootIds = purchaseMetricHelper.createHashMap();
 
     try {
         purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
@@ -396,10 +397,14 @@ exports.beforeStep = function (parameters, stepExecution) {
             stateRun = catalogExportStateHelper.beginRun(exportContext, syncStartedAt, catalogExportStateHelper.DEFAULT_STATE_PATH);
         }
 
+        var snapshotDrivenRootIds = manifestEnabled
+            ? null
+            : purchaseMetricHelper.getSnapshotDrivenRootIds(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH);
+
         products = coveoHelper.buildProductQuery(
             isDelta,
             exportContext,
-            purchaseMetricHelper.getSnapshotDrivenRootIds(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH)
+            snapshotDrivenRootIds
         );
     } catch (error) {
         if (stateRun) {
@@ -428,7 +433,7 @@ exports.process = function (product, parameters, stepExecution) {
         };
     }
 
-    exportedRootIds[product] = true;
+    purchaseMetricHelper.putMapValue(exportedRootIds, product, true);
     return items;
 };
 
@@ -494,7 +499,7 @@ exports.afterStep = function (success, parameters) {
             exportContext,
             exportContext.purchaseMetrics,
             purchaseMetricHelper.DEFAULT_STATE_PATH,
-            Object.keys(exportedRootIds)
+            exportedRootIds
         );
         exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
 

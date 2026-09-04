@@ -3,7 +3,9 @@
 var File = require('dw/io/File');
 var FileReader = require('dw/io/FileReader');
 var FileWriter = require('dw/io/FileWriter');
+var CSVStreamReader = require('dw/io/CSVStreamReader');
 var HashMap = require('dw/util/HashMap');
+var UUIDUtils = require('dw/util/UUIDUtils');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 
 var platformFieldService = require('*/cartridge/scripts/services/platformFieldService');
@@ -11,6 +13,10 @@ var platformFieldService = require('*/cartridge/scripts/services/platformFieldSe
 var DEFAULT_STATE_PATH = '/src/coveo/state/purchase-enrichment/';
 var SNAPSHOT_REUSE_MAX_AGE_MINUTES = 60;
 var FIELD_PREFIX = 'ec_units_sold_';
+var MAP_SHARD_COUNT = 64;
+var SHARDED_MAP_MARKER = '__coveoPurchaseShardedMap';
+var SNAPSHOT_SCHEMA_VERSION = 2;
+var activeStateLocks = {};
 
 function normalizeString(value) {
     if (value === null || value === undefined) {
@@ -74,6 +80,16 @@ function getSharedSnapshotCountsFileName(trackingId, windowDays) {
     return 'coveo_purchase_snapshot_' + sanitizeFileSegment(trackingId) + '_' + parseInt(windowDays, 10) + 'd.csv';
 }
 
+function getSharedSnapshotGenerationCountsFileName(trackingId, windowDays, generation) {
+    return 'coveo_purchase_snapshot_'
+        + sanitizeFileSegment(trackingId)
+        + '_'
+        + parseInt(windowDays, 10)
+        + 'd_'
+        + sanitizeFileSegment(generation)
+        + '.csv';
+}
+
 function getTargetCurrentStateFileName(targetId, windowDays) {
     return 'coveo_purchase_target_current_' + sanitizeFileSegment(targetId) + '_' + parseInt(windowDays, 10) + 'd.csv';
 }
@@ -102,22 +118,152 @@ function getFile(directoryPath, fileName) {
     return new File([File.IMPEX, directoryPath, fileName].join(File.SEPARATOR));
 }
 
-function writeImpexFile(directoryPath, fileName, contents) {
-    var directory = getDirectoryFile(directoryPath);
-    var file = getFile(directoryPath, fileName);
-    var writer = null;
+function getStateLockFileName(trackingId) {
+    return 'coveo_purchase_state_' + sanitizeFileSegment(trackingId) + '.lock';
+}
 
-    directory.mkdirs();
-    writer = new FileWriter(file);
+function closeQuietly(closeable) {
+    if (closeable && typeof closeable.close === 'function') {
+        try {
+            closeable.close();
+        } catch (error) {
+            // Preserve the primary operation result.
+        }
+    }
+}
+
+function withPurchaseStateLock(directoryPath, trackingId, callback) {
+    var lockKey = normalizeString(directoryPath) + '\u0000' + normalizeString(trackingId);
+    var activeLock = activeStateLocks[lockKey];
+    var lockFile;
+    var lockToken;
+    var writer;
+    var lockWriteError = null;
+
+    if (activeLock) {
+        activeLock.depth += 1;
+
+        try {
+            return callback();
+        } finally {
+            activeLock.depth -= 1;
+        }
+    }
+
+    lockFile = getFile(directoryPath, getStateLockFileName(trackingId));
+    getDirectoryFile(directoryPath).mkdirs();
+
+    if (lockFile.exists()
+        || (typeof lockFile.createNewFile === 'function' && !lockFile.createNewFile())) {
+        throw new Error('A Coveo purchase enrichment state operation is already running for trackingId ' + trackingId + '.');
+    }
 
     try {
-        writer.write(String(contents || ''));
+        lockToken = UUIDUtils.createUUID().toString();
+        writer = new FileWriter(lockFile, 'UTF-8');
+        writer.write(lockToken + '\n');
         writer.flush();
+    } catch (error) {
+        lockWriteError = error;
     } finally {
-        writer.close();
+        closeQuietly(writer);
+    }
+
+    if (lockWriteError) {
+        if (lockFile.exists() && !lockFile.remove()) {
+            throw new Error('Unable to remove the incomplete Coveo purchase enrichment state lock for trackingId ' + trackingId + '. ' + lockWriteError.message);
+        }
+
+        throw lockWriteError;
+    }
+
+    activeStateLocks[lockKey] = {
+        depth: 1,
+        token: lockToken
+    };
+
+    try {
+        return callback();
+    } finally {
+        delete activeStateLocks[lockKey];
+
+        if (lockFile.exists()
+            && normalizeString(readImpexTextFile(directoryPath, getStateLockFileName(trackingId))) === lockToken
+            && !lockFile.remove()) {
+            throw new Error('Unable to release the Coveo purchase enrichment state lock for trackingId ' + trackingId + '.');
+        }
+    }
+}
+
+function writeFileAtomically(directoryPath, fileName, writeCallback) {
+    var directory = getDirectoryFile(directoryPath);
+    var file = getFile(directoryPath, fileName);
+    var temporaryFile = getFile(directoryPath, fileName + '.tmp');
+    var backupFile = getFile(directoryPath, fileName + '.bak');
+    var writer = null;
+    var writeError = null;
+
+    directory.mkdirs();
+
+    if (temporaryFile.exists()) {
+        if (!temporaryFile.remove()) {
+            throw new Error('Unable to remove stale purchase enrichment temporary file ' + temporaryFile.fullPath + '.');
+        }
+    }
+
+    try {
+        writer = new FileWriter(temporaryFile, 'UTF-8');
+        writeCallback(writer);
+        writer.flush();
+    } catch (error) {
+        writeError = error;
+    } finally {
+        closeQuietly(writer);
+    }
+
+    if (writeError) {
+        if (temporaryFile.exists() && !temporaryFile.remove()) {
+            throw new Error('Unable to remove failed purchase enrichment temporary file ' + temporaryFile.fullPath + '. ' + writeError.message);
+        }
+
+        throw writeError;
+    }
+
+    if (backupFile.exists()) {
+        if (!backupFile.remove()) {
+            temporaryFile.remove();
+            throw new Error('Unable to remove stale purchase enrichment backup file ' + backupFile.fullPath + '.');
+        }
+    }
+
+    if (file.exists() && !file.renameTo(backupFile)) {
+        temporaryFile.remove();
+        throw new Error('Unable to preserve the previous purchase enrichment state file ' + file.fullPath + '.');
+    }
+
+    if (!temporaryFile.renameTo(file)) {
+        temporaryFile.remove();
+
+        if (backupFile.exists() && !backupFile.renameTo(file)) {
+            throw new Error('Unable to promote or restore purchase enrichment state file ' + file.fullPath + '.');
+        }
+
+        throw new Error('Unable to promote purchase enrichment state file ' + file.fullPath + '.');
+    }
+
+    if (backupFile.exists()) {
+        if (!backupFile.remove()) {
+            Logger.warn('Unable to remove purchase enrichment backup file {0} after successful state promotion.', backupFile.fullPath);
+        }
     }
 
     return file;
+}
+
+function writeImpexFile(directoryPath, fileName, contents) {
+    return writeFileAtomically(directoryPath, fileName, function (writer) {
+        writer.write(String(contents || ''));
+    });
 }
 
 function readImpexTextFile(directoryPath, fileName) {
@@ -128,12 +274,11 @@ function readImpexTextFile(directoryPath, fileName) {
         return '';
     }
 
-    reader = new FileReader(file);
-
     try {
+        reader = new FileReader(file);
         return reader.getString();
     } finally {
-        reader.close();
+        closeQuietly(reader);
     }
 }
 
@@ -165,10 +310,86 @@ function listDirectoryFiles(directoryPath) {
 }
 
 function createHashMap() {
-    return new HashMap();
+    return {
+        __coveoPurchaseShardedMap: true,
+        shards: {},
+        size: 0
+    };
+}
+
+function isShardedMap(map) {
+    return !!(map && map[SHARDED_MAP_MARKER] === true);
+}
+
+function hashString(value) {
+    var text = normalizeString(value);
+    var hash = 0;
+    var index;
+
+    for (index = 0; index < text.length; index += 1) {
+        hash = ((hash << 5) - hash) + text.charCodeAt(index);
+        hash |= 0;
+    }
+
+    return hash;
+}
+
+function getMapShardIndex(key) {
+    return Math.abs(hashString(key)) % MAP_SHARD_COUNT;
+}
+
+function getMapShard(map, key, createIfMissing) {
+    var shardIndex = getMapShardIndex(key);
+    var shard = map.shards[shardIndex];
+
+    if (!shard && createIfMissing) {
+        shard = new HashMap();
+        map.shards[shardIndex] = shard;
+    }
+
+    return shard;
+}
+
+function nativeMapContains(map, key) {
+    if (!map) {
+        return false;
+    }
+
+    if (typeof map.containsKey === 'function') {
+        return map.containsKey(key);
+    }
+
+    return Object.prototype.hasOwnProperty.call(map, key);
+}
+
+function nativeMapGet(map, key) {
+    if (!map) {
+        return null;
+    }
+
+    if (typeof map.get === 'function') {
+        return map.get(key);
+    }
+
+    return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : null;
 }
 
 function putMapValue(map, key, value) {
+    if (isShardedMap(map)) {
+        var shard = getMapShard(map, key, true);
+
+        if (!nativeMapContains(shard, key)) {
+            map.size += 1;
+        }
+
+        if (typeof shard.put === 'function') {
+            shard.put(key, value);
+        } else {
+            shard[key] = value;
+        }
+        return;
+    }
+
     if (map && typeof map.put === 'function') {
         map.put(key, value);
         return;
@@ -182,11 +403,11 @@ function getMapValue(map, key) {
         return null;
     }
 
-    if (typeof map.get === 'function') {
-        return map.get(key);
+    if (isShardedMap(map)) {
+        return nativeMapGet(getMapShard(map, key, false), key);
     }
 
-    return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : null;
+    return nativeMapGet(map, key);
 }
 
 function containsMapKey(map, key) {
@@ -194,15 +415,31 @@ function containsMapKey(map, key) {
         return false;
     }
 
-    if (typeof map.containsKey === 'function') {
-        return map.containsKey(key);
+    if (isShardedMap(map)) {
+        return nativeMapContains(getMapShard(map, key, false), key);
     }
 
-    return Object.prototype.hasOwnProperty.call(map, key);
+    return nativeMapContains(map, key);
 }
 
 function removeMapKey(map, key) {
     if (!map) {
+        return;
+    }
+
+    if (isShardedMap(map)) {
+        var shard = getMapShard(map, key, false);
+
+        if (!nativeMapContains(shard, key)) {
+            return;
+        }
+
+        if (typeof shard.remove === 'function') {
+            shard.remove(key);
+        } else {
+            delete shard[key];
+        }
+        map.size -= 1;
         return;
     }
 
@@ -214,15 +451,11 @@ function removeMapKey(map, key) {
     delete map[key];
 }
 
-function iterateMap(map, iteratorCallback) {
+function iterateNativeMap(map, iteratorCallback) {
     var keys = [];
     var entryIterator = null;
     var keyIterator = null;
     var index;
-
-    if (!map) {
-        return;
-    }
 
     if (typeof map.entrySet === 'function') {
         entryIterator = map.entrySet().iterator();
@@ -256,6 +489,170 @@ function iterateMap(map, iteratorCallback) {
     }
 }
 
+function iterateMap(map, iteratorCallback) {
+    var shardIndex;
+
+    if (!map) {
+        return;
+    }
+
+    if (isShardedMap(map)) {
+        for (shardIndex = 0; shardIndex < MAP_SHARD_COUNT; shardIndex += 1) {
+            if (map.shards[shardIndex]) {
+                iterateNativeMap(map.shards[shardIndex], iteratorCallback);
+            }
+        }
+        return;
+    }
+
+    iterateNativeMap(map, iteratorCallback);
+}
+
+function getMapSize(map) {
+    var size = 0;
+
+    if (!map) {
+        return 0;
+    }
+
+    if (isShardedMap(map)) {
+        return map.size;
+    }
+
+    if (typeof map.size === 'function') {
+        return map.size();
+    }
+
+    iterateMap(map, function () {
+        size += 1;
+    });
+    return size;
+}
+
+function iterateMapSorted(map, iteratorCallback) {
+    var shardIndex;
+
+    if (!isShardedMap(map)) {
+        var entries = [];
+        iterateMap(map, function (key, value) {
+            entries.push([key, value]);
+        });
+        entries.sort(function (left, right) {
+            return left[0] < right[0] ? -1 : (left[0] > right[0] ? 1 : 0);
+        });
+        entries.forEach(function (entry) {
+            iteratorCallback(entry[0], entry[1]);
+        });
+        return;
+    }
+
+    for (shardIndex = 0; shardIndex < MAP_SHARD_COUNT; shardIndex += 1) {
+        var shardEntries = [];
+
+        if (!map.shards[shardIndex]) {
+            continue;
+        }
+
+        iterateNativeMap(map.shards[shardIndex], function (key, value) {
+            shardEntries.push([key, value]);
+        });
+        shardEntries.sort(function (left, right) {
+            return left[0] < right[0] ? -1 : (left[0] > right[0] ? 1 : 0);
+        });
+        shardEntries.forEach(function (entry) {
+            iteratorCallback(entry[0], entry[1]);
+        });
+    }
+}
+
+function createMapKeyIterator(map) {
+    var shardIndex = 0;
+    var currentIterator = null;
+    var nextValue = null;
+    var hasBufferedValue = false;
+
+    function getShardIterator(shard) {
+        if (typeof shard.entrySet === 'function') {
+            var entryIterator = shard.entrySet().iterator();
+            return {
+                hasNext: function () {
+                    return entryIterator.hasNext();
+                },
+                next: function () {
+                    var entry = entryIterator.next();
+                    return entry.getKey ? entry.getKey() : entry.key;
+                }
+            };
+        }
+
+        var keys = Object.keys(shard);
+        var index = 0;
+        return {
+            hasNext: function () {
+                return index < keys.length;
+            },
+            next: function () {
+                return keys[index++];
+            }
+        };
+    }
+
+    function bufferNextValue() {
+        if (hasBufferedValue) {
+            return true;
+        }
+
+        while (isShardedMap(map) && shardIndex < MAP_SHARD_COUNT) {
+            if (!currentIterator) {
+                if (!map.shards[shardIndex]) {
+                    shardIndex += 1;
+                    continue;
+                }
+
+                currentIterator = getShardIterator(map.shards[shardIndex]);
+            }
+
+            if (currentIterator.hasNext()) {
+                nextValue = currentIterator.next();
+                hasBufferedValue = true;
+                return true;
+            }
+
+            currentIterator = null;
+            shardIndex += 1;
+        }
+
+        if (!isShardedMap(map) && !currentIterator) {
+            currentIterator = getShardIterator(map || {});
+        }
+
+        if (!isShardedMap(map) && currentIterator.hasNext()) {
+            nextValue = currentIterator.next();
+            hasBufferedValue = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    return {
+        hasNext: function () {
+            return bufferNextValue();
+        },
+        next: function () {
+            if (!bufferNextValue()) {
+                return null;
+            }
+
+            var value = nextValue;
+            nextValue = null;
+            hasBufferedValue = false;
+            return value;
+        },
+        close: function () {}
+    };
+}
+
 function escapeCsvValue(value) {
     var text = String(value === null || value === undefined ? '' : value);
 
@@ -266,79 +663,56 @@ function escapeCsvValue(value) {
     return text;
 }
 
-function writeCsvFile(directoryPath, fileName, header, rows) {
-    var lines = [];
-
-    if (Array.isArray(header) && header.length) {
-        lines.push(header.map(escapeCsvValue).join(','));
-    }
-
-    (rows || []).forEach(function (row) {
-        lines.push((row || []).map(escapeCsvValue).join(','));
-    });
-
-    writeImpexFile(directoryPath, fileName, lines.join('\n') + '\n');
-}
-
-function parseCsvRows(csvText) {
-    var rows = [];
-    var row = [];
-    var cell = '';
-    var inQuotes = false;
-    var index;
-
-    for (index = 0; index < csvText.length; index += 1) {
-        var currentChar = csvText.charAt(index);
-        var nextChar = csvText.charAt(index + 1);
-
-        if (currentChar === '"') {
-            if (inQuotes && nextChar === '"') {
-                cell += '"';
-                index += 1;
-            } else {
-                inQuotes = !inQuotes;
-            }
-        } else if (currentChar === ',' && !inQuotes) {
-            row.push(cell);
-            cell = '';
-        } else if ((currentChar === '\n' || currentChar === '\r') && !inQuotes) {
-            if (currentChar === '\r' && nextChar === '\n') {
-                index += 1;
-            }
-
-            row.push(cell);
-            rows.push(row);
-            row = [];
-            cell = '';
-        } else {
-            cell += currentChar;
-        }
-    }
-
-    if (cell !== '' || row.length > 0) {
-        row.push(cell);
-        rows.push(row);
-    }
-
-    return rows;
-}
-
-function mapToSortedRows(map, rowBuilder) {
-    var rows = [];
-
-    iterateMap(map, function (key, value) {
-        rows.push(rowBuilder(key, value));
-    });
-
-    rows.sort(function (left, right) {
-        if (left[0] === right[0]) {
-            return 0;
+function writeCsvMapFile(directoryPath, fileName, header, map, rowBuilder) {
+    return writeFileAtomically(directoryPath, fileName, function (writer) {
+        if (Array.isArray(header) && header.length) {
+            writer.write(header.map(escapeCsvValue).join(',') + '\n');
         }
 
-        return left[0] < right[0] ? -1 : 1;
+        iterateMapSorted(map, function (key, value) {
+            writer.write(rowBuilder(key, value).map(escapeCsvValue).join(',') + '\n');
+        });
     });
+}
 
-    return rows;
+function normalizeCsvRow(row) {
+    if (Array.isArray(row)) {
+        return row;
+    }
+
+    if (row && typeof row.toArray === 'function') {
+        return row.toArray();
+    }
+
+    return [];
+}
+
+function forEachCsvFileRow(file, rowCallback) {
+    var fileReader;
+    var csvReader;
+    var row;
+
+    if (!file.exists()) {
+        return false;
+    }
+
+    fileReader = new FileReader(file, 'UTF-8');
+    csvReader = null;
+
+    try {
+        csvReader = new CSVStreamReader(fileReader);
+        row = csvReader.readNext();
+
+        while (row !== null) {
+            rowCallback(normalizeCsvRow(row));
+            row = csvReader.readNext();
+        }
+    } finally {
+        closeQuietly(csvReader);
+        closeQuietly(fileReader);
+    }
+
+    return true;
 }
 
 function parsePositiveInteger(value, label, defaultValue) {
@@ -367,22 +741,24 @@ function parseSnapshotMetadata(directoryPath, fileName) {
     return metadata;
 }
 
-function readSnapshotCounts(directoryPath, trackingId, windowDays) {
-    var fileName = getSharedSnapshotCountsFileName(trackingId, windowDays);
-    var csvText = readImpexTextFile(directoryPath, fileName);
-    var rows = [];
+function readSnapshotCounts(directoryPath, trackingId, windowDays, countFileName) {
+    var fileName = normalizeString(countFileName) || getSharedSnapshotCountsFileName(trackingId, windowDays);
+    var file = getFile(directoryPath, fileName);
     var counts = createHashMap();
+    var isHeaderRow = true;
 
-    if (csvText === '') {
-        return counts;
+    if (!file.exists()) {
+        throw new Error('The purchase enrichment snapshot count file ' + file.fullPath + ' is missing. Run the purchase enrichment sync again.');
     }
 
-    rows = parseCsvRows(csvText);
-    rows.shift();
-
-    rows.forEach(function (row) {
+    forEachCsvFileRow(file, function (row) {
         var productId = normalizeString(row[0]);
         var count = parseInt(normalizeString(row[1]), 10);
+
+        if (isHeaderRow) {
+            isHeaderRow = false;
+            return;
+        }
 
         if (productId === '' || isNaN(count)) {
             return;
@@ -394,15 +770,21 @@ function readSnapshotCounts(directoryPath, trackingId, windowDays) {
     return counts;
 }
 
-function readSharedSnapshot(directoryPath, trackingId, windowDays) {
+function readSharedSnapshotUnlocked(directoryPath, trackingId, windowDays) {
     var metadata = parseSnapshotMetadata(directoryPath, getSharedSnapshotMetadataFileName(trackingId, windowDays));
 
     if (!metadata) {
         return null;
     }
 
-    metadata.counts = readSnapshotCounts(directoryPath, trackingId, windowDays);
+    metadata.counts = readSnapshotCounts(directoryPath, trackingId, windowDays, metadata.countFile);
     return metadata;
+}
+
+function readSharedSnapshot(directoryPath, trackingId, windowDays) {
+    return withPurchaseStateLock(directoryPath, trackingId, function () {
+        return readSharedSnapshotUnlocked(directoryPath, trackingId, windowDays);
+    });
 }
 
 function isSnapshotFresh(snapshot, maxAgeMinutes) {
@@ -417,7 +799,19 @@ function isSnapshotFresh(snapshot, maxAgeMinutes) {
 }
 
 function findReusableSharedSnapshot(directoryPath, trackingId, windowDays, maxAgeMinutes) {
-    var snapshot = readSharedSnapshot(directoryPath, trackingId, windowDays);
+    var snapshot = null;
+
+    try {
+        snapshot = readSharedSnapshot(directoryPath, trackingId, windowDays);
+    } catch (error) {
+        Logger.warn(
+            'Ignoring incomplete purchase enrichment snapshot for trackingId={0}, windowDays={1}. {2}',
+            trackingId,
+            windowDays,
+            error.message || error
+        );
+        return null;
+    }
 
     if (!snapshot || !isSnapshotFresh(snapshot, maxAgeMinutes || SNAPSHOT_REUSE_MAX_AGE_MINUTES)) {
         return null;
@@ -426,40 +820,77 @@ function findReusableSharedSnapshot(directoryPath, trackingId, windowDays, maxAg
     return snapshot;
 }
 
-function writeSharedSnapshot(directoryPath, trackingId, windowDays, snapshot) {
+function writeSharedSnapshotUnlocked(directoryPath, trackingId, windowDays, snapshot, options) {
     var fieldName = buildUnitsSoldFieldName(windowDays);
+    var generatedAt = snapshot.generatedAt || new Date().toISOString();
+    var previousMetadata = parseSnapshotMetadata(directoryPath, getSharedSnapshotMetadataFileName(trackingId, windowDays));
+    var countFileName = getSharedSnapshotGenerationCountsFileName(
+        trackingId,
+        windowDays,
+        buildTimestampSegment() + '_' + normalizeString(snapshot.exportId)
+    );
     var metadata = {
+        schemaVersion: SNAPSHOT_SCHEMA_VERSION,
         trackingId: trackingId,
         windowDays: parseInt(windowDays, 10),
         fieldName: fieldName,
         quantityDimension: snapshot.quantityDimension,
         exportId: snapshot.exportId,
-        generatedAt: snapshot.generatedAt || new Date().toISOString(),
+        generatedAt: generatedAt,
         processedRows: snapshot.processedRows || 0,
         invalidQuantityRows: snapshot.invalidQuantityRows || 0,
         blankProductRows: snapshot.blankProductRows || 0,
-        countFile: getSharedSnapshotCountsFileName(trackingId, windowDays)
+        countFile: countFileName
     };
 
-    writeImpexFile(
+    writeCsvMapFile(
         directoryPath,
-        getSharedSnapshotMetadataFileName(trackingId, windowDays),
-        JSON.stringify(metadata, null, 2) + '\n'
-    );
-    writeCsvFile(
-        directoryPath,
-        getSharedSnapshotCountsFileName(trackingId, windowDays),
+        countFileName,
         ['productId', 'unitsSold'],
-        mapToSortedRows(snapshot.counts, function (productId, count) {
+        snapshot.counts,
+        function (productId, count) {
             return [productId, count];
-        })
+        }
     );
+
+    try {
+        writeImpexFile(
+            directoryPath,
+            getSharedSnapshotMetadataFileName(trackingId, windowDays),
+            JSON.stringify(metadata, null, 2) + '\n'
+        );
+    } catch (error) {
+        var failedCountFile = getFile(directoryPath, countFileName);
+
+        if (failedCountFile.exists()) {
+            failedCountFile.remove();
+        }
+
+        throw error;
+    }
+
+    if (!(options && options.preservePreviousCount)
+        && previousMetadata
+        && normalizeString(previousMetadata.countFile) !== ''
+        && previousMetadata.countFile !== countFileName) {
+        var previousCountFile = getFile(directoryPath, previousMetadata.countFile);
+
+        if (previousCountFile.exists()) {
+            previousCountFile.remove();
+        }
+    }
 
     metadata.counts = snapshot.counts;
     return metadata;
 }
 
-function loadSnapshotsForTrackingId(exportContext, directoryPath) {
+function writeSharedSnapshot(directoryPath, trackingId, windowDays, snapshot) {
+    return withPurchaseStateLock(directoryPath, trackingId, function () {
+        return writeSharedSnapshotUnlocked(directoryPath, trackingId, windowDays, snapshot);
+    });
+}
+
+function loadSnapshotsForTrackingIdUnlocked(exportContext, directoryPath) {
     var trackingId = normalizeString(exportContext && exportContext.coveoTrackingId);
     var snapshots = [];
 
@@ -477,7 +908,12 @@ function loadSnapshotsForTrackingId(exportContext, directoryPath) {
             return;
         }
 
-        metadata.counts = readSnapshotCounts(directoryPath || DEFAULT_STATE_PATH, trackingId, metadata.windowDays);
+        metadata.counts = readSnapshotCounts(
+            directoryPath || DEFAULT_STATE_PATH,
+            trackingId,
+            metadata.windowDays,
+            metadata.countFile
+        );
         snapshots.push(metadata);
     });
 
@@ -517,13 +953,18 @@ function ensureMetricFields(exportContext, snapshots) {
 }
 
 function attachSnapshotsToExportContext(exportContext, directoryPath) {
-    exportContext.purchaseMetrics = loadSnapshotsForTrackingId(exportContext, directoryPath || DEFAULT_STATE_PATH).map(function (snapshot) {
-        snapshot.currentRows = readCurrentTargetRows(directoryPath || DEFAULT_STATE_PATH, exportContext, snapshot);
-        snapshot.documentCounts = buildDocumentCounts(snapshot.currentRows);
-        return snapshot;
-    });
+    var resolvedDirectoryPath = directoryPath || DEFAULT_STATE_PATH;
 
-    return exportContext.purchaseMetrics;
+    return withPurchaseStateLock(resolvedDirectoryPath, exportContext.coveoTrackingId, function () {
+        exportContext.purchaseMetrics = loadSnapshotsForTrackingIdUnlocked(exportContext, resolvedDirectoryPath).map(function (snapshot) {
+            snapshot.currentRows = readCurrentTargetRows(resolvedDirectoryPath, exportContext, snapshot);
+            snapshot.appliedRows = readAppliedTargetRows(resolvedDirectoryPath, exportContext, snapshot);
+            snapshot.documentCounts = buildDocumentCounts(snapshot.currentRows);
+            return snapshot;
+        });
+
+        return exportContext.purchaseMetrics;
+    });
 }
 
 function sumCountsForAliases(snapshot, aliases) {
@@ -550,7 +991,7 @@ function sumCountsForAliases(snapshot, aliases) {
 function buildDocumentCounts(rows) {
     var documentCounts = createHashMap();
 
-    (rows || []).forEach(function (row) {
+    iterateMap(rows, function (productId, row) { // eslint-disable-line no-unused-vars
         var documentId = normalizeString(row && row.documentId);
 
         if (documentId === '') {
@@ -588,15 +1029,7 @@ function applyPurchaseMetrics(document, metricContext, exportContext) {
     });
 }
 
-function buildCurrentStateRows(mappedRows) {
-    return (mappedRows || []).map(function (row) {
-        return [row.productId, row.rootProductId, row.documentId, row.count];
-    }).sort(function (left, right) {
-        return left[0] < right[0] ? -1 : (left[0] > right[0] ? 1 : 0);
-    });
-}
-
-function writeTargetSnapshotState(directoryPath, exportContext, snapshot, mappedRows, skippedRows) {
+function writeTargetSnapshotStateUnlocked(directoryPath, exportContext, snapshot, mappedRows, skippedRows) {
     var targetId = exportContext.targetId || exportContext.locale || exportContext.coveoTrackingId;
     var windowDays = snapshot.windowDays;
     var summary = {
@@ -607,60 +1040,130 @@ function writeTargetSnapshotState(directoryPath, exportContext, snapshot, mapped
         fieldName: snapshot.fieldName,
         exportId: snapshot.exportId,
         generatedAt: snapshot.generatedAt,
-        mappedProducts: (mappedRows || []).length,
-        skippedProducts: (skippedRows || []).length
+        mappedProducts: getMapSize(mappedRows),
+        skippedProducts: getMapSize(skippedRows)
     };
 
-    writeCsvFile(
-        directoryPath,
-        getTargetCurrentStateFileName(targetId, windowDays),
-        ['productId', 'rootProductId', 'documentId', 'unitsSold'],
-        buildCurrentStateRows(mappedRows)
-    );
-    writeCsvFile(
+    writeCsvMapFile(
         directoryPath,
         getTargetMappedReportFileName(targetId, windowDays),
         ['productId', 'rootProductId', 'documentId', 'unitsSold'],
-        buildCurrentStateRows(mappedRows)
+        mappedRows,
+        function (productId, row) {
+            return [productId, row.rootProductId, row.documentId, row.count];
+        }
     );
-    writeCsvFile(
+    writeCsvMapFile(
         directoryPath,
         getTargetSkippedReportFileName(targetId, windowDays),
         ['productId', 'unitsSold', 'reason'],
-        (skippedRows || []).map(function (row) {
-            return [row.productId, row.count, row.reason || 'missing-product-mapping'];
-        }).sort(function (left, right) {
-            return left[0] < right[0] ? -1 : (left[0] > right[0] ? 1 : 0);
-        })
+        skippedRows,
+        function (productId, row) {
+            return [productId, row.count, row.reason || 'missing-product-mapping'];
+        }
     );
     writeImpexFile(
         directoryPath,
         getTargetSummaryFileName(targetId, windowDays),
         JSON.stringify(summary, null, 2) + '\n'
     );
+    writeCsvMapFile(
+        directoryPath,
+        getTargetCurrentStateFileName(targetId, windowDays),
+        ['productId', 'rootProductId', 'documentId', 'unitsSold'],
+        mappedRows,
+        function (productId, row) {
+            return [productId, row.rootProductId, row.documentId, row.count];
+        }
+    );
+}
+
+function writeTargetSnapshotState(directoryPath, exportContext, snapshot, mappedRows, skippedRows) {
+    return withPurchaseStateLock(directoryPath, exportContext.coveoTrackingId, function () {
+        return writeTargetSnapshotStateUnlocked(directoryPath, exportContext, snapshot, mappedRows, skippedRows);
+    });
+}
+
+function publishSharedSnapshotAndTargetState(directoryPath, exportContext, windowDays, snapshot, mappedRows, skippedRows) {
+    return withPurchaseStateLock(directoryPath, exportContext.coveoTrackingId, function () {
+        var metadataFileName = getSharedSnapshotMetadataFileName(exportContext.coveoTrackingId, windowDays);
+        var metadataFile = getFile(directoryPath, metadataFileName);
+        var previousMetadataText = metadataFile.exists() ? readImpexTextFile(directoryPath, metadataFileName) : null;
+        var previousMetadata = previousMetadataText === null ? null : parseSnapshotMetadata(directoryPath, metadataFileName);
+        var publishedSnapshot = writeSharedSnapshotUnlocked(
+            directoryPath,
+            exportContext.coveoTrackingId,
+            windowDays,
+            snapshot,
+            {
+                preservePreviousCount: true
+            }
+        );
+
+        try {
+            writeTargetSnapshotStateUnlocked(directoryPath, exportContext, publishedSnapshot, mappedRows, skippedRows);
+        } catch (error) {
+            if (previousMetadataText === null) {
+                if (metadataFile.exists() && !metadataFile.remove()) {
+                    throw new Error('Unable to roll back the new purchase enrichment snapshot metadata after target-state publication failed. ' + error.message);
+                }
+            } else {
+                writeImpexFile(directoryPath, metadataFileName, previousMetadataText);
+            }
+
+            var failedCountFile = getFile(directoryPath, publishedSnapshot.countFile);
+
+            if (failedCountFile.exists() && !failedCountFile.remove()) {
+                throw new Error('Unable to remove the rolled-back purchase enrichment snapshot count file. ' + error.message);
+            }
+
+            throw error;
+        }
+
+        if (previousMetadata
+            && normalizeString(previousMetadata.countFile) !== ''
+            && previousMetadata.countFile !== publishedSnapshot.countFile) {
+            var previousCountFile = getFile(directoryPath, previousMetadata.countFile);
+
+            if (previousCountFile.exists() && !previousCountFile.remove()) {
+                Logger.warn('Unable to remove replaced purchase enrichment count file {0}.', previousCountFile.fullPath);
+            }
+        }
+
+        return publishedSnapshot;
+    });
 }
 
 function readTargetStateRows(directoryPath, fileName) {
-    var csvText = readImpexTextFile(directoryPath, fileName);
-    var rows = [];
+    var file = getFile(directoryPath, fileName);
+    var rows = createHashMap();
+    var isHeaderRow = true;
 
-    if (csvText === '') {
+    if (!file.exists()) {
         return rows;
     }
 
-    rows = parseCsvRows(csvText);
-    rows.shift();
+    forEachCsvFileRow(file, function (row) {
+        if (isHeaderRow) {
+            isHeaderRow = false;
+            return;
+        }
 
-    return rows.filter(function (row) {
-        return normalizeString(row[0]) !== '';
-    }).map(function (row) {
-        return {
-            productId: normalizeString(row[0]),
+        if (normalizeString(row[0]) === '') {
+            return;
+        }
+
+        var productId = normalizeString(row[0]);
+
+        putMapValue(rows, productId, {
+            productId: productId,
             rootProductId: normalizeString(row[1]),
             documentId: normalizeString(row[2]),
             count: parseInt(normalizeString(row[3]), 10) || 0
-        };
+        });
     });
+
+    return rows;
 }
 
 function readCurrentTargetRows(directoryPath, exportContext, snapshot) {
@@ -678,122 +1181,124 @@ function readAppliedTargetRows(directoryPath, exportContext, snapshot) {
 }
 
 function writeAppliedTargetRows(directoryPath, exportContext, snapshot, rows) {
-    writeCsvFile(
+    writeCsvMapFile(
         directoryPath,
         getTargetAppliedStateFileName(exportContext.targetId || exportContext.locale || exportContext.coveoTrackingId, snapshot.windowDays),
         ['productId', 'rootProductId', 'documentId', 'unitsSold'],
-        buildCurrentStateRows((rows || []).map(function (row) {
-            return {
-                productId: row.productId,
-                rootProductId: row.rootProductId,
-                documentId: row.documentId,
-                count: row.count
-            };
-        }))
+        rows,
+        function (productId, row) {
+            return [productId, row.rootProductId, row.documentId, row.count];
+        }
     );
 }
 
-function buildRowMap(rows) {
-    var map = createHashMap();
-
-    (rows || []).forEach(function (row) {
-        putMapValue(map, row.productId, row);
-    });
-
-    return map;
-}
-
 function buildLookupSet(values) {
-    var map = createHashMap();
+    if (values && values[SHARDED_MAP_MARKER]) {
+        return values;
+    }
 
-    (values || []).forEach(function (value) {
-        putMapValue(map, value, true);
-    });
+    var map = createHashMap();
+    var iterator;
+
+    if (values && typeof values.hasNext === 'function' && typeof values.next === 'function') {
+        iterator = values;
+
+        try {
+            while (iterator.hasNext()) {
+                putMapValue(map, iterator.next(), true);
+            }
+        } finally {
+            closeQuietly(iterator);
+        }
+    } else {
+        (values || []).forEach(function (value) {
+            putMapValue(map, value, true);
+        });
+    }
 
     return map;
 }
 
 function getSnapshotDrivenRootIds(exportContext, snapshots, directoryPath) {
-    var changedRootIds = createHashMap();
+    var resolvedDirectoryPath = directoryPath || DEFAULT_STATE_PATH;
 
-    (snapshots || []).forEach(function (snapshot) {
-        var currentRows = readCurrentTargetRows(directoryPath || DEFAULT_STATE_PATH, exportContext, snapshot);
-        var currentMap = buildRowMap(currentRows);
-        var appliedRows = readAppliedTargetRows(directoryPath || DEFAULT_STATE_PATH, exportContext, snapshot);
-        var appliedMap = buildRowMap(appliedRows);
+    return withPurchaseStateLock(resolvedDirectoryPath, exportContext.coveoTrackingId, function () {
+        var changedRootIds = createHashMap();
 
-        currentRows.forEach(function (row) {
-            var previousRow = getMapValue(appliedMap, row.productId);
+        (snapshots || []).forEach(function (snapshot) {
+            var currentRows = snapshot.currentRows || readCurrentTargetRows(resolvedDirectoryPath, exportContext, snapshot);
+            var appliedRows = snapshot.appliedRows || readAppliedTargetRows(resolvedDirectoryPath, exportContext, snapshot);
 
-            if (!previousRow
-                || previousRow.count !== row.count
-                || previousRow.rootProductId !== row.rootProductId
-                || previousRow.documentId !== row.documentId) {
-                putMapValue(changedRootIds, row.rootProductId, true);
-            }
+            iterateMap(currentRows, function (productId, row) {
+                var previousRow = getMapValue(appliedRows, productId);
+
+                if (!previousRow
+                    || previousRow.count !== row.count
+                    || previousRow.rootProductId !== row.rootProductId
+                    || previousRow.documentId !== row.documentId) {
+                    putMapValue(changedRootIds, row.rootProductId, true);
+                }
+            });
+
+            iterateMap(appliedRows, function (productId, row) {
+                if (!containsMapKey(currentRows, productId)) {
+                    putMapValue(changedRootIds, row.rootProductId, true);
+                }
+            });
         });
 
-        appliedRows.forEach(function (row) {
-            if (!containsMapKey(currentMap, row.productId)) {
-                putMapValue(changedRootIds, row.rootProductId, true);
-            }
-        });
-    });
-
-    return mapToSortedRows(changedRootIds, function (key) {
-        return [key];
-    }).map(function (row) {
-        return row[0];
+        return createMapKeyIterator(changedRootIds);
     });
 }
 
 function markFullExportApplied(exportContext, snapshots, directoryPath) {
-    (snapshots || []).forEach(function (snapshot) {
-        writeAppliedTargetRows(
-            directoryPath || DEFAULT_STATE_PATH,
-            exportContext,
-            snapshot,
-            readCurrentTargetRows(directoryPath || DEFAULT_STATE_PATH, exportContext, snapshot)
-        );
+    var resolvedDirectoryPath = directoryPath || DEFAULT_STATE_PATH;
+
+    return withPurchaseStateLock(resolvedDirectoryPath, exportContext.coveoTrackingId, function () {
+        (snapshots || []).forEach(function (snapshot) {
+            writeAppliedTargetRows(
+                resolvedDirectoryPath,
+                exportContext,
+                snapshot,
+                snapshot.currentRows || readCurrentTargetRows(resolvedDirectoryPath, exportContext, snapshot)
+            );
+        });
     });
 }
 
 function markDeltaExportApplied(exportContext, snapshots, directoryPath, exportedRootIds) {
     var exportedRootLookup = buildLookupSet(exportedRootIds || []);
+    var resolvedDirectoryPath = directoryPath || DEFAULT_STATE_PATH;
 
-    (snapshots || []).forEach(function (snapshot) {
-        var currentRows = readCurrentTargetRows(directoryPath || DEFAULT_STATE_PATH, exportContext, snapshot);
-        var currentMap = buildRowMap(currentRows);
-        var appliedRows = readAppliedTargetRows(directoryPath || DEFAULT_STATE_PATH, exportContext, snapshot);
-        var nextAppliedMap = buildRowMap(appliedRows);
+    return withPurchaseStateLock(resolvedDirectoryPath, exportContext.coveoTrackingId, function () {
+        (snapshots || []).forEach(function (snapshot) {
+            var currentRows = snapshot.currentRows || readCurrentTargetRows(resolvedDirectoryPath, exportContext, snapshot);
+            var appliedRows = readAppliedTargetRows(resolvedDirectoryPath, exportContext, snapshot);
+            var nextAppliedMap = createHashMap();
 
-        currentRows.forEach(function (row) {
-            if (containsMapKey(exportedRootLookup, row.rootProductId)) {
-                putMapValue(nextAppliedMap, row.productId, row);
-            }
+            iterateMap(appliedRows, function (productId, row) {
+                putMapValue(nextAppliedMap, productId, row);
+            });
+
+            iterateMap(currentRows, function (productId, row) {
+                if (containsMapKey(exportedRootLookup, row.rootProductId)) {
+                    putMapValue(nextAppliedMap, productId, row);
+                }
+            });
+
+            iterateMap(appliedRows, function (productId, row) {
+                if (containsMapKey(exportedRootLookup, row.rootProductId) && !containsMapKey(currentRows, productId)) {
+                    removeMapKey(nextAppliedMap, productId);
+                }
+            });
+
+            writeAppliedTargetRows(
+                resolvedDirectoryPath,
+                exportContext,
+                snapshot,
+                nextAppliedMap
+            );
         });
-
-        appliedRows.forEach(function (row) {
-            if (containsMapKey(exportedRootLookup, row.rootProductId) && !containsMapKey(currentMap, row.productId)) {
-                removeMapKey(nextAppliedMap, row.productId);
-            }
-        });
-
-        writeAppliedTargetRows(
-            directoryPath || DEFAULT_STATE_PATH,
-            exportContext,
-            snapshot,
-            mapToSortedRows(nextAppliedMap, function (productId, row) {
-                return [productId, row.rootProductId, row.documentId, row.count];
-            }).map(function (row) {
-                return {
-                    productId: row[0],
-                    rootProductId: row[1],
-                    documentId: row[2],
-                    count: row[3]
-                };
-            })
-        );
     });
 }
 
@@ -807,15 +1312,18 @@ module.exports = {
     containsMapKey: containsMapKey,
     findReusableSharedSnapshot: findReusableSharedSnapshot,
     getMapValue: getMapValue,
+    getMapSize: getMapSize,
     getSnapshotDrivenRootIds: getSnapshotDrivenRootIds,
     iterateMap: iterateMap,
     markDeltaExportApplied: markDeltaExportApplied,
     markFullExportApplied: markFullExportApplied,
     normalizeString: normalizeString,
     parsePositiveInteger: parsePositiveInteger,
+    publishSharedSnapshotAndTargetState: publishSharedSnapshotAndTargetState,
     putMapValue: putMapValue,
     readSharedSnapshot: readSharedSnapshot,
     sumCountsForAliases: sumCountsForAliases,
+    withPurchaseStateLock: withPurchaseStateLock,
     writeSharedSnapshot: writeSharedSnapshot,
     writeTargetSnapshotState: writeTargetSnapshotState,
     ensureMetricFields: ensureMetricFields

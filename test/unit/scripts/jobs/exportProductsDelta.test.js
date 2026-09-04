@@ -204,6 +204,12 @@ function createFixture(options) {
         },
         '*/cartridge/scripts/helper/purchaseMetricHelper': {
             DEFAULT_STATE_PATH: '/src/coveo/state/purchase-enrichment/',
+            createHashMap: function () {
+                return {};
+            },
+            putMapValue: function (map, key, value) {
+                map[key] = value;
+            },
             attachSnapshotsToExportContext: function () {
                 exportContext.purchaseMetrics = [];
             },
@@ -216,7 +222,7 @@ function createFixture(options) {
                     throw new Error('purchase state failed');
                 }
 
-                calls.markedRoots = rootIds;
+                calls.markedRoots = Object.keys(rootIds);
             }
         },
         '*/cartridge/scripts/helper/streamHelper': {

@@ -3,7 +3,7 @@
 var File = require('dw/io/File');
 var FileReader = require('dw/io/FileReader');
 var FileWriter = require('dw/io/FileWriter');
-var HashSet = require('dw/util/HashSet');
+var CSVStreamReader = require('dw/io/CSVStreamReader');
 var HTTPClient = require('dw/net/HTTPClient');
 var Logger = require('dw/system/Logger').getLogger('Coveo');
 
@@ -66,6 +66,16 @@ function sleepForExportPoll(milliseconds) {
 function closeIterator(iterator) {
     if (!isEmptyValue(iterator) && typeof iterator.close === 'function') {
         iterator.close();
+    }
+}
+
+function closeQuietly(closeable) {
+    if (!isEmptyValue(closeable) && typeof closeable.close === 'function') {
+        try {
+            closeable.close();
+        } catch (error) {
+            // Preserve the primary operation result.
+        }
     }
 }
 
@@ -203,7 +213,7 @@ function sendHttpClientGet(url, headers, allowRedirect, outputFile) {
         redirect: isRedirectStatusCode(client.statusCode),
         statusCode: client.statusCode,
         statusMessage: client.statusMessage,
-        text: client.text,
+        text: outputFile ? '' : client.text,
         errorText: client.errorText,
         location: client.getResponseHeader('Location'),
         contentType: normalizeString(client.getResponseHeader('Content-Type')),
@@ -277,10 +287,17 @@ function removeDirectoryTree(root) {
     }
 }
 
-function readCsvFromZip(file, workingPath) {
+function prepareDownloadedExport(file, response, location, workingPath) {
     var unzipRoot = new File([File.IMPEX, workingPath, 'unzip-' + buildTimestampSegment()].join(File.SEPARATOR));
     var csvFile = null;
-    var reader = null;
+
+    if (!isZipDownloadResponse(response, location)) {
+        return {
+            csvFile: file,
+            downloadFile: file,
+            unzipRoot: null
+        };
+    }
 
     unzipRoot.mkdirs();
 
@@ -291,33 +308,16 @@ function readCsvFromZip(file, workingPath) {
         if (!csvFile) {
             throw new Error('The downloaded Usage Analytics export archive does not contain a CSV entry.');
         }
-
-        reader = new FileReader(csvFile);
-
-        try {
-            return reader.getString();
-        } finally {
-            reader.close();
-        }
-    } finally {
+    } catch (error) {
         removeDirectoryTree(unzipRoot);
-    }
-}
-
-function readDownloadedExportCsv(file, response, location, workingPath) {
-    var reader = null;
-
-    if (isZipDownloadResponse(response, location)) {
-        return readCsvFromZip(file, workingPath);
+        throw error;
     }
 
-    reader = new FileReader(file);
-
-    try {
-        return reader.getString();
-    } finally {
-        reader.close();
-    }
+    return {
+        csvFile: csvFile,
+        downloadFile: file,
+        unzipRoot: unzipRoot
+    };
 }
 
 function addQuery(endpoint, query) {
@@ -502,69 +502,75 @@ function resolveExportDownloadLink(exportContext, exportInfo) {
     return downloadLink;
 }
 
-function downloadExportCsv(downloadLink, exportContext, workingPath) {
-    var accessToken = usageAnalyticsService.getUsageAnalyticsAccessToken();
-    var redirectResponse = sendHttpClientGet(downloadLink, {
-        Accept: getUsageAnalyticsDownloadHeaders().Accept,
-        Authorization: 'Bearer ' + accessToken
-    }, false);
-    var downloadFile = createTemporaryDownloadFile(workingPath, exportContext);
-    var downloadResponse = null;
-    var csvText = '';
+function cleanupDownloadedExport(downloadedExport) {
+    if (!downloadedExport) {
+        return;
+    }
 
-    if (redirectResponse.redirect) {
-        if (isEmptyValue(redirectResponse.location)) {
-            throw new Error('The Usage Analytics export download redirect did not return a Location header.');
+    if (downloadedExport.unzipRoot) {
+        removeDirectoryTree(downloadedExport.unzipRoot);
+    }
+
+    removeFileQuietly(downloadedExport.downloadFile);
+}
+
+function downloadExportFile(downloadLink, exportContext, workingPath) {
+    var accessToken = usageAnalyticsService.getUsageAnalyticsAccessToken();
+    var downloadFile = createTemporaryDownloadFile(workingPath, exportContext);
+    var redirectResponse = null;
+    var downloadResponse = null;
+
+    try {
+        redirectResponse = sendHttpClientGet(downloadLink, {
+            Accept: getUsageAnalyticsDownloadHeaders().Accept,
+            Authorization: 'Bearer ' + accessToken
+        }, false, downloadFile);
+
+        if (redirectResponse.redirect) {
+            if (isEmptyValue(redirectResponse.location)) {
+                throw new Error('The Usage Analytics export download redirect did not return a Location header.');
+            }
+
+            removeFileQuietly(downloadFile);
+            downloadResponse = sendHttpClientGet(redirectResponse.location, {
+                Accept: getUsageAnalyticsDownloadHeaders().Accept
+            }, true, downloadFile);
+
+            if (!downloadResponse.ok) {
+                throw new Error(
+                    'The redirected Usage Analytics export download failed. url='
+                    + redirectResponse.location
+                    + ', status='
+                    + downloadResponse.statusCode
+                    + ', message='
+                    + normalizeString(downloadResponse.errorText || downloadResponse.statusMessage)
+                    + '.'
+                );
+            }
+
+            return prepareDownloadedExport(downloadFile, downloadResponse, redirectResponse.location, workingPath);
         }
 
-        downloadResponse = sendHttpClientGet(redirectResponse.location, {
-            Accept: getUsageAnalyticsDownloadHeaders().Accept
-        }, true, downloadFile);
-
-        if (!downloadResponse.ok) {
+        if (!redirectResponse.ok) {
             throw new Error(
-                'The redirected Usage Analytics export download failed. url='
-                + redirectResponse.location
+                'The Usage Analytics export download failed. url='
+                + downloadLink
                 + ', status='
-                + downloadResponse.statusCode
+                + redirectResponse.statusCode
                 + ', message='
-                + normalizeString(downloadResponse.errorText || downloadResponse.statusMessage)
+                + normalizeString(redirectResponse.errorText || redirectResponse.statusMessage)
                 + '.'
             );
         }
-    } else if (redirectResponse.ok) {
-        if (isEmptyValue(redirectResponse.text)) {
-            throw new Error('The Usage Analytics export download returned an empty response body.');
-        }
 
-        return redirectResponse.text;
-    } else {
-        throw new Error(
-            'The Usage Analytics export download failed. url='
-            + downloadLink
-            + ', status='
-            + redirectResponse.statusCode
-            + ', message='
-            + normalizeString(redirectResponse.errorText || redirectResponse.statusMessage)
-            + '.'
-        );
-    }
-
-    try {
-        csvText = readDownloadedExportCsv(downloadFile, downloadResponse, redirectResponse.location, workingPath);
-    } finally {
+        return prepareDownloadedExport(downloadFile, redirectResponse, downloadLink, workingPath);
+    } catch (error) {
         removeFileQuietly(downloadFile);
+        throw error;
     }
-
-    if (isEmptyValue(csvText)) {
-        throw new Error('The Usage Analytics export download returned an empty response body.');
-    }
-
-    return csvText;
 }
 
-function parseCsvRows(csvText) {
-    var rows = [];
+function forEachCsvRow(csvText, rowCallback) {
     var row = [];
     var cell = '';
     var inQuotes = false;
@@ -590,7 +596,7 @@ function parseCsvRows(csvText) {
             }
 
             row.push(cell);
-            rows.push(row);
+            rowCallback(row);
             row = [];
             cell = '';
         } else {
@@ -600,10 +606,39 @@ function parseCsvRows(csvText) {
 
     if (cell !== '' || row.length > 0) {
         row.push(cell);
-        rows.push(row);
+        rowCallback(row);
+    }
+}
+
+function normalizeCsvRow(row) {
+    if (Array.isArray(row)) {
+        return row;
     }
 
-    return rows;
+    if (row && typeof row.toArray === 'function') {
+        return row.toArray();
+    }
+
+    return [];
+}
+
+function forEachCsvFileRow(file, rowCallback) {
+    var fileReader = new FileReader(file, 'UTF-8');
+    var csvReader = null;
+    var row;
+
+    try {
+        csvReader = new CSVStreamReader(fileReader);
+        row = csvReader.readNext();
+
+        while (row !== null) {
+            rowCallback(normalizeCsvRow(row));
+            row = csvReader.readNext();
+        }
+    } finally {
+        closeQuietly(csvReader);
+        closeQuietly(fileReader);
+    }
 }
 
 function parseQuantityValue(value) {
@@ -658,8 +693,7 @@ function findHeaderIndex(header, dimensionName) {
     return -1;
 }
 
-function aggregatePurchaseCounts(csvText, quantityDimension) {
-    var rows = parseCsvRows(csvText);
+function aggregatePurchaseRows(forEachRow, quantityDimension) {
     var header = [];
     var productIndex = -1;
     var quantityIndex = -1;
@@ -667,35 +701,37 @@ function aggregatePurchaseCounts(csvText, quantityDimension) {
     var processedRows = 0;
     var invalidQuantityRows = 0;
     var blankProductRows = 0;
+    var isHeaderRow = true;
 
-    if (!rows.length) {
-        throw new Error('The Usage Analytics export is empty.');
-    }
-
-    header = rows.shift().map(function (cell, index) {
-        var value = String(cell || '');
-
-        if (index === 0) {
-            value = value.replace(/^\uFEFF/, '');
-        }
-
-        return normalizeString(value);
-    });
-
-    productIndex = findHeaderIndex(header, PRODUCT_ID_DIMENSION);
-    quantityIndex = findHeaderIndex(header, quantityDimension);
-
-    if (productIndex === -1) {
-        throw new Error('The Usage Analytics export is missing required dimension ' + PRODUCT_ID_DIMENSION + '.');
-    }
-
-    if (quantityIndex === -1) {
-        throw new Error('The Usage Analytics export is missing configured quantity dimension ' + quantityDimension + '.');
-    }
-
-    rows.forEach(function (row) {
+    forEachRow(function (row) {
         var productId;
         var quantity;
+
+        if (isHeaderRow) {
+            header = row.map(function (cell, index) {
+                var value = String(cell || '');
+
+                if (index === 0) {
+                    value = value.replace(/^\uFEFF/, '');
+                }
+
+                return normalizeString(value);
+            });
+
+            productIndex = findHeaderIndex(header, PRODUCT_ID_DIMENSION);
+            quantityIndex = findHeaderIndex(header, quantityDimension);
+            isHeaderRow = false;
+
+            if (productIndex === -1) {
+                throw new Error('The Usage Analytics export is missing required dimension ' + PRODUCT_ID_DIMENSION + '.');
+            }
+
+            if (quantityIndex === -1) {
+                throw new Error('The Usage Analytics export is missing configured quantity dimension ' + quantityDimension + '.');
+            }
+
+            return;
+        }
 
         if (!row.length || (row.length === 1 && normalizeString(row[0]) === '')) {
             return;
@@ -723,6 +759,10 @@ function aggregatePurchaseCounts(csvText, quantityDimension) {
         processedRows += 1;
     });
 
+    if (!header.length) {
+        throw new Error('The Usage Analytics export is empty.');
+    }
+
     return {
         header: header,
         counts: counts,
@@ -732,21 +772,34 @@ function aggregatePurchaseCounts(csvText, quantityDimension) {
     };
 }
 
+function aggregatePurchaseCounts(csvText, quantityDimension) {
+    return aggregatePurchaseRows(function (rowCallback) {
+        forEachCsvRow(csvText, rowCallback);
+    }, quantityDimension);
+}
+
+function aggregatePurchaseCountFile(file, quantityDimension) {
+    return aggregatePurchaseRows(function (rowCallback) {
+        forEachCsvFileRow(file, rowCallback);
+    }, quantityDimension);
+}
+
 function buildRequiredProductIds(counts) {
-    var requiredProductIds = new HashSet();
-
-    purchaseMetricHelper.iterateMap(counts, function (productId) {
-        requiredProductIds.add(productId);
-    });
-
-    return requiredProductIds;
+    return {
+        contains: function (productId) {
+            return purchaseMetricHelper.containsMapKey(counts, productId);
+        },
+        size: function () {
+            return purchaseMetricHelper.getMapSize(counts);
+        }
+    };
 }
 
 function buildProductDocumentRows(exportContext, requiredProductIds, counts) {
     var mapping = purchaseMetricHelper.createHashMap();
-    var mappedRows = [];
-    var skippedRows = [];
-    var products = coveoHelper.buildProductQuery(false, exportContext);
+    var mappedRows = purchaseMetricHelper.createHashMap();
+    var skippedRows = purchaseMetricHelper.createHashMap();
+    var products = null;
     var requiredCount = requiredProductIds && typeof requiredProductIds.size === 'function' ? requiredProductIds.size() : 0;
     var resolvedCount = 0;
     var isProductOnly = exportTargetHelper.normalizeCatalogStructureMode(exportContext && exportContext.catalogStructureMode)
@@ -755,9 +808,13 @@ function buildProductDocumentRows(exportContext, requiredProductIds, counts) {
     if (requiredCount === 0) {
         return {
             mappedRows: mappedRows,
-            skippedRows: skippedRows
+            skippedRows: skippedRows,
+            mappedCount: 0,
+            skippedCount: 0
         };
     }
+
+    products = coveoHelper.buildProductQuery(false, exportContext);
 
     function mapAlias(alias, parentRow, rootProductId) {
         var normalizedAlias = normalizeString(alias);
@@ -843,7 +900,7 @@ function buildProductDocumentRows(exportContext, requiredProductIds, counts) {
 
     purchaseMetricHelper.iterateMap(counts, function (productId, count) {
         if (!purchaseMetricHelper.containsMapKey(mapping, productId)) {
-            skippedRows.push({
+            purchaseMetricHelper.putMapValue(skippedRows, productId, {
                 productId: productId,
                 count: Number(count || 0),
                 reason: 'missing-product-mapping'
@@ -851,19 +908,14 @@ function buildProductDocumentRows(exportContext, requiredProductIds, counts) {
             return;
         }
 
-        mappedRows.push(purchaseMetricHelper.getMapValue(mapping, productId));
-    });
-
-    mappedRows.sort(function (left, right) {
-        return left.productId < right.productId ? -1 : (left.productId > right.productId ? 1 : 0);
-    });
-    skippedRows.sort(function (left, right) {
-        return left.productId < right.productId ? -1 : (left.productId > right.productId ? 1 : 0);
+        purchaseMetricHelper.putMapValue(mappedRows, productId, purchaseMetricHelper.getMapValue(mapping, productId));
     });
 
     return {
         mappedRows: mappedRows,
-        skippedRows: skippedRows
+        skippedRows: skippedRows,
+        mappedCount: purchaseMetricHelper.getMapSize(mappedRows),
+        skippedCount: purchaseMetricHelper.getMapSize(skippedRows)
     };
 }
 
@@ -877,13 +929,11 @@ function syncPurchaseEnrichment(parameters, exportContext) {
     var reusableSnapshot = null;
     var createdExport = null;
     var availableExport = null;
-    var csvText = '';
-    var csvFile = null;
+    var downloadedExport = null;
     var aggregated = null;
     var requiredProductIds = null;
     var mappedState = null;
     var snapshot = null;
-    var succeeded = false;
 
     if (options.workingPath === '') {
         throw new Error('The Coveo purchase enrichment parameter workingPath is required.');
@@ -901,55 +951,75 @@ function syncPurchaseEnrichment(parameters, exportContext) {
         options.windowDays
     );
 
-    if (reusableSnapshot) {
-        snapshot = reusableSnapshot;
-        aggregated = {
-            counts: snapshot.counts,
-            processedRows: snapshot.processedRows || 0,
-            invalidQuantityRows: snapshot.invalidQuantityRows || 0,
-            blankProductRows: snapshot.blankProductRows || 0
-        };
-        availableExport = {
-            id: snapshot.exportId || '[reused-snapshot]'
-        };
-        Logger.info(
-            'Reusing recent shared purchase snapshot for trackingId={0}, windowDays={1}, field={2}.',
-            exportContext.coveoTrackingId,
-            options.windowDays,
-            snapshot.fieldName
-        );
-    } else {
+    if (!reusableSnapshot) {
         createdExport = createPurchaseExport(exportContext, options);
         availableExport = waitForAvailableExport(exportContext, createdExport);
-        csvText = downloadExportCsv(resolveExportDownloadLink(exportContext, availableExport), exportContext, options.workingPath);
-        csvFile = writeImpexFile(
-            options.workingPath,
-            'coveo_purchase_enrichment_export_' + sanitizeFileSegment(exportContext.targetId || exportContext.locale || exportContext.coveoTrackingId) + '_' + buildTimestampSegment() + '.csv',
-            csvText
-        );
-        aggregated = aggregatePurchaseCounts(csvText, options.quantityDimension);
-        snapshot = purchaseMetricHelper.writeSharedSnapshot(options.statePath, exportContext.coveoTrackingId, options.windowDays, {
-            counts: aggregated.counts,
-            quantityDimension: options.quantityDimension,
-            exportId: availableExport.id,
-            generatedAt: new Date().toISOString(),
-            processedRows: aggregated.processedRows,
-            invalidQuantityRows: aggregated.invalidQuantityRows,
-            blankProductRows: aggregated.blankProductRows
-        });
-        Logger.info(
-            'Created shared purchase snapshot for trackingId={0}, windowDays={1}, field={2}, exportId={3}.',
-            exportContext.coveoTrackingId,
-            options.windowDays,
-            snapshot.fieldName,
-            availableExport.id
-        );
+        downloadedExport = downloadExportFile(resolveExportDownloadLink(exportContext, availableExport), exportContext, options.workingPath);
+
+        try {
+            aggregated = aggregatePurchaseCountFile(downloadedExport.csvFile, options.quantityDimension);
+        } finally {
+            cleanupDownloadedExport(downloadedExport);
+            downloadedExport = null;
+        }
+
     }
 
-    requiredProductIds = buildRequiredProductIds(aggregated.counts);
-    mappedState = buildProductDocumentRows(exportContext, requiredProductIds, aggregated.counts);
-    purchaseMetricHelper.writeTargetSnapshotState(options.statePath, exportContext, snapshot, mappedState.mappedRows, mappedState.skippedRows);
-    succeeded = true;
+    purchaseMetricHelper.withPurchaseStateLock(options.statePath, exportContext.coveoTrackingId, function () {
+        if (reusableSnapshot) {
+            snapshot = purchaseMetricHelper.readSharedSnapshot(options.statePath, exportContext.coveoTrackingId, options.windowDays);
+            aggregated = {
+                counts: snapshot.counts,
+                processedRows: snapshot.processedRows || 0,
+                invalidQuantityRows: snapshot.invalidQuantityRows || 0,
+                blankProductRows: snapshot.blankProductRows || 0
+            };
+            availableExport = {
+                id: snapshot.exportId || '[reused-snapshot]'
+            };
+            Logger.info(
+                'Reusing recent shared purchase snapshot for trackingId={0}, windowDays={1}, field={2}.',
+                exportContext.coveoTrackingId,
+                options.windowDays,
+                snapshot.fieldName
+            );
+        } else {
+            snapshot = {
+                counts: aggregated.counts,
+                windowDays: options.windowDays,
+                fieldName: purchaseMetricHelper.buildUnitsSoldFieldName(options.windowDays),
+                quantityDimension: options.quantityDimension,
+                exportId: availableExport.id,
+                generatedAt: new Date().toISOString(),
+                processedRows: aggregated.processedRows,
+                invalidQuantityRows: aggregated.invalidQuantityRows,
+                blankProductRows: aggregated.blankProductRows
+            };
+        }
+
+        requiredProductIds = buildRequiredProductIds(aggregated.counts);
+        mappedState = buildProductDocumentRows(exportContext, requiredProductIds, aggregated.counts);
+
+        if (reusableSnapshot) {
+            purchaseMetricHelper.writeTargetSnapshotState(options.statePath, exportContext, snapshot, mappedState.mappedRows, mappedState.skippedRows);
+        } else {
+            snapshot = purchaseMetricHelper.publishSharedSnapshotAndTargetState(
+                options.statePath,
+                exportContext,
+                options.windowDays,
+                snapshot,
+                mappedState.mappedRows,
+                mappedState.skippedRows
+            );
+            Logger.info(
+                'Created shared purchase snapshot for trackingId={0}, windowDays={1}, field={2}, exportId={3}.',
+                exportContext.coveoTrackingId,
+                options.windowDays,
+                snapshot.fieldName,
+                availableExport.id
+            );
+        }
+    });
 
     Logger.info(
         'Coveo purchase enrichment snapshot completed for targetId={0}, trackingId={1}, exportId={2}, field={3}, processedRows={4}, mappedProducts={5}, skippedProducts={6}',
@@ -958,13 +1028,9 @@ function syncPurchaseEnrichment(parameters, exportContext) {
         availableExport.id,
         snapshot.fieldName,
         aggregated.processedRows,
-        mappedState.mappedRows.length,
-        mappedState.skippedRows.length
+        mappedState.mappedCount,
+        mappedState.skippedCount
     );
-
-    if (succeeded) {
-        removeFileQuietly(csvFile);
-    }
 
     return {
         exportId: availableExport.id,
@@ -972,8 +1038,8 @@ function syncPurchaseEnrichment(parameters, exportContext) {
         processedRows: aggregated.processedRows,
         invalidQuantityRows: aggregated.invalidQuantityRows,
         blankProductRows: aggregated.blankProductRows,
-        mappedProducts: mappedState.mappedRows.length,
-        skippedProducts: mappedState.skippedRows.length,
+        mappedProducts: mappedState.mappedCount,
+        skippedProducts: mappedState.skippedCount,
         snapshotReused: !!reusableSnapshot
     };
 }
@@ -981,10 +1047,11 @@ function syncPurchaseEnrichment(parameters, exportContext) {
 module.exports = {
     PRODUCT_ID_DIMENSION: PRODUCT_ID_DIMENSION,
     aggregatePurchaseCounts: aggregatePurchaseCounts,
+    aggregatePurchaseCountFile: aggregatePurchaseCountFile,
     buildProductDocumentRows: buildProductDocumentRows,
     buildRequiredProductIds: buildRequiredProductIds,
     createPurchaseExport: createPurchaseExport,
-    downloadExportCsv: downloadExportCsv,
+    downloadExportFile: downloadExportFile,
     resolveExportDownloadLink: resolveExportDownloadLink,
     syncPurchaseEnrichment: syncPurchaseEnrichment,
     validatePurchaseEnrichmentContext: validatePurchaseEnrichmentContext,
