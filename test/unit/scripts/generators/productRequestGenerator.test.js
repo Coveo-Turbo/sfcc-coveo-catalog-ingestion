@@ -1,8 +1,31 @@
 'use strict';
 
 var path = require('path');
+var crypto = require('crypto');
 var assert = require('chai').assert;
-var proxyquire = require('proxyquire').noCallThru();
+var baseProxyquire = require('proxyquire').noCallThru();
+
+function Bytes(value) {
+    this.value = value;
+}
+
+function MessageDigest() {}
+
+MessageDigest.DIGEST_SHA_256 = 'SHA-256';
+MessageDigest.prototype.digestBytes = function (bytes) {
+    return bytes;
+};
+
+function proxyquire(modulePath, stubs) {
+    stubs['dw/crypto/Encoding'] = {
+        toHex: function (bytes) {
+            return crypto.createHash('sha256').update(bytes.value, 'utf8').digest('hex');
+        }
+    };
+    stubs['dw/crypto/MessageDigest'] = MessageDigest;
+    stubs['dw/util/Bytes'] = Bytes;
+    return baseProxyquire(modulePath, stubs);
+}
 
 function buildUrl(route, pid) {
     return {
@@ -173,6 +196,8 @@ function createProduct(options) {
         online: options.online !== false,
         searchable: options.searchable !== false,
         masterProduct: options.masterProduct || null,
+        creationDate: Object.prototype.hasOwnProperty.call(options, 'creationDate') ? options.creationDate : null,
+        lastModified: Object.prototype.hasOwnProperty.call(options, 'lastModified') ? options.lastModified : null,
         primaryCategory: primaryCategory,
         categories: createArrayWrapper(categoryAssignments),
         priceModel: {
@@ -252,7 +277,9 @@ function createProduct(options) {
     };
 }
 
-function createGeneratorForProduct(product) {
+function createGeneratorForProduct(product, options) {
+    options = options || {};
+
     return proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/generators/productRequestGenerator'), {
         'dw/util/ArrayList': function ArrayList(values) {
             return createArrayWrapper(values);
@@ -263,7 +290,10 @@ function createGeneratorForProduct(product) {
             }
         },
         'dw/catalog/ProductMgr': {
-            getProduct: function () {
+            getProduct: function (rootId) {
+                if (options.onProductLookup) {
+                    options.onProductLookup(rootId);
+                }
                 return product;
             }
         },
@@ -280,6 +310,11 @@ function createGeneratorForProduct(product) {
         '*/cartridge/scripts/helper/fieldMappingHelper': {
             applyFieldMappings: function (payload, sourceProduct) {
                 payload.ec_name = sourceProduct.name;
+
+                if (options.applyFieldMappings) {
+                    options.applyFieldMappings(payload, sourceProduct);
+                }
+
                 return payload;
             }
         },
@@ -1619,5 +1654,277 @@ describe('productRequestGenerator', function () {
                 productEligibilityMode: 'online_and_searchable'
             });
         }, /catalog media unavailable/);
+    });
+
+    it('builds a deterministic standalone descriptor with the exact generated document id', function () {
+        var standaloneProduct = createProduct({
+            ID: 'DESCRIPTOR-SKU',
+            creationDate: new Date('2026-08-01T10:00:00.000Z'),
+            lastModified: new Date('2026-09-01T12:30:00.000Z')
+        });
+        var generator = createGeneratorForProduct(standaloneProduct);
+        var context = {
+            catalogStructureMode: 'product_only',
+            productEligibilityMode: 'online_and_searchable'
+        };
+        var originalGetImage = standaloneProduct.getImage;
+        var originalGetImages = standaloneProduct.getImages;
+        standaloneProduct.getImage = function () {
+            throw new Error('descriptor resolved a product image');
+        };
+        standaloneProduct.getImages = function () {
+            throw new Error('descriptor resolved product images');
+        };
+        var firstDescriptor = generator.buildRootDescriptor('DESCRIPTOR-SKU', context);
+        var secondDescriptor = generator.buildRootDescriptor('DESCRIPTOR-SKU', context);
+        standaloneProduct.getImage = originalGetImage;
+        standaloneProduct.getImages = originalGetImages;
+        var exports = generator.processProducts('DESCRIPTOR-SKU', false, context);
+
+        assert.strictEqual(firstDescriptor.descriptorSchemaVersion, 1);
+        assert.strictEqual(firstDescriptor.rootId, 'DESCRIPTOR-SKU');
+        assert.strictEqual(firstDescriptor.rootType, 'standalone');
+        assert.strictEqual(firstDescriptor.modifiedAt, '2026-09-01T12:30:00.000Z');
+        assert.deepEqual(firstDescriptor.documentIds, exports.map(function (item) {
+            return item.documentId;
+        }).sort());
+        assert.deepEqual(firstDescriptor, secondDescriptor);
+        assert.match(firstDescriptor.modificationSignature, /^[0-9a-f]{64}$/);
+        assert.match(firstDescriptor.eligibilitySignature, /^[0-9a-f]{64}$/);
+        assert.match(firstDescriptor.ownershipSignature, /^[0-9a-f]{64}$/);
+    });
+
+    it('matches master Product and Variant identities in both catalog structures', function () {
+        var masterProduct = createProduct({
+            ID: 'DESCRIPTOR-MASTER',
+            master: true,
+            lastModified: new Date('2026-09-01T00:00:00.000Z')
+        });
+        var redSmall = createProduct({
+            ID: 'DESCRIPTOR-RED-S',
+            variant: true,
+            masterProduct: masterProduct,
+            lastModified: new Date('2026-09-02T00:00:00.000Z'),
+            custom: {
+                color: 'red',
+                size: 'small'
+            }
+        });
+        var redMedium = createProduct({
+            ID: 'DESCRIPTOR-RED-M',
+            variant: true,
+            masterProduct: masterProduct,
+            creationDate: new Date('2026-09-03T00:00:00.000Z'),
+            custom: {
+                color: 'red',
+                size: 'medium'
+            }
+        });
+        var blueSmall = createProduct({
+            ID: 'DESCRIPTOR-BLUE-S',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'blue',
+                size: 'small'
+            }
+        });
+        var generator;
+
+        masterProduct.variants = createArrayWrapper([redSmall, redMedium, blueSmall]);
+        generator = createGeneratorForProduct(masterProduct);
+
+        ['product_only', 'product_variant'].forEach(function (catalogStructureMode) {
+            var context = {
+                catalogStructureMode: catalogStructureMode,
+                productEligibilityMode: 'online_and_searchable'
+            };
+            var descriptor = generator.buildRootDescriptor('DESCRIPTOR-MASTER', context);
+            var exports = generator.processProducts('DESCRIPTOR-MASTER', false, context);
+
+            assert.strictEqual(descriptor.rootType, 'master');
+            assert.strictEqual(descriptor.modifiedAt, '2026-09-03T00:00:00.000Z');
+            assert.deepEqual(descriptor.documentIds, exports.map(function (item) {
+                return item.documentId;
+            }).sort());
+        });
+    });
+
+    it('changes only the descriptor signatures affected by timestamp, eligibility, and structure changes', function () {
+        var masterProduct = createProduct({
+            ID: 'SIGNATURE-MASTER',
+            master: true,
+            lastModified: new Date('2026-09-01T00:00:00.000Z')
+        });
+        var variantProduct = createProduct({
+            ID: 'SIGNATURE-RED-S',
+            variant: true,
+            masterProduct: masterProduct,
+            lastModified: new Date('2026-09-02T00:00:00.000Z'),
+            custom: {
+                color: 'red',
+                size: 'small'
+            }
+        });
+        var context = {
+            catalogStructureMode: 'product_only',
+            productEligibilityMode: 'online_and_searchable'
+        };
+        var generator;
+        var baseline;
+        var timestampChanged;
+        var relationshipChanged;
+        var eligibilityChanged;
+        var structureChanged;
+
+        masterProduct.variants = createArrayWrapper([variantProduct]);
+        generator = createGeneratorForProduct(masterProduct);
+        baseline = generator.buildRootDescriptor('SIGNATURE-MASTER', context);
+
+        variantProduct.lastModified = new Date('2026-09-03T00:00:00.000Z');
+        timestampChanged = generator.buildRootDescriptor('SIGNATURE-MASTER', context);
+        assert.notStrictEqual(timestampChanged.modificationSignature, baseline.modificationSignature);
+        assert.strictEqual(timestampChanged.eligibilitySignature, baseline.eligibilitySignature);
+        assert.strictEqual(timestampChanged.ownershipSignature, baseline.ownershipSignature);
+
+        variantProduct.masterProduct = createProduct({
+            ID: 'MOVED-MASTER',
+            master: true
+        });
+        relationshipChanged = generator.buildRootDescriptor('SIGNATURE-MASTER', context);
+        assert.notStrictEqual(relationshipChanged.modificationSignature, timestampChanged.modificationSignature);
+        variantProduct.masterProduct = masterProduct;
+
+        variantProduct.online = false;
+        eligibilityChanged = generator.buildRootDescriptor('SIGNATURE-MASTER', context);
+        assert.notStrictEqual(eligibilityChanged.eligibilitySignature, timestampChanged.eligibilitySignature);
+        assert.notStrictEqual(eligibilityChanged.ownershipSignature, timestampChanged.ownershipSignature);
+        assert.deepEqual(eligibilityChanged.documentIds, []);
+
+        variantProduct.online = true;
+        structureChanged = generator.buildRootDescriptor('SIGNATURE-MASTER', {
+            catalogStructureMode: 'product_variant',
+            productEligibilityMode: 'online_and_searchable'
+        });
+        assert.strictEqual(structureChanged.modificationSignature, timestampChanged.modificationSignature);
+        assert.notStrictEqual(structureChanged.eligibilitySignature, timestampChanged.eligibilitySignature);
+        assert.notStrictEqual(structureChanged.ownershipSignature, timestampChanged.ownershipSignature);
+    });
+
+    it('generates exact descriptor identities with one ProductMgr lookup', function () {
+        var lookupCount = 0;
+        var masterProduct = createProduct({
+            ID: 'ATOMIC-MASTER',
+            master: true
+        });
+        var redVariant = createProduct({
+            ID: 'ATOMIC-RED-S',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'red',
+                size: 'small'
+            }
+        });
+        var blueVariant = createProduct({
+            ID: 'ATOMIC-BLUE-M',
+            variant: true,
+            masterProduct: masterProduct,
+            custom: {
+                color: 'blue',
+                size: 'medium'
+            }
+        });
+        var generator;
+        var generated;
+        var identities;
+
+        masterProduct.variants = createArrayWrapper([redVariant, blueVariant]);
+        generator = createGeneratorForProduct(masterProduct, {
+            onProductLookup: function (rootId) {
+                lookupCount += 1;
+                assert.strictEqual(rootId, 'ATOMIC-MASTER');
+            }
+        });
+
+        generated = generator.generateRoot('ATOMIC-MASTER', false, {
+            catalogStructureMode: 'product_variant',
+            productEligibilityMode: 'online_and_searchable'
+        });
+        identities = generated.items.map(function (item) {
+            return {
+                documentId: item.documentId,
+                objecttype: item.objecttype,
+                productId: item.ec_product_id,
+                variantId: item.ec_variant_id || ''
+            };
+        });
+
+        assert.strictEqual(lookupCount, 1);
+        assert.deepEqual(generated.descriptor.documentIds, generated.items.map(function (item) {
+            return item.documentId;
+        }).sort());
+        assert.deepEqual(identities, [{
+            documentId: 'https://example.com/Product-Show?pid=ATOMIC-RED-S',
+            objecttype: 'Product',
+            productId: 'ATOMIC-MASTER-red',
+            variantId: ''
+        }, {
+            documentId: 'https://example.com/Product-Show?pid=sATOMIC-RED-S',
+            objecttype: 'Variant',
+            productId: 'ATOMIC-MASTER-red',
+            variantId: 'ATOMIC-RED-S'
+        }, {
+            documentId: 'https://example.com/Product-Show?pid=ATOMIC-BLUE-M',
+            objecttype: 'Product',
+            productId: 'ATOMIC-MASTER-blue',
+            variantId: ''
+        }, {
+            documentId: 'https://example.com/Product-Show?pid=sATOMIC-BLUE-M',
+            objecttype: 'Variant',
+            productId: 'ATOMIC-MASTER-blue',
+            variantId: 'ATOMIC-BLUE-M'
+        }]);
+    });
+
+    it('rejects a root whose state changes during generation', function () {
+        var product = createProduct({
+            ID: 'CHANGING-SKU',
+            lastModified: new Date('2026-09-01T00:00:00.000Z')
+        });
+        var mutated = false;
+        var generator = createGeneratorForProduct(product, {
+            applyFieldMappings: function () {
+                if (!mutated) {
+                    mutated = true;
+                    product.lastModified = new Date('2026-09-02T00:00:00.000Z');
+                }
+            }
+        });
+
+        assert.throws(function () {
+            generator.generateRoot('CHANGING-SKU', true, {
+                catalogStructureMode: 'product_only',
+                productEligibilityMode: 'online_and_searchable'
+            });
+        }, /modificationSignature differs/);
+    });
+
+    it('rejects generated document ids that differ from the descriptor', function () {
+        var product = createProduct({
+            ID: 'IDENTITY-SKU'
+        });
+        var generator = createGeneratorForProduct(product, {
+            applyFieldMappings: function (payload) {
+                payload.documentId = 'https://example.com/unexpected';
+            }
+        });
+
+        assert.throws(function () {
+            generator.generateRoot('IDENTITY-SKU', false, {
+                catalogStructureMode: 'product_only',
+                productEligibilityMode: 'online_and_searchable'
+            });
+        }, /generated documentIds that differ from its descriptor/);
     });
 });

@@ -239,7 +239,9 @@ exports.beforeStep = function (parameters, stepExecution) {
         );
 
         if (manifestEnabled) {
-            stateRun = catalogExportStateHelper.beginRun(exportContext, syncStartedAt, catalogExportStateHelper.DEFAULT_STATE_PATH);
+            stateRun = catalogExportStateHelper.beginRun(exportContext, syncStartedAt, catalogExportStateHelper.DEFAULT_STATE_PATH, {
+                reconciliationMode: 'deep'
+            });
         }
 
         products = coveoHelper.buildProductQuery(isDelta, exportContext);
@@ -261,16 +263,16 @@ exports.read = function (parameters, stepExecution) { // eslint-disable-line
 };
 
 exports.process = function (product, parameters, stepExecution) {
-    var items = productRequestGenerator.processProducts(product, isDelta, exportContext);
-
     if (manifestEnabled) {
+        var generatedRoot = productRequestGenerator.generateRoot(product, isDelta, exportContext);
         return {
             rootId: product,
-            items: items
+            descriptor: generatedRoot.descriptor,
+            items: generatedRoot.items
         };
     }
 
-    return items;
+    return productRequestGenerator.processProducts(product, isDelta, exportContext);
 };
 
 exports.write = function (lines, parameters, stepExecution) {
@@ -283,6 +285,10 @@ exports.write = function (lines, parameters, stepExecution) {
                 result.rootId,
                 catalogExportStateHelper.getDocumentIds(result.items),
                 {
+                    modifiedAt: result.descriptor && result.descriptor.modifiedAt,
+                    modificationSignature: result.descriptor && result.descriptor.modificationSignature,
+                    eligibilitySignature: result.descriptor && result.descriptor.eligibilitySignature,
+                    ownershipSignature: result.descriptor && result.descriptor.ownershipSignature,
                     payloadChecksum: catalogExportStateHelper.getPayloadChecksum(result.items)
                 }
             );
@@ -337,13 +343,13 @@ exports.afterStep = function (success, parameters) {
         Logger.info('Coveo deleteolderthan request accepted for source={0}, orderingId={1}', exportContext.coveoSourceId, firstOrderingId);
 
         purchaseMetricHelper.markFullExportApplied(exportContext, exportContext.purchaseMetrics, purchaseMetricHelper.DEFAULT_STATE_PATH);
-        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
 
         if (manifestEnabled) {
             catalogExportStateHelper.promoteRun(stateRun);
             statePromoted = true;
             stateRun = null;
         }
+        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
     } catch (error) {
         if (manifestEnabled && stateRun && !statePromoted) {
             catalogExportStateHelper.abortRun(stateRun);

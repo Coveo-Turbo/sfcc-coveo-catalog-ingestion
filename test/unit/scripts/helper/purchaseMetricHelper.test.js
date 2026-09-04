@@ -302,6 +302,12 @@ describe('purchaseMetricHelper', function () {
         });
         helper.writeTargetSnapshotState('/state/', createContext(), snapshot, mappedRows, skippedRows);
 
+        var streamedChangedRootCount = 0;
+        helper.forEachSnapshotDrivenRootId(createContext(), [snapshot], '/state/', function () {
+            streamedChangedRootCount += 1;
+        });
+        assert.strictEqual(streamedChangedRootCount, 25000);
+
         var changedRoots = helper.getSnapshotDrivenRootIds(createContext(), [snapshot], '/state/');
         var exportedRoots = helper.createHashMap();
         var changedRootCount = 0;

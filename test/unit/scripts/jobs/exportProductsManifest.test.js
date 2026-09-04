@@ -46,17 +46,22 @@ function createFixture(options) {
         INELIGIBLE: []
     };
     var run = {
-        records: []
+        records: [],
+        reconciliationMode: null
     };
     var calls = {
         aborted: false,
         addBatches: [],
+        beginRun: null,
         closed: false,
         deleteBatches: [],
         deleteOlderThan: [],
+        descriptorRoots: [],
         localeRestored: false,
         markedApplied: false,
+        order: [],
         promoted: false,
+        promotedRun: null,
         updatedLastSync: null
     };
     var context = {
@@ -76,7 +81,14 @@ function createFixture(options) {
         abortRun: function () {
             calls.aborted = true;
         },
-        beginRun: function () {
+        beginRun: function (exportContext, startedAt, directoryPath, options) {
+            calls.beginRun = {
+                exportContext: exportContext,
+                startedAt: startedAt,
+                directoryPath: directoryPath,
+                options: options
+            };
+            run.reconciliationMode = options && options.reconciliationMode;
             return run;
         },
         getDocumentIds: function (items) {
@@ -90,13 +102,19 @@ function createFixture(options) {
         isManifestEnabled: function () {
             return true;
         },
-        promoteRun: function () {
+        promoteRun: function (stateRun) {
             calls.promoted = true;
+            calls.promotedRun = stateRun;
+            calls.order.push('promote');
         },
         writeRootRecord: function (stateRun, rootId, documentIds, state) {
             stateRun.records.push({
                 rootId: rootId,
                 documentIds: documentIds,
+                modifiedAt: state.modifiedAt,
+                modificationSignature: state.modificationSignature,
+                eligibilitySignature: state.eligibilitySignature,
+                ownershipSignature: state.ownershipSignature,
                 payloadChecksum: state.payloadChecksum
             });
         }
@@ -156,11 +174,33 @@ function createFixture(options) {
             },
             updateLastSync: function (exportContext, lastSync) {
                 calls.updatedLastSync = lastSync;
+                calls.order.push('lastSync');
             }
         },
         '*/cartridge/scripts/generators/productRequestGenerator': {
+            buildRootDescriptor: function (rootId) {
+                calls.descriptorRoots.push(rootId);
+                return {
+                    modifiedAt: 'modified-' + rootId,
+                    modificationSignature: 'modification-' + rootId,
+                    eligibilitySignature: 'eligibility-' + rootId,
+                    ownershipSignature: 'ownership-' + rootId
+                };
+            },
             processProducts: function (rootId) {
                 return itemsByRoot[rootId] || [];
+            },
+            generateRoot: function (rootId) {
+                calls.descriptorRoots.push(rootId);
+                return {
+                    descriptor: {
+                        modifiedAt: 'modified-' + rootId,
+                        modificationSignature: 'modification-' + rootId,
+                        eligibilitySignature: 'eligibility-' + rootId,
+                        ownershipSignature: 'ownership-' + rootId
+                    },
+                    items: itemsByRoot[rootId] || []
+                };
             }
         },
         '*/cartridge/scripts/helper/purchaseMetricHelper': {
@@ -175,6 +215,7 @@ function createFixture(options) {
                 }
 
                 calls.markedApplied = true;
+                calls.order.push('markApplied');
             }
         },
         '*/cartridge/scripts/helper/streamHelper': {
@@ -206,6 +247,7 @@ function createFixture(options) {
             },
             deleteOlderThan: function (value) {
                 calls.deleteOlderThan.push(value);
+                calls.order.push('deleteOlderThan');
                 return fixtureOptions.failDeleteOlderThan ? {
                     ok: false,
                     errorMessage: 'delete older than failed'
@@ -264,12 +306,48 @@ describe('exportProducts manifest reconciliation', function () {
         assert.lengthOf(fixture.run.records, 2);
         assert.deepEqual(fixture.run.records[0].documentIds, ['doc-eligible']);
         assert.deepEqual(fixture.run.records[1].documentIds, []);
+        assert.deepEqual(fixture.calls.descriptorRoots, ['ELIGIBLE', 'INELIGIBLE']);
+        assert.deepEqual(fixture.run.records.map(function (record) {
+            return {
+                rootId: record.rootId,
+                modifiedAt: record.modifiedAt,
+                modificationSignature: record.modificationSignature,
+                eligibilitySignature: record.eligibilitySignature,
+                ownershipSignature: record.ownershipSignature
+            };
+        }), [{
+            rootId: 'ELIGIBLE',
+            modifiedAt: 'modified-ELIGIBLE',
+            modificationSignature: 'modification-ELIGIBLE',
+            eligibilitySignature: 'eligibility-ELIGIBLE',
+            ownershipSignature: 'ownership-ELIGIBLE'
+        }, {
+            rootId: 'INELIGIBLE',
+            modifiedAt: 'modified-INELIGIBLE',
+            modificationSignature: 'modification-INELIGIBLE',
+            eligibilitySignature: 'eligibility-INELIGIBLE',
+            ownershipSignature: 'ownership-INELIGIBLE'
+        }]);
+        assert.deepEqual(fixture.calls.beginRun.options, {
+            reconciliationMode: 'deep'
+        });
+        assert.strictEqual(fixture.calls.beginRun.exportContext.targetId, 'mondou-en');
+        assert.instanceOf(fixture.calls.beginRun.startedAt, Date);
+        assert.strictEqual(fixture.calls.beginRun.directoryPath, '/src/coveo/state/catalog-export/');
+        assert.strictEqual(fixture.calls.promotedRun, fixture.run);
+        assert.strictEqual(fixture.calls.promotedRun.reconciliationMode, 'deep');
         assert.lengthOf(fixture.calls.addBatches, 1);
         assert.deepEqual(fixture.calls.deleteOlderThan, [100]);
         assert.isTrue(fixture.calls.promoted);
         assert.isFalse(fixture.calls.aborted);
         assert.isTrue(fixture.calls.markedApplied);
         assert.instanceOf(fixture.calls.updatedLastSync, Date);
+        assert.deepEqual(fixture.calls.order, [
+            'deleteOlderThan',
+            'markApplied',
+            'promote',
+            'lastSync'
+        ]);
         assert.isTrue(fixture.calls.closed);
         assert.isTrue(fixture.calls.localeRestored);
     });

@@ -1,7 +1,10 @@
 'use strict';
 
 var CatalogMgr = require('dw/catalog/CatalogMgr');
+var Encoding = require('dw/crypto/Encoding');
+var MessageDigest = require('dw/crypto/MessageDigest');
 var ProductMgr = require('dw/catalog/ProductMgr');
+var Bytes = require('dw/util/Bytes');
 var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
 var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
 var productEligibilityHelper = require('*/cartridge/scripts/helper/productEligibilityHelper');
@@ -321,6 +324,353 @@ function getCanonicalProductId(product) {
     }
 
     return !empty(product) ? product.ID : '';
+}
+
+/**
+ * Builds a SHA-256 signature for deterministic descriptor state.
+ * @param {Object} value - Canonical state to sign.
+ * @returns {string} hexadecimal SHA-256 signature.
+ */
+function digestDescriptorState(value) {
+    var digest = new MessageDigest(MessageDigest.DIGEST_SHA_256);
+    return Encoding.toHex(digest.digestBytes(new Bytes(JSON.stringify(value), 'UTF-8')));
+}
+
+/**
+ * Returns a stable ISO timestamp for an SFCC date value.
+ * @param {*} value - Date-like value.
+ * @returns {string} normalized timestamp.
+ */
+function normalizeTimestamp(value) {
+    var milliseconds;
+
+    if (empty(value) || typeof value.getTime !== 'function') {
+        return '';
+    }
+
+    milliseconds = value.getTime();
+    if (isNaN(milliseconds)) {
+        return '';
+    }
+
+    return new Date(milliseconds).toISOString();
+}
+
+/**
+ * Returns the effective boolean value exposed by an SFCC product.
+ * @param {Object} product - Product to inspect.
+ * @param {string} propertyName - Product property name.
+ * @param {string} methodName - Product getter name.
+ * @returns {boolean} effective boolean value.
+ */
+function getEffectiveProductBoolean(product, propertyName, methodName) {
+    if (empty(product)) {
+        return false;
+    }
+
+    if (typeof product[methodName] === 'function') {
+        return product[methodName]() === true;
+    }
+
+    return product[propertyName] === true;
+}
+
+/**
+ * Returns the canonical Product document id used by payload generation.
+ * @param {Object} product - Product represented by the document.
+ * @returns {string} document id.
+ */
+function getProductDocumentId(product) {
+    return URLUtils.abs('Product-Show', 'pid', product.ID).toString();
+}
+
+/**
+ * Returns the canonical Variant document id used by payload generation.
+ * @param {Object} product - Variant represented by the document.
+ * @returns {string} document id.
+ */
+function getVariantDocumentId(product) {
+    return URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString();
+}
+
+/**
+ * Returns the lightweight root type.
+ * @param {Object} product - Root product.
+ * @returns {string} root type.
+ */
+function getRootType(product) {
+    if (product.master) {
+        return 'master';
+    }
+
+    if (product.variant) {
+        return 'variant';
+    }
+
+    return 'standalone';
+}
+
+/**
+ * Returns a lightweight timestamp record for a product.
+ * @param {Object} product - Product to inspect.
+ * @param {string} role - Relationship role.
+ * @returns {Object|null} timestamp record.
+ */
+function buildModificationRecord(product, role) {
+    if (empty(product)) {
+        return null;
+    }
+
+    return {
+        role: role,
+        id: String(product.ID),
+        masterId: product.variant && !empty(product.masterProduct) ? String(product.masterProduct.ID) : '',
+        master: product.master === true,
+        variant: product.variant === true,
+        creationDate: normalizeTimestamp(product.creationDate),
+        lastModified: normalizeTimestamp(product.lastModified)
+    };
+}
+
+/**
+ * Returns a lightweight effective eligibility record for a product.
+ * @param {Object} product - Product to inspect.
+ * @param {Object} master - Effective master product, when applicable.
+ * @param {Object} exportContext - Export context.
+ * @returns {Object|null} eligibility record.
+ */
+function buildEligibilityRecord(product, master, exportContext) {
+    if (empty(product)) {
+        return null;
+    }
+
+    return {
+        id: String(product.ID),
+        masterId: product.variant && !empty(product.masterProduct) ? String(product.masterProduct.ID) : '',
+        online: getEffectiveProductBoolean(product, 'online', 'isOnline'),
+        searchable: getEffectiveProductBoolean(product, 'searchable', 'isSearchable'),
+        eligible: product.variant
+            ? productEligibilityHelper.isVariantEligible(product, master, exportContext)
+            : productEligibilityHelper.isProductEligible(product, exportContext)
+    };
+}
+
+/**
+ * Builds the exact lightweight identities emitted for a root.
+ * @param {Object} product - Root product.
+ * @param {Array} eligibleVariants - Eligible master variants.
+ * @param {Object} exportContext - Export context.
+ * @param {boolean} rootEligible - Whether the root is eligible.
+ * @returns {Array} generated document identities.
+ */
+function buildRootDocumentIdentities(product, eligibleVariants, exportContext, rootEligible) {
+    var identities = [];
+    var groupedVariants = {};
+    var isProductOnly = isProductOnlyCatalogStructureMode(exportContext);
+
+    function appendProductIdentity(sourceProduct, productId, itemGroupId) {
+        identities.push({
+            documentId: getProductDocumentId(sourceProduct),
+            objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
+            productId: productId,
+            variantId: '',
+            itemGroupId: itemGroupId
+        });
+    }
+
+    function appendVariantIdentity(variant, productId, itemGroupId) {
+        identities.push({
+            documentId: getVariantDocumentId(variant),
+            objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT,
+            productId: productId,
+            variantId: String(variant.ID),
+            itemGroupId: itemGroupId
+        });
+    }
+
+    if (!rootEligible) {
+        return identities;
+    }
+
+    if (product.master) {
+        if (isProductOnly) {
+            eligibleVariants.forEach(function (variant) {
+                appendProductIdentity(variant, String(variant.ID), String(product.ID));
+            });
+            return identities;
+        }
+
+        eligibleVariants.forEach(function (variant) {
+            var colorKey = getColorGroupKey(variant);
+            if (!groupedVariants[colorKey]) {
+                groupedVariants[colorKey] = [];
+            }
+            groupedVariants[colorKey].push(variant);
+        });
+
+        Object.keys(groupedVariants).forEach(function (colorKey) {
+            var currentVariants = groupedVariants[colorKey];
+            var representativeVariant = currentVariants[0];
+            var productId = getCanonicalProductId(representativeVariant);
+
+            appendProductIdentity(representativeVariant, productId, String(product.ID));
+            currentVariants.forEach(function (variant) {
+                appendVariantIdentity(variant, productId, String(product.ID));
+            });
+        });
+        return identities;
+    }
+
+    if (product.variant && !empty(product.masterProduct)) {
+        if (isProductOnly) {
+            appendProductIdentity(product, String(product.ID), String(product.masterProduct.ID));
+            return identities;
+        }
+
+        var groupedProductId = getCanonicalProductId(product);
+        appendProductIdentity(product, groupedProductId, String(product.masterProduct.ID));
+        appendVariantIdentity(product, groupedProductId, String(product.masterProduct.ID));
+        return identities;
+    }
+
+    appendProductIdentity(product, String(product.ID), String(product.ID));
+    return identities;
+}
+
+/**
+ * Builds lightweight change, eligibility, and ownership state for an export root.
+ * This intentionally avoids all complete payload dependencies.
+ * @param {Object} product - Loaded export root product.
+ * @param {Object} exportContext - Export context.
+ * @returns {Object|null} lightweight root descriptor.
+ */
+function buildRootDescriptorFromProduct(product, exportContext) {
+    var rootType;
+    var master;
+    var allVariants;
+    var eligibleVariants = [];
+    var rootEligible;
+    var modificationRecords;
+    var eligibilityRecords;
+    var identities;
+    var documentIds;
+    var structureMode;
+    var eligibilityMode;
+    var modifiedAt = '';
+
+    if (empty(product)) {
+        return null;
+    }
+
+    rootType = getRootType(product);
+    master = product.master ? product : (product.variant && !empty(product.masterProduct) ? product.masterProduct : null);
+    allVariants = !empty(master) ? toArray(master.variants) : [];
+    rootEligible = product.variant && !empty(master)
+        ? productEligibilityHelper.isVariantEligible(product, master, exportContext)
+        : productEligibilityHelper.isProductEligible(product, exportContext);
+
+    if (product.master && rootEligible) {
+        eligibleVariants = productEligibilityHelper.getEligibleVariants(product, exportContext);
+    } else if (product.variant && rootEligible) {
+        eligibleVariants = [product];
+    }
+
+    modificationRecords = [buildModificationRecord(product, 'root')];
+    if (!empty(master)) {
+        modificationRecords.push(buildModificationRecord(master, 'master'));
+    }
+    allVariants.forEach(function (variant) {
+        modificationRecords.push(buildModificationRecord(variant, 'variant'));
+    });
+    modificationRecords = modificationRecords.filter(function (record) {
+        return record !== null;
+    }).sort(function (left, right) {
+        var leftKey = left.role + '\u0000' + left.id;
+        var rightKey = right.role + '\u0000' + right.id;
+        return leftKey < rightKey ? -1 : (leftKey > rightKey ? 1 : 0);
+    });
+    modificationRecords.forEach(function (record) {
+        [record.creationDate, record.lastModified].forEach(function (timestamp) {
+            if (timestamp > modifiedAt) {
+                modifiedAt = timestamp;
+            }
+        });
+    });
+
+    eligibilityRecords = [buildEligibilityRecord(product, master, exportContext)];
+    if (!empty(master)) {
+        eligibilityRecords.push(buildEligibilityRecord(master, null, exportContext));
+    }
+    allVariants.forEach(function (variant) {
+        eligibilityRecords.push(buildEligibilityRecord(variant, master, exportContext));
+    });
+    eligibilityRecords = eligibilityRecords.filter(function (record) {
+        return record !== null;
+    }).sort(function (left, right) {
+        var leftKey = left.id + '\u0000' + left.masterId;
+        var rightKey = right.id + '\u0000' + right.masterId;
+        return leftKey < rightKey ? -1 : (leftKey > rightKey ? 1 : 0);
+    });
+
+    identities = buildRootDocumentIdentities(product, eligibleVariants, exportContext, rootEligible);
+    identities.sort(function (left, right) {
+        var leftKey = left.documentId + '\u0000' + left.objecttype + '\u0000' + left.productId + '\u0000' + left.variantId;
+        var rightKey = right.documentId + '\u0000' + right.objecttype + '\u0000' + right.productId + '\u0000' + right.variantId;
+        return leftKey < rightKey ? -1 : (leftKey > rightKey ? 1 : 0);
+    });
+    documentIds = identities.map(function (identity) {
+        return identity.documentId;
+    }).sort();
+    structureMode = exportTargetHelper.normalizeCatalogStructureMode(exportContext && exportContext.catalogStructureMode);
+    eligibilityMode = exportTargetHelper.normalizeProductEligibilityMode(exportContext && exportContext.productEligibilityMode);
+
+    var signatureBase = {
+        descriptorSchemaVersion: 1,
+        rootId: String(product.ID),
+        rootType: rootType
+    };
+    var eligibleVariantIds = eligibleVariants.map(function (variant) {
+        return String(variant.ID);
+    }).sort();
+
+    return {
+        descriptorSchemaVersion: 1,
+        rootId: String(product.ID),
+        rootType: rootType,
+        modifiedAt: modifiedAt,
+        modificationSignature: digestDescriptorState({
+            descriptor: signatureBase,
+            records: modificationRecords
+        }),
+        eligibilitySignature: digestDescriptorState({
+            descriptor: signatureBase,
+            catalogStructureMode: structureMode,
+            productEligibilityMode: eligibilityMode,
+            rootEligible: rootEligible,
+            eligibleVariantIds: eligibleVariantIds,
+            records: eligibilityRecords
+        }),
+        ownershipSignature: digestDescriptorState({
+            descriptor: signatureBase,
+            catalogStructureMode: structureMode,
+            productEligibilityMode: eligibilityMode,
+            rootEligible: rootEligible,
+            eligibleVariantIds: eligibleVariantIds,
+            identities: identities,
+            documentIds: documentIds
+        }),
+        documentIds: documentIds
+    };
+}
+
+/**
+ * Builds lightweight change, eligibility, and ownership state for an export root.
+ * @param {string} rootId - Export root product id.
+ * @param {Object} exportContext - Export context.
+ * @returns {Object|null} lightweight root descriptor.
+ */
+function buildRootDescriptor(rootId, exportContext) {
+    return buildRootDescriptorFromProduct(ProductMgr.getProduct(rootId), exportContext);
 }
 
 /**
@@ -745,7 +1095,7 @@ function getProductsData(product, exportOptions, exportContext) {
         var productColor = getProductColor(product);
         var exportPrices = getExportPrices(product);
         prdObj = {
-            documentId: URLUtils.abs('Product-Show', 'pid', product.ID).toString(),
+            documentId: getProductDocumentId(product),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             model: coveoConstant.COVEO_CONSTANTS.MODEL,
             language: getExportLanguage(exportContext),
@@ -805,7 +1155,7 @@ function getVariantsData(product, productId, exportContext) {
     var variantObj = null;
     try {
         variantObj = {
-            documentId: URLUtils.abs('Product-Show', 'pid', 's' + product.ID).toString(),
+            documentId: getVariantDocumentId(product),
             FileExtension: coveoConstant.COVEO_CONSTANTS.EXTENSION,
             language: getExportLanguage(exportContext),
             permanentid: product.ID,
@@ -832,19 +1182,18 @@ function getVariantsData(product, productId, exportContext) {
 }
 
 /**
- * get product object to be exported
- * @function processProducts
- * @param {Object} product - product
+ * Generates export items from an already loaded product.
+ * @param {Object} product - loaded product
  * @param {boolean} isDelta - isDelta
  * @param {Object} exportContext - export context
  * @returns {Object} - product object
  */
-function processProducts(product, isDelta, exportContext) {
+function processLoadedProduct(product, isDelta, exportContext) {
     var coveoProducts = [];
     var isProductOnly = isProductOnlyCatalogStructureMode(exportContext);
 
     try {
-        var coveoPrd = ProductMgr.getProduct(product);
+        var coveoPrd = product;
 
         if (empty(coveoPrd)) {
             return coveoProducts;
@@ -951,6 +1300,109 @@ function processProducts(product, isDelta, exportContext) {
     return coveoProducts;
 }
 
+/**
+ * Gets and generates the product object to be exported.
+ * @function processProducts
+ * @param {string} product - product id
+ * @param {boolean} isDelta - isDelta
+ * @param {Object} exportContext - export context
+ * @returns {Object} - product object
+ */
+function processProducts(product, isDelta, exportContext) {
+    var coveoPrd;
+
+    try {
+        coveoPrd = ProductMgr.getProduct(product);
+    } catch (ex) {
+        Logger.error('(productRequestGenerator-processProducts) -> Error occured while processing products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
+
+        if (shouldPropagatePayloadError(exportContext)) {
+            throw ex;
+        }
+
+        return [];
+    }
+
+    return processLoadedProduct(coveoPrd, isDelta, exportContext);
+}
+
+/**
+ * Returns sorted document ids from generated items.
+ * @param {Array} items - Generated export items.
+ * @returns {Array} sorted document ids.
+ */
+function getGeneratedDocumentIds(items) {
+    return items.map(function (item) {
+        return item && !empty(item.documentId) ? String(item.documentId) : '';
+    }).sort();
+}
+
+/**
+ * Returns whether two arrays contain the same values in the same order.
+ * @param {Array} left - First array.
+ * @param {Array} right - Second array.
+ * @returns {boolean} whether the arrays match.
+ */
+function arraysEqual(left, right) {
+    var index;
+
+    if (left.length !== right.length) {
+        return false;
+    }
+
+    for (index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Generates one root from a single loaded product snapshot and rejects unstable state.
+ * @param {string} rootId - Export root product id.
+ * @param {boolean} isDelta - Whether the generation is for a delta export.
+ * @param {Object} exportContext - Export context.
+ * @returns {Object} descriptor and generated items.
+ */
+function generateRoot(rootId, isDelta, exportContext) {
+    var product = ProductMgr.getProduct(rootId);
+    var descriptor = buildRootDescriptorFromProduct(product, exportContext);
+    var items = processLoadedProduct(product, isDelta, exportContext);
+    var descriptorAfter = buildRootDescriptorFromProduct(product, exportContext);
+    var signatureNames = [
+        'modificationSignature',
+        'eligibilitySignature',
+        'ownershipSignature'
+    ];
+    var generatedDocumentIds;
+
+    if (descriptor === null || descriptorAfter === null) {
+        if (descriptor !== descriptorAfter) {
+            throw new Error('Product root "' + rootId + '" changed during generation.');
+        }
+    } else {
+        signatureNames.forEach(function (signatureName) {
+            if (descriptor[signatureName] !== descriptorAfter[signatureName]) {
+                throw new Error('Product root "' + rootId + '" changed during generation: ' + signatureName + ' differs.');
+            }
+        });
+    }
+
+    generatedDocumentIds = getGeneratedDocumentIds(items);
+    if (!arraysEqual(generatedDocumentIds, descriptor ? descriptor.documentIds : [])) {
+        throw new Error('Product root "' + rootId + '" generated documentIds that differ from its descriptor.');
+    }
+
+    return {
+        descriptor: descriptor,
+        items: items
+    };
+}
+
 module.exports = {
+    buildRootDescriptor: buildRootDescriptor,
+    generateRoot: generateRoot,
     processProducts: processProducts
 };

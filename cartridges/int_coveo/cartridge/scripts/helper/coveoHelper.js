@@ -578,10 +578,33 @@ function writeProductOperationsFile(source, products, deletes, exportContext) {
         catalogStructureMode: exportContext && exportContext.catalogStructureMode ? exportContext.catalogStructureMode : ''
     });
     var productFile = createProductFeedFile(source);
-    var productFileWriter = new FileWriter(productFile);
-    productFileWriter.writeLine(JSON.stringify(payload));
-    productFileWriter.flush();
-    productFileWriter.close();
+    var productFileWriter = null;
+    var writeError = null;
+
+    try {
+        productFileWriter = new FileWriter(productFile);
+        productFileWriter.writeLine(JSON.stringify(payload));
+        productFileWriter.flush();
+    } catch (error) {
+        writeError = error;
+    } finally {
+        if (productFileWriter) {
+            try {
+                productFileWriter.close();
+            } catch (closeError) {
+                writeError = writeError || closeError;
+            }
+        }
+    }
+
+    if (writeError) {
+        if (productFile.exists()) {
+            productFile.remove();
+        }
+
+        throw writeError;
+    }
+
     return productFile;
 }
 

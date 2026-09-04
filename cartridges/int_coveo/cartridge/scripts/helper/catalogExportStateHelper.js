@@ -10,7 +10,9 @@ var UUIDUtils = require('dw/util/UUIDUtils');
 
 var DEFAULT_STATE_PATH = '/src/coveo/state/catalog-export/';
 var MANIFEST_SCHEMA_VERSION = 1;
+var DESCRIPTOR_SCHEMA_VERSION = 1;
 var MANIFEST_SHARD_COUNT = 16;
+var DEFAULT_MAX_DEEP_RECONCILIATION_AGE_HOURS = 24;
 
 function normalizeString(value) {
     return value === null || value === undefined ? '' : String(value).trim();
@@ -92,6 +94,95 @@ function getShardIndex(rootId) {
 function isManifestEnabled(exportContext) {
     return normalizeString(exportContext && exportContext.productEligibilityMode) !== ''
         && normalizeString(exportContext && exportContext.productEligibilityMode) !== 'legacy';
+}
+
+function buildModeSelection(mode, reason, baselineAgeHours) {
+    return {
+        mode: mode,
+        reason: reason,
+        baselineAgeHours: baselineAgeHours === undefined ? null : baselineAgeHours
+    };
+}
+
+function rejectFastMode(reason, message, baselineAgeHours) {
+    var error = new Error('Fast Coveo catalog reconciliation cannot run: ' + message);
+    error.reason = reason;
+    error.baselineAgeHours = baselineAgeHours === undefined ? null : baselineAgeHours;
+    throw error;
+}
+
+function selectReconciliationMode(manifest, options, now) {
+    var resolvedOptions = options || {};
+    var requestedMode = normalizeString(resolvedOptions.requestedMode || 'auto').toLowerCase();
+    var maxAgeHours = resolvedOptions.maxAgeHours;
+    var resolvedNow = now instanceof Date ? new Date(now.getTime()) : new Date(now);
+    var lastDeepReconciledAt;
+    var baselineTime;
+    var baselineAgeHours;
+    var requiredReason = '';
+    var requiredMessage = '';
+
+    if (requestedMode !== 'auto' && requestedMode !== 'fast' && requestedMode !== 'deep') {
+        throw new Error('Unsupported Coveo catalog reconciliation mode "' + requestedMode + '". Use auto, fast, or deep.');
+    }
+
+    if (isNaN(resolvedNow.getTime())) {
+        throw new Error('A valid current time is required to select the Coveo catalog reconciliation mode.');
+    }
+
+    if (maxAgeHours === null || maxAgeHours === undefined || normalizeString(maxAgeHours) === '') {
+        maxAgeHours = DEFAULT_MAX_DEEP_RECONCILIATION_AGE_HOURS;
+    } else {
+        maxAgeHours = Number(maxAgeHours);
+    }
+
+    if (isNaN(maxAgeHours) || !isFinite(maxAgeHours) || maxAgeHours < 0) {
+        throw new Error('The maximum Coveo deep reconciliation age must be a non-negative number of hours.');
+    }
+
+    if (resolvedOptions.forceDeep === true || normalizeString(resolvedOptions.forceDeep).toLowerCase() === 'true') {
+        return buildModeSelection('deep', 'force-deep');
+    }
+
+    if (requestedMode === 'deep') {
+        return buildModeSelection('deep', 'explicit-deep');
+    }
+
+    if (resolvedOptions.pendingDeepRequest) {
+        requiredReason = 'pending-deep-request';
+        requiredMessage = 'a dependency requested a deep reconciliation.';
+    } else if (!manifest) {
+        requiredReason = 'missing-deep-baseline';
+        requiredMessage = 'there is no active deep baseline.';
+    } else if (manifest.descriptorSchemaVersion !== DESCRIPTOR_SCHEMA_VERSION) {
+        requiredReason = 'unsupported-descriptor-schema';
+        requiredMessage = 'the active baseline does not contain supported root descriptors.';
+    } else {
+        lastDeepReconciledAt = normalizeString(manifest.lastDeepReconciledAt);
+        baselineTime = new Date(lastDeepReconciledAt);
+
+        if (lastDeepReconciledAt === '' || isNaN(baselineTime.getTime())) {
+            requiredReason = 'invalid-deep-baseline-timestamp';
+            requiredMessage = 'the active baseline has no valid deep reconciliation timestamp.';
+        } else {
+            baselineAgeHours = Math.max(0, resolvedNow.getTime() - baselineTime.getTime()) / (60 * 60 * 1000);
+
+            if (baselineAgeHours >= maxAgeHours) {
+                requiredReason = 'maximum-deep-age-exceeded';
+                requiredMessage = 'the active deep baseline is ' + baselineAgeHours + ' hours old, which meets or exceeds the ' + maxAgeHours + '-hour maximum.';
+            }
+        }
+    }
+
+    if (requiredReason !== '') {
+        if (requestedMode === 'fast') {
+            rejectFastMode(requiredReason, requiredMessage, baselineAgeHours);
+        }
+
+        return buildModeSelection('deep', requiredReason, baselineAgeHours);
+    }
+
+    return buildModeSelection('fast', 'usable-deep-baseline', baselineAgeHours);
 }
 
 function getDocumentIds(items) {
@@ -227,7 +318,7 @@ function releaseLock(run) {
     }
 }
 
-function ensureSourceOwnership(directoryPath, sourceKey, targetKey) {
+function ensureSourceOwnership(directoryPath, sourceKey, targetKey, exportContext) {
     var ownershipFileName = getSourceOwnershipFileName(sourceKey);
     var ownershipFile = getFile(directoryPath, ownershipFileName);
     var contents = readTextFile(ownershipFile);
@@ -237,7 +328,19 @@ function ensureSourceOwnership(directoryPath, sourceKey, targetKey) {
         ownership = JSON.parse(contents);
 
         if (ownership.targetKey !== targetKey) {
-            throw new Error('Coveo source ' + sourceKey + ' is already owned by another catalog export target. Configure a distinct coveoSourceId for each target.');
+            var ownerDescription = normalizeString(ownership.targetId) || ownership.targetKey;
+            var requestedDescription = normalizeString(exportContext && exportContext.targetId) || targetKey;
+            var sourceDescription = normalizeString(exportContext && exportContext.coveoSourceId) || sourceKey;
+
+            throw new Error(
+                'Coveo source "' + sourceDescription + '" is already owned by another catalog export target "'
+                + ownerDescription
+                + '" and cannot be claimed by "'
+                + requestedDescription
+                + '". Configure a distinct coveoSourceId for each target. Ownership file: '
+                + ownershipFileName
+                + '.'
+            );
         }
 
         return;
@@ -245,6 +348,10 @@ function ensureSourceOwnership(directoryPath, sourceKey, targetKey) {
 
     writeJsonFileAtomically(directoryPath, ownershipFileName, {
         targetKey: targetKey,
+        siteId: normalizeString(exportContext && exportContext.siteId),
+        targetId: normalizeString(exportContext && exportContext.targetId),
+        organizationId: normalizeString(exportContext && exportContext.coveoOrganizationId),
+        sourceId: normalizeString(exportContext && exportContext.coveoSourceId),
         claimedAt: new Date().toISOString()
     });
 }
@@ -289,16 +396,24 @@ function assertCompatibleManifest(exportContext, manifest) {
     }
 }
 
-function beginRun(exportContext, startedAt, directoryPath) {
+function beginRun(exportContext, startedAt, directoryPath, options) {
+    var resolvedOptions = options || {};
+    var resolvedDirectoryArgument = directoryPath;
+
+    if (directoryPath && typeof directoryPath === 'object') {
+        resolvedOptions = directoryPath;
+        resolvedDirectoryArgument = null;
+    }
+
     var targetKey = getTargetKey(exportContext);
     var sourceKey = getSourceKey(exportContext);
-    var resolvedDirectoryPath = directoryPath || DEFAULT_STATE_PATH;
+    var resolvedDirectoryPath = resolvedDirectoryArgument || DEFAULT_STATE_PATH;
     var generation = buildGeneration(startedAt);
     var lockToken = UUIDUtils.createUUID().toString();
     var lockFile = acquireLock(resolvedDirectoryPath, sourceKey, lockToken);
 
     try {
-        ensureSourceOwnership(resolvedDirectoryPath, sourceKey, targetKey);
+        ensureSourceOwnership(resolvedDirectoryPath, sourceKey, targetKey, exportContext);
     } catch (error) {
         if (lockFile.exists()) {
             lockFile.remove();
@@ -317,12 +432,21 @@ function beginRun(exportContext, startedAt, directoryPath) {
         shardFiles: {},
         documentIndexWriters: {},
         documentIndexFiles: {},
+        rootDescriptorWriters: {},
+        rootDescriptorFiles: {},
+        rootDescriptorsClosed: false,
+        purchaseRootWriters: {},
+        purchaseRootFiles: {},
+        purchaseRootsClosed: false,
         deleteCandidateWriters: {},
         deleteCandidateFiles: {},
         deleteCandidatesClosed: false,
         rootCount: 0,
         documentCount: 0,
         closed: false,
+        promoted: false,
+        reconciliationMode: normalizeString(resolvedOptions.reconciliationMode || 'deep').toLowerCase(),
+        activeManifest: resolvedOptions.activeManifest || null,
         lockFile: lockFile,
         lockToken: lockToken
     };
@@ -349,8 +473,23 @@ function getRunWriter(run, shardIndex) {
 }
 
 function getTransientRunWriter(run, kind, shardIndex) {
-    var writerCollection = kind === 'documents' ? run.documentIndexWriters : run.deleteCandidateWriters;
-    var fileCollection = kind === 'documents' ? run.documentIndexFiles : run.deleteCandidateFiles;
+    var writerCollection;
+    var fileCollection;
+
+    if (kind === 'documents') {
+        writerCollection = run.documentIndexWriters;
+        fileCollection = run.documentIndexFiles;
+    } else if (kind === 'descriptors') {
+        writerCollection = run.rootDescriptorWriters;
+        fileCollection = run.rootDescriptorFiles;
+    } else if (kind === 'purchase') {
+        writerCollection = run.purchaseRootWriters;
+        fileCollection = run.purchaseRootFiles;
+    } else {
+        writerCollection = run.deleteCandidateWriters;
+        fileCollection = run.deleteCandidateFiles;
+    }
+
     var writer = writerCollection[shardIndex];
 
     if (writer) {
@@ -395,8 +534,97 @@ function normalizeDocumentIds(documentIds) {
     }).sort();
 }
 
+function writeRootDescriptor(run, rootId, descriptor) {
+    var resolvedDescriptor = descriptor || {};
+    var resolvedRootId = rootId;
+    var normalizedRootId;
+    var shardIndex;
+    var writer;
+    var record = {};
+
+    if (rootId && typeof rootId === 'object' && descriptor === undefined) {
+        resolvedDescriptor = rootId;
+        resolvedRootId = resolvedDescriptor.rootId;
+    }
+
+    if (!run || run.rootDescriptorsClosed || run.promoted) {
+        throw new Error('Cannot write to closed Coveo catalog export root descriptor shards.');
+    }
+
+    normalizedRootId = normalizeString(resolvedRootId);
+
+    if (normalizedRootId === '') {
+        throw new Error('Catalog export root descriptors require a root product id.');
+    }
+
+    Object.keys(resolvedDescriptor).forEach(function (key) {
+        record[key] = resolvedDescriptor[key];
+    });
+    record.rootId = normalizedRootId;
+    record.descriptorVersion = DESCRIPTOR_SCHEMA_VERSION;
+    record.modifiedAt = normalizeString(resolvedDescriptor.modifiedAt);
+    record.modificationSignature = normalizeString(resolvedDescriptor.modificationSignature);
+    record.eligibilitySignature = normalizeString(resolvedDescriptor.eligibilitySignature);
+    record.ownershipSignature = normalizeString(resolvedDescriptor.ownershipSignature);
+
+    if (Object.prototype.hasOwnProperty.call(resolvedDescriptor, 'documentIds')) {
+        record.documentIds = normalizeDocumentIds(resolvedDescriptor.documentIds);
+    }
+
+    shardIndex = getShardIndex(normalizedRootId);
+    writer = getTransientRunWriter(run, 'descriptors', shardIndex);
+    writer.write(JSON.stringify(record) + '\n');
+    return record;
+}
+
+function closeRootDescriptors(run) {
+    if (!run || run.rootDescriptorsClosed) {
+        return;
+    }
+
+    Object.keys(run.rootDescriptorWriters).forEach(function (shardIndex) {
+        var writer = run.rootDescriptorWriters[shardIndex];
+        writer.flush();
+        closeQuietly(writer);
+    });
+
+    run.rootDescriptorWriters = {};
+    run.rootDescriptorsClosed = true;
+}
+
+function writePurchaseRootId(run, rootId) {
+    var normalizedRootId = normalizeString(rootId);
+
+    if (!run || run.purchaseRootsClosed || run.promoted) {
+        throw new Error('Cannot write to closed Coveo catalog export purchase-root shards.');
+    }
+
+    if (normalizedRootId === '') {
+        return;
+    }
+
+    var shardIndex = getShardIndex(normalizedRootId);
+    var writer = getTransientRunWriter(run, 'purchase', shardIndex);
+    writer.write(JSON.stringify({ rootId: normalizedRootId }) + '\n');
+}
+
+function closePurchaseRootIds(run) {
+    if (!run || run.purchaseRootsClosed) {
+        return;
+    }
+
+    Object.keys(run.purchaseRootWriters).forEach(function (shardIndex) {
+        var writer = run.purchaseRootWriters[shardIndex];
+        writer.flush();
+        closeQuietly(writer);
+    });
+
+    run.purchaseRootWriters = {};
+    run.purchaseRootsClosed = true;
+}
+
 function writeRootRecord(run, rootId, documentIds, state) {
-    if (!run || run.closed) {
+    if (!run || run.closed || run.promoted) {
         throw new Error('Cannot write to a closed Coveo catalog export manifest run.');
     }
 
@@ -415,68 +643,20 @@ function writeRootRecord(run, rootId, documentIds, state) {
     record = {
         rootId: normalizedRootId,
         documentIds: normalizedDocumentIds,
+        descriptorVersion: DESCRIPTOR_SCHEMA_VERSION,
         modifiedAt: normalizeString(state && state.modifiedAt),
+        modificationSignature: normalizeString(state && state.modificationSignature),
         eligibilitySignature: normalizeString(state && state.eligibilitySignature),
+        ownershipSignature: normalizeString(state && state.ownershipSignature),
         payloadChecksum: normalizeString(state && state.payloadChecksum)
     };
 
-    if (state && Array.isArray(state.items)) {
-        record.items = state.items.filter(function (item) {
-            return !!item;
-        });
-        writeCurrentDocumentIds(run, normalizedDocumentIds);
-    }
+    writeCurrentDocumentIds(run, normalizedDocumentIds);
 
     writer.write(JSON.stringify(record) + '\n');
     run.rootCount += 1;
     run.documentCount += normalizedDocumentIds.length;
     return record;
-}
-
-function compactRunShards(run) {
-    Object.keys(run.shardFiles).forEach(function (shardIndex) {
-        var fileName = run.shardFiles[shardIndex];
-        var sourceFile = getFile(run.directoryPath, fileName);
-        var temporaryFile = getFile(run.directoryPath, fileName + '.tmp');
-        var reader = null;
-        var writer = null;
-        var line;
-
-        if (temporaryFile.exists()) {
-            temporaryFile.remove();
-        }
-
-        reader = new FileReader(sourceFile, 'UTF-8');
-        writer = new FileWriter(temporaryFile, 'UTF-8');
-
-        try {
-            line = reader.readLine();
-
-            while (line !== null) {
-                if (normalizeString(line) !== '') {
-                    var record = JSON.parse(line);
-                    delete record.items;
-                    writer.write(JSON.stringify(record) + '\n');
-                }
-
-                line = reader.readLine();
-            }
-
-            writer.flush();
-        } finally {
-            closeQuietly(reader);
-            closeQuietly(writer);
-        }
-
-        if (!sourceFile.remove()) {
-            temporaryFile.remove();
-            throw new Error('Unable to compact catalog export manifest shard ' + fileName + '.');
-        }
-
-        if (!temporaryFile.renameTo(sourceFile)) {
-            throw new Error('Unable to promote compacted catalog export manifest shard ' + fileName + '.');
-        }
-    });
 }
 
 function closeRun(run) {
@@ -496,6 +676,9 @@ function closeRun(run) {
         closeQuietly(writer);
     });
 
+    closeRootDescriptors(run);
+    closePurchaseRootIds(run);
+
     run.writers = {};
     run.documentIndexWriters = {};
     run.closed = true;
@@ -504,8 +687,8 @@ function closeRun(run) {
 function writeDeleteCandidate(run, documentId) {
     var normalizedDocumentId = normalizeString(documentId);
 
-    if (!run || !run.closed) {
-        throw new Error('Catalog export delete candidates can only be written after the candidate manifest is closed.');
+    if (!run || run.promoted) {
+        throw new Error('Cannot write Coveo catalog export delete candidates without an active manifest run.');
     }
 
     if (run.deleteCandidatesClosed) {
@@ -554,14 +737,16 @@ function removeTransientFiles(run) {
     }
 
     removeFileCollection(run.directoryPath, run.documentIndexFiles);
+    removeFileCollection(run.directoryPath, run.rootDescriptorFiles);
+    removeFileCollection(run.directoryPath, run.purchaseRootFiles);
     removeFileCollection(run.directoryPath, run.deleteCandidateFiles);
 }
 
-function removeGenerationFiles(manifest) {
+function removeGenerationFiles(manifest, defaultDirectoryPath) {
     var shardFiles = manifest && manifest.shardFiles ? manifest.shardFiles : {};
 
     Object.keys(shardFiles).forEach(function (shardIndex) {
-        var file = getFile(manifest.directoryPath || DEFAULT_STATE_PATH, shardFiles[shardIndex]);
+        var file = getFile(manifest.directoryPath || defaultDirectoryPath || DEFAULT_STATE_PATH, shardFiles[shardIndex]);
 
         if (file.exists()) {
             file.remove();
@@ -569,10 +754,31 @@ function removeGenerationFiles(manifest) {
     });
 }
 
+function removePreviousGenerationAfterPromotion(run, previousManifest, manifest) {
+    if (!previousManifest
+        || previousManifest.generation === manifest.generation
+        || (previousManifest.targetKey && previousManifest.targetKey !== run.targetKey)
+        || (previousManifest.directoryPath && previousManifest.directoryPath !== run.directoryPath)) {
+        return;
+    }
+
+    try {
+        removeGenerationFiles(previousManifest, run.directoryPath);
+    } catch (cleanupError) {
+        // The new pointer is already durable. Retaining an old generation is safer than failing promotion.
+    }
+}
+
 function abortRun(run) {
     closeRun(run);
+    closeRootDescriptors(run);
+    closePurchaseRootIds(run);
     closeDeleteCandidates(run);
-    removeGenerationFiles(run);
+
+    if (!run || !run.promoted) {
+        removeGenerationFiles(run);
+    }
+
     removeTransientFiles(run);
     releaseLock(run);
 }
@@ -582,16 +788,23 @@ function promoteRun(run) {
     var manifest;
 
     closeRun(run);
+    closeRootDescriptors(run);
+    closePurchaseRootIds(run);
     closeDeleteCandidates(run);
-    compactRunShards(run);
     removeTransientFiles(run);
-    previousManifest = loadManifestForTargetKey(run.targetKey, run.directoryPath);
+    previousManifest = run.activeManifest || loadManifestForTargetKey(run.targetKey, run.directoryPath);
+    var completedAt = new Date().toISOString();
     manifest = {
         schemaVersion: MANIFEST_SCHEMA_VERSION,
+        descriptorSchemaVersion: DESCRIPTOR_SCHEMA_VERSION,
         generation: run.generation,
         fingerprint: run.fingerprint,
         startedAt: run.startedAt,
-        completedAt: new Date().toISOString(),
+        completedAt: completedAt,
+        reconciliationMode: run.reconciliationMode,
+        lastDeepReconciledAt: run.reconciliationMode === 'deep'
+            ? completedAt
+            : (previousManifest && previousManifest.lastDeepReconciledAt) || null,
         shardCount: MANIFEST_SHARD_COUNT,
         shardFiles: run.shardFiles,
         rootCount: run.rootCount,
@@ -599,10 +812,9 @@ function promoteRun(run) {
     };
 
     writeJsonFileAtomically(run.directoryPath, getPointerFileName(run.targetKey), manifest);
+    run.promoted = true;
 
-    if (previousManifest && previousManifest.generation !== manifest.generation) {
-        removeGenerationFiles(previousManifest);
-    }
+    removePreviousGenerationAfterPromotion(run, previousManifest, manifest);
 
     releaseLock(run);
     manifest.targetKey = run.targetKey;
@@ -682,6 +894,16 @@ function forEachCurrentDocumentId(run, shardIndex, callback) {
     });
 }
 
+function forEachRootDescriptor(run, shardIndex, callback) {
+    forEachTransientRecord(run, run && run.rootDescriptorFiles, shardIndex, callback);
+}
+
+function forEachPurchaseRootId(run, shardIndex, callback) {
+    forEachTransientRecord(run, run && run.purchaseRootFiles, shardIndex, function (record) {
+        callback(record.rootId);
+    });
+}
+
 function forEachDeleteCandidate(run, shardIndex, callback) {
     forEachTransientRecord(run, run && run.deleteCandidateFiles, shardIndex, function (record) {
         callback(record.documentId);
@@ -691,15 +913,21 @@ function forEachDeleteCandidate(run, shardIndex, callback) {
 module.exports = {
     DEFAULT_STATE_PATH: DEFAULT_STATE_PATH,
     MANIFEST_SCHEMA_VERSION: MANIFEST_SCHEMA_VERSION,
+    DESCRIPTOR_SCHEMA_VERSION: DESCRIPTOR_SCHEMA_VERSION,
     MANIFEST_SHARD_COUNT: MANIFEST_SHARD_COUNT,
+    DEFAULT_MAX_DEEP_RECONCILIATION_AGE_HOURS: DEFAULT_MAX_DEEP_RECONCILIATION_AGE_HOURS,
     abortRun: abortRun,
     assertCompatibleManifest: assertCompatibleManifest,
     beginRun: beginRun,
     buildFingerprint: buildFingerprint,
     closeDeleteCandidates: closeDeleteCandidates,
+    closeRootDescriptors: closeRootDescriptors,
+    closePurchaseRootIds: closePurchaseRootIds,
     closeRun: closeRun,
     forEachCurrentDocumentId: forEachCurrentDocumentId,
     forEachDeleteCandidate: forEachDeleteCandidate,
+    forEachRootDescriptor: forEachRootDescriptor,
+    forEachPurchaseRootId: forEachPurchaseRootId,
     forEachShardRecord: forEachShardRecord,
     getShardIndex: getShardIndex,
     getDocumentIds: getDocumentIds,
@@ -707,6 +935,9 @@ module.exports = {
     isManifestEnabled: isManifestEnabled,
     loadActiveManifest: loadActiveManifest,
     promoteRun: promoteRun,
+    selectReconciliationMode: selectReconciliationMode,
     writeDeleteCandidate: writeDeleteCandidate,
+    writeRootDescriptor: writeRootDescriptor,
+    writePurchaseRootId: writePurchaseRootId,
     writeRootRecord: writeRootRecord
 };

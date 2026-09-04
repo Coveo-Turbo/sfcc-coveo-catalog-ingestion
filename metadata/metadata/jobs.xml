@@ -50,6 +50,9 @@
                         <parameter name="archivePath">/src/coveo/feeds/products/archive</parameter>
                         <parameter name="deleteFile">false</parameter>
                         <parameter name="targetId"></parameter>
+                        <parameter name="reconciliationMode">auto</parameter>
+                        <parameter name="forceDeepReconciliation">false</parameter>
+                        <parameter name="maxDeepReconciliationAgeHours">24</parameter>
                     </parameters>
                 </step>
             </flow-template>

@@ -1233,12 +1233,10 @@ function buildLookupSet(values) {
     return map;
 }
 
-function getSnapshotDrivenRootIds(exportContext, snapshots, directoryPath) {
+function forEachSnapshotDrivenRootId(exportContext, snapshots, directoryPath, callback) {
     var resolvedDirectoryPath = directoryPath || DEFAULT_STATE_PATH;
 
     return withPurchaseStateLock(resolvedDirectoryPath, exportContext.coveoTrackingId, function () {
-        var changedRootIds = createHashMap();
-
         (snapshots || []).forEach(function (snapshot) {
             var currentRows = snapshot.currentRows || readCurrentTargetRows(resolvedDirectoryPath, exportContext, snapshot);
             var appliedRows = snapshot.appliedRows || readAppliedTargetRows(resolvedDirectoryPath, exportContext, snapshot);
@@ -1250,19 +1248,27 @@ function getSnapshotDrivenRootIds(exportContext, snapshots, directoryPath) {
                     || previousRow.count !== row.count
                     || previousRow.rootProductId !== row.rootProductId
                     || previousRow.documentId !== row.documentId) {
-                    putMapValue(changedRootIds, row.rootProductId, true);
+                    callback(row.rootProductId);
                 }
             });
 
             iterateMap(appliedRows, function (productId, row) {
                 if (!containsMapKey(currentRows, productId)) {
-                    putMapValue(changedRootIds, row.rootProductId, true);
+                    callback(row.rootProductId);
                 }
             });
         });
-
-        return createMapKeyIterator(changedRootIds);
     });
+}
+
+function getSnapshotDrivenRootIds(exportContext, snapshots, directoryPath) {
+    var changedRootIds = createHashMap();
+
+    forEachSnapshotDrivenRootId(exportContext, snapshots, directoryPath, function (rootId) {
+        putMapValue(changedRootIds, rootId, true);
+    });
+
+    return createMapKeyIterator(changedRootIds);
 }
 
 function markFullExportApplied(exportContext, snapshots, directoryPath) {
@@ -1325,6 +1331,7 @@ module.exports = {
     createHashMap: createHashMap,
     containsMapKey: containsMapKey,
     findReusableSharedSnapshot: findReusableSharedSnapshot,
+    forEachSnapshotDrivenRootId: forEachSnapshotDrivenRootId,
     getMapValue: getMapValue,
     getMapSize: getMapSize,
     getSnapshotDrivenRootIds: getSnapshotDrivenRootIds,
