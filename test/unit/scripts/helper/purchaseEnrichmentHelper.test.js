@@ -27,6 +27,22 @@ function getSortedMapValues(map) {
 }
 
 function createFileStubs(storage) {
+    function toSfccStringArray(values) {
+        var result = {
+            length: values.length
+        };
+
+        values.forEach(function (value, index) {
+            result[index] = value;
+        });
+        Object.defineProperty(result, 'toArray', {
+            get: function () {
+                throw new Error('Java String[] does not expose toArray');
+            }
+        });
+        return result;
+    }
+
     function getNormalizedPath(fullPath) {
         return String(fullPath).replace(/\/+/g, '/');
     }
@@ -105,14 +121,14 @@ function createFileStubs(storage) {
                     this.index += 1;
                 }
                 row.push(cell);
-                return row;
+                return toSfccStringArray(row);
             } else {
                 cell += currentChar;
             }
         }
 
         row.push(cell);
-        return row;
+        return toSfccStringArray(row);
     };
     CSVStreamReader.prototype.close = function () {};
 
@@ -471,7 +487,7 @@ describe('purchaseEnrichmentHelper', function () {
         assert.strictEqual(aggregated.counts['bulk-19999'], 1);
     });
 
-    it('streams a large downloaded export through the complete synchronization flow', function () {
+    it('streams SFCC Java String[] rows through a large downloaded export and complete synchronization flow', function () {
         var csv = 'custom_events.c_contentidvalue,custom_events.c_quantity\n';
         var index;
 

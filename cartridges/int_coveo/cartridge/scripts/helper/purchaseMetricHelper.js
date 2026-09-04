@@ -676,15 +676,29 @@ function writeCsvMapFile(directoryPath, fileName, header, map, rowBuilder) {
 }
 
 function normalizeCsvRow(row) {
+    var normalizedRow = [];
+    var rowLength;
+    var index;
+
     if (Array.isArray(row)) {
         return row;
     }
 
-    if (row && typeof row.toArray === 'function') {
-        return row.toArray();
+    if (!row) {
+        return normalizedRow;
     }
 
-    return [];
+    rowLength = Number(row.length);
+
+    if (!isFinite(rowLength) || rowLength < 0) {
+        return normalizedRow;
+    }
+
+    for (index = 0; index < rowLength; index += 1) {
+        normalizedRow.push(row[index]);
+    }
+
+    return normalizedRow;
 }
 
 function forEachCsvFileRow(file, rowCallback) {

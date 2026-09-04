@@ -15,6 +15,22 @@ function createFixture(options) {
         return String(value).replace(/\/{2,}/g, '/');
     }
 
+    function toSfccStringArray(values) {
+        var result = {
+            length: values.length
+        };
+
+        values.forEach(function (value, index) {
+            result[index] = value;
+        });
+        Object.defineProperty(result, 'toArray', {
+            get: function () {
+                throw new Error('Java String[] does not expose toArray');
+            }
+        });
+        return result;
+    }
+
     function File(filePath) {
         this.fullPath = normalizePath(filePath);
         this.path = this.fullPath;
@@ -127,14 +143,14 @@ function createFixture(options) {
                     this.index += 1;
                 }
                 row.push(cell);
-                return row;
+                return toSfccStringArray(row);
             } else {
                 cell += currentChar;
             }
         }
 
         row.push(cell);
-        return row;
+        return toSfccStringArray(row);
     };
     CSVStreamReader.prototype.close = function () {};
 
