@@ -2,6 +2,25 @@
 
 This repo documents how to upload and configure the ingestion-only cartridges from `sfcc-coveo-catalog-ingestion` in an SFCC sandbox with `sgmf-scripts`.
 
+Use the sections below in order for a first-time setup. If the cartridges and metadata are already installed, you can jump directly to the export-target and field-mapping sections.
+
+![SFCC catalog ingestion jobs and process flow](infographics/sfcc-catalog-ingestion-jobs-v2.png)
+
+Use the process map above as a visual companion for this guide:
+
+- sections 1 through 7 cover first-time setup
+- sections 7C through 7E cover optional helper jobs for mappings and catalog analysis
+- sections 8 and 9 cover first export validation and operational handoff
+
+## Setup at a glance
+
+| Step | Where you work | Outcome |
+| --- | --- | --- |
+| 1 through 2 | local machine | cartridges are validated and uploaded |
+| 3 through 6b | Business Manager admin areas | metadata, services, code version, and outbound access are ready |
+| 7 through 7E | site configuration and custom objects | targets, mappings, and optional helper jobs are configured |
+| 8 through 9 | Coveo plus Business Manager jobs | first full export is validated and ready for delta runs |
+
 ## 1. Local prerequisites
 
 - Node.js and npm installed locally
@@ -40,7 +59,14 @@ This uploads:
 - `int_coveo`
 - `bm_coveo`
 
+What success looks like:
+
+- the upload completes without a WebDAV or authentication error
+- the sandbox receives the code version configured in `dw.json`
+
 ## 3. Import the Business Manager metadata
+
+Business Manager path: `Administration > Site Development > Site Import & Export`
 
 In Business Manager, import `metadata/metadata.zip`.
 
@@ -53,6 +79,13 @@ This archive creates:
 
 The tracked `metadata/metadata` folder is the source used to build `metadata/metadata.zip`, so it stays in source control on purpose.
 
+What to verify before moving on:
+
+- the import completed successfully
+- the jobs appear under `Administration > Operations > Jobs`
+- the service definitions appear under `Administration > Operations > Services`
+- the custom object types appear under `Administration > Site Development > Custom Object Types`
+
 ## 4. Assign the cartridge path
 
 You need cartridge-path updates in two places:
@@ -63,6 +96,8 @@ You need cartridge-path updates in two places:
 Recommended setup:
 
 `bm_coveo:int_coveo`
+
+Business Manager area: the site settings page for the Business Manager site and for each export site.
 
 Apply it like this:
 
@@ -79,7 +114,14 @@ This step is important because the custom job step types are defined in:
 
 - `cartridges/bm_coveo/steptypes.json`
 
+What success looks like:
+
+- the active code version matches `dw.json`
+- `coveoProductExportFull`, `coveoProductExportDelta`, and the optional helper jobs are visible in Business Manager
+
 ## 6. Configure the Coveo service credential
+
+Business Manager path: `Administration > Operations > Services`
 
 The metadata imports this service:
 
@@ -96,6 +138,8 @@ Use the credential password to store the Coveo Push API key used for Stream API 
 
 ## 6a. Configure the Coveo Platform Field API credential
 
+Business Manager path: `Administration > Operations > Services`
+
 If you want SFCC to create missing Coveo fields directly from your mapping JSON, also configure:
 
 - service ID: `int.coveo.platform.http.api`
@@ -111,6 +155,8 @@ Use the credential password to store a Coveo Platform API key that grants:
 - `Fields > Edit`
 
 ## 6b. Allow outbound connections
+
+Business Manager path: `Administration > Operations > Services > Outbound Connections`
 
 The Stream file-container flow uses more than one outbound host:
 
@@ -129,6 +175,8 @@ If you plan to use the platform field creation job, also allow:
 - `https://platform.cloud.coveo.com`
 
 ## 7. Configure the Coveo site preferences
+
+Business Manager path: `Merchant Tools > Site Preferences > Custom Preferences`
 
 The metadata creates a site preference group named `Coveo Catalog Ingestion`.
 
@@ -181,6 +229,12 @@ Each `CoveoCatalogExportTarget` should define:
 
 ## 7A. Create export targets in Business Manager
 
+Business Manager area: switch to the export site, then use the custom object editor for `CoveoCatalogExportTarget`.
+
+![Catalog structure mode choices for each export target](infographics/catalog-structure-mode-infographic.png)
+
+Use the visual above when deciding whether a target should keep the legacy `product_variant` shape or move to the default `product_only` shape.
+
 Multi-target export setup involves three things:
 
 1. Import the latest metadata so the `CoveoCatalogExportTarget` custom object type exists.
@@ -196,6 +250,13 @@ In practice, an export target is just a Business Manager custom object record th
 - optionally which catalog to scope to
 - whether the target keeps `Product` plus `Variant` rows or consolidates everything into `Product` rows only
 - whether Coveo retains all assigned products or only products visible to storefront shoppers
+
+Quick decision guide:
+
+| `catalogStructureMode` | Choose it when | Export shape |
+| --- | --- | --- |
+| `product_only` | you want one exported `Product` row per sellable SKU and no separate `Variant` rows | `Product` only |
+| `product_variant` | you want to preserve the current split model with separate variant records | `Product` plus `Variant` |
 
 Use this Business Manager flow:
 
@@ -260,6 +321,8 @@ Eligibility details:
 - inventory, ATS, orderability, price, and offline category assignment are not eligibility inputs
 
 ## 7B. Create configurable field mappings in Business Manager
+
+Business Manager area: switch to the export site, then use the custom object editor for `CoveoCatalogFieldMappingProfile` and `CoveoCatalogFieldMapping`.
 
 Use this step only when you need extra exported fields beyond the built-in payload.
 
@@ -395,6 +458,8 @@ Important behavior:
 
 ## 7C. Bulk import field mappings from JSON
 
+Business Manager path: `Administration > Operations > Jobs`
+
 Use this option when you have many mapping rows and do not want to create them one by one in the Custom Object Editor.
 
 The cartridge now includes a task-oriented job step named `custom.coveo.coveoFieldMappingImport` and a sample job `coveoFieldMappingImport`. The step reads a JSON file from IMPEX, upserts one `CoveoCatalogFieldMappingProfile`, upserts the listed `CoveoCatalogFieldMapping` rows, and can optionally delete existing rows for that same profile that are not present in the file.
@@ -465,6 +530,8 @@ After the import succeeds:
 
 ## 7D. Create matching Coveo platform fields from the same JSON
 
+Business Manager path: `Administration > Operations > Jobs`
+
 Use this step when you want SFCC to ensure the target Coveo organization already contains the fields referenced by your mapping `targetField` values.
 
 The cartridge now includes a task-oriented job step named `custom.coveo.coveoPlatformFieldCreate` and a sample job `coveoPlatformFieldCreate`. The step reads the same JSON file format used by `coveoFieldMappingImport` and creates one Coveo field per enabled mapping `targetField`.
@@ -520,6 +587,8 @@ Recommended flow:
 4. In Coveo, verify the new fields before running the first full export.
 
 ## 7E. Audit populated catalog attributes before creating mappings
+
+Business Manager path: `Administration > Operations > Jobs`
 
 Use this job when you want to know which product and primary-category attributes are actually populated in a catalog before building `CoveoCatalogFieldMapping` rows.
 
@@ -590,6 +659,8 @@ If automatic catalog mappings do not resolve the standard field names correctly,
 
 ## 9. Run the first product export
 
+Business Manager path: `Administration > Operations > Jobs`
+
 The metadata imports two jobs:
 
 - `coveoProductExportFull`
@@ -617,6 +688,11 @@ Catalog export state is stored under `IMPEX/src/coveo/state/catalog-export/`:
 - failed runs remove their candidate generation and leave the active generation unchanged
 
 Do not manually remove a current lock until you have confirmed that no full or delta job is active. SFCC jobs can legitimately run for many hours, so locks are never stolen automatically based only on age. If an instance restart or cancelled execution leaves a stale lock, confirm that the target source has no active export and then remove only that `.lock` file. Preserve the rest of the manifest directory when copying or restoring IMPEX operational state.
+
+Operator tip:
+
+- if your site has more than one export target, write down the exact `targetId` before opening the job
+- keep the IMPEX export JSON from the first successful run as a baseline sample for later troubleshooting
 
 ## Important note about the imported job site context
 
@@ -675,3 +751,21 @@ Confirm that:
 - changing an indexed product to offline or non-searchable produces a delta `delete`
 - deleting or unassigning an indexed product produces a delta `delete`
 - products crossing `onlineFrom` or `onlineTo` are reconciled on the next delta even without a new `lastModified`
+
+## Suggested screenshots to capture from a real sandbox
+
+The visuals already in this repo are useful for process and structure decisions, but the most helpful end-user screenshots will still come from a representative Business Manager sandbox because menu labels and permissions can vary by environment.
+
+Capture these screens first if you want to turn this guide into a step-by-step runbook:
+
+| Suggested screenshot | Why it helps | Best section |
+| --- | --- | --- |
+| `site-import-export-metadata.png` | shows where to import `metadata/metadata.zip` and what a successful import looks like | section 3 |
+| `services-coveo-credentials.png` | shows the `int.coveo.http.api` and `int.coveo.platform.http.api` credentials in context | sections 6 and 6a |
+| `outbound-connections-coveo.png` | makes the Push API and S3 allowlist step much less abstract | section 6b |
+| `site-preferences-coveo-catalog-ingestion.png` | helps operators find the `Coveo Catalog Ingestion` preference group quickly | section 7 |
+| `custom-object-export-target.png` | shows the exact fields on `CoveoCatalogExportTarget` while creating a target | section 7A |
+| `custom-object-field-mapping-profile.png` | helps explain the difference between a mapping profile and individual mapping rows | section 7B |
+| `job-coveo-field-mapping-import.png` | shows the `sourceFile` and `replaceExistingMappings` parameters | section 7C |
+| `job-coveo-catalog-attribute-audit.png` | helps users run the audit with the correct `catalogId` and `locale` | section 7E |
+| `job-coveo-product-export-full.png` | shows where to pass `targetId` on the first full export | section 9 |

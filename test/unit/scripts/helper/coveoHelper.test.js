@@ -7,9 +7,16 @@ var proxyquire = require('proxyquire').noCallThru();
 function createHashSet() {
     function HashSet() {
         this.values = {};
+        this.count = 0;
     }
 
     HashSet.prototype.add = function (value) {
+        if (!Object.prototype.hasOwnProperty.call(this.values, value)) {
+            if (this.count >= 1000) {
+                throw new Error('HashSet collection quota exceeded');
+            }
+            this.count += 1;
+        }
         this.values[value] = true;
     };
 
@@ -174,6 +181,26 @@ describe('coveoHelper', function () {
         }
 
         assert.deepEqual(values, ['MASTER-1', 'STANDALONE-1', 'OLD-1']);
+
+        var extraIndex = 0;
+        var extraIterator = {
+            hasNext: function () {
+                return extraIndex < 25000;
+            },
+            next: function () {
+                return 'PURCHASE-ROOT-' + extraIndex++;
+            },
+            close: function () {}
+        };
+        var mergedCount = 0;
+
+        iterator = helper.buildProductQuery(true, null, extraIterator);
+        while (iterator.hasNext()) {
+            iterator.next();
+            mergedCount += 1;
+        }
+
+        assert.strictEqual(mergedCount, 25002);
     });
 
     it('requires a successful full sync before delta exports can run', function () {

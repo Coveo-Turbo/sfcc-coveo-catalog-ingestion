@@ -18,7 +18,31 @@ function createArrayIterator(values) {
     };
 }
 
+function getSortedMapValues(map) {
+    return Object.keys(map).map(function (key) {
+        return map[key];
+    }).sort(function (left, right) {
+        return left.productId < right.productId ? -1 : (left.productId > right.productId ? 1 : 0);
+    });
+}
+
 function createFileStubs(storage) {
+    function toSfccStringArray(values) {
+        var result = {
+            length: values.length
+        };
+
+        values.forEach(function (value, index) {
+            result[index] = value;
+        });
+        Object.defineProperty(result, 'toArray', {
+            get: function () {
+                throw new Error('Java String[] does not expose toArray');
+            }
+        });
+        return result;
+    }
+
     function getNormalizedPath(fullPath) {
         return String(fullPath).replace(/\/+/g, '/');
     }
@@ -53,9 +77,60 @@ function createFileStubs(storage) {
     }
 
     FileReader.prototype.getString = function () {
-        return storage[this.file.fullPath] || '';
+        var contents = storage[this.file.fullPath] || '';
+
+        if (contents.length > 1000) {
+            throw new Error('getString quota exceeded');
+        }
+
+        return contents;
     };
     FileReader.prototype.close = function () {};
+
+    function CSVStreamReader(fileReader) {
+        this.text = storage[fileReader.file.fullPath] || '';
+        this.index = 0;
+    }
+
+    CSVStreamReader.prototype.readNext = function () {
+        var row = [];
+        var cell = '';
+        var inQuotes = false;
+
+        if (this.index >= this.text.length) {
+            return null;
+        }
+
+        while (this.index < this.text.length) {
+            var currentChar = this.text.charAt(this.index);
+            var nextChar = this.text.charAt(this.index + 1);
+            this.index += 1;
+
+            if (currentChar === '"') {
+                if (inQuotes && nextChar === '"') {
+                    cell += '"';
+                    this.index += 1;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (currentChar === ',' && !inQuotes) {
+                row.push(cell);
+                cell = '';
+            } else if ((currentChar === '\n' || currentChar === '\r') && !inQuotes) {
+                if (currentChar === '\r' && nextChar === '\n') {
+                    this.index += 1;
+                }
+                row.push(cell);
+                return toSfccStringArray(row);
+            } else {
+                cell += currentChar;
+            }
+        }
+
+        row.push(cell);
+        return toSfccStringArray(row);
+    };
+    CSVStreamReader.prototype.close = function () {};
 
     function FileWriter(file) {
         this.file = file;
@@ -70,31 +145,10 @@ function createFileStubs(storage) {
 
     return {
         File: File,
+        CSVStreamReader: CSVStreamReader,
         FileReader: FileReader,
         FileWriter: FileWriter
     };
-}
-
-function createHashSet() {
-    function HashSet() {
-        this.values = {};
-        this.count = 0;
-    }
-
-    HashSet.prototype.add = function (value) {
-        if (!Object.prototype.hasOwnProperty.call(this.values, value)) {
-            this.values[value] = true;
-            this.count += 1;
-        }
-    };
-    HashSet.prototype.contains = function (value) {
-        return !!this.values[value];
-    };
-    HashSet.prototype.size = function () {
-        return this.count;
-    };
-
-    return HashSet;
 }
 
 function createPurchaseMetricStub(captured) {
@@ -111,6 +165,9 @@ function createPurchaseMetricStub(captured) {
         containsMapKey: function (map, key) {
             return Object.prototype.hasOwnProperty.call(map, key);
         },
+        getMapSize: function (map) {
+            return Object.keys(map).length;
+        },
         iterateMap: function (map, callback) {
             Object.keys(map).forEach(function (key) {
                 callback(key, map[key]);
@@ -126,8 +183,17 @@ function createPurchaseMetricStub(captured) {
 
             return parsed;
         },
+        buildUnitsSoldFieldName: function (windowDays) {
+            return 'ec_units_sold_' + windowDays + 'd';
+        },
         findReusableSharedSnapshot: function (statePath, trackingId, windowDays) { // eslint-disable-line no-unused-vars
             return captured.reusableSnapshot || null;
+        },
+        readSharedSnapshot: function () {
+            return captured.reusableSnapshot;
+        },
+        withPurchaseStateLock: function (statePath, trackingId, callback) { // eslint-disable-line no-unused-vars
+            return callback();
         },
         writeSharedSnapshot: function (statePath, trackingId, windowDays, snapshot) { // eslint-disable-line no-unused-vars
             captured.sharedSnapshotWrites.push({
@@ -156,6 +222,23 @@ function createPurchaseMetricStub(captured) {
                 mappedRows: mappedRows,
                 skippedRows: skippedRows
             });
+        },
+        publishSharedSnapshotAndTargetState: function (statePath, exportContext, windowDays, snapshot, mappedRows, skippedRows) {
+            captured.sharedSnapshotWrites.push({
+                statePath: statePath,
+                trackingId: exportContext.coveoTrackingId,
+                windowDays: windowDays,
+                snapshot: snapshot
+            });
+            captured.targetStateWrites.push({
+                statePath: statePath,
+                exportContext: exportContext,
+                snapshot: snapshot,
+                mappedRows: mappedRows,
+                skippedRows: skippedRows
+            });
+
+            return snapshot;
         }
     };
 }
@@ -246,9 +329,9 @@ function createHelper(options) {
 
     var helper = proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/purchaseEnrichmentHelper'), {
         'dw/io/File': fileStubs.File,
+        'dw/io/CSVStreamReader': fileStubs.CSVStreamReader,
         'dw/io/FileReader': fileStubs.FileReader,
         'dw/io/FileWriter': fileStubs.FileWriter,
-        'dw/util/HashSet': createHashSet(),
         'dw/system/Logger': {
             getLogger: function () {
                 return {
@@ -387,6 +470,92 @@ describe('purchaseEnrichmentHelper', function () {
         assert.strictEqual(aggregated.counts['sku-2'], 1);
     });
 
+    it('aggregates large exports without requiring the entire CSV to be buffered as rows', function () {
+        var helper = createHelper();
+        var lines = ['c_contentidvalue,c_quantity'];
+        var index;
+        var aggregated;
+
+        for (index = 0; index < 20000; index += 1) {
+            lines.push('bulk-' + index + ',1');
+        }
+
+        aggregated = helper.aggregatePurchaseCounts(lines.join('\n'), 'custom_events.c_quantity');
+
+        assert.strictEqual(aggregated.processedRows, 20000);
+        assert.strictEqual(aggregated.counts['bulk-0'], 1);
+        assert.strictEqual(aggregated.counts['bulk-19999'], 1);
+    });
+
+    it('streams SFCC Java String[] rows through a large downloaded export and complete synchronization flow', function () {
+        var csv = 'custom_events.c_contentidvalue,custom_events.c_quantity\n';
+        var index;
+
+        for (index = 0; index < 25000; index += 1) {
+            csv += 'simple-1,1\n';
+        }
+
+        var helper = createHelper({
+            coveoHelper: {
+                buildProductQuery: function () {
+                    return createArrayIterator(['root-simple']);
+                }
+            },
+            productRequestGenerator: {
+                processProducts: function () {
+                    return [{
+                        objecttype: 'Product',
+                        ec_product_id: 'simple-1',
+                        documentId: 'https://example.com/product/simple-1'
+                    }];
+                }
+            },
+            handleUsageAnalyticsCall: function () {
+                return {
+                    ok: true,
+                    object: {
+                        id: 'export-large',
+                        status: 'AVAILABLE',
+                        downloadLink: 'https://download.example.com/large.csv'
+                    }
+                };
+            },
+            handleHttpClientCall: function () {
+                return {
+                    statusCode: 200,
+                    statusMessage: 'OK',
+                    fileContents: csv
+                };
+            }
+        });
+
+        var summary = helper.syncPurchaseEnrichment({
+            get: function (name) {
+                return {
+                    windowDays: '90',
+                    workingPath: '/working/purchase-enrichment/',
+                    statePath: '/state/purchase-enrichment/',
+                    quantityDimension: 'custom_events.c_quantity'
+                }[name];
+            }
+        }, {
+            legacyMode: false,
+            targetId: 'target-1',
+            locale: 'en_CA',
+            coveoTrackingId: 'tracking-1',
+            coveoOrganizationId: 'my-org',
+            coveoSourceId: 'source-1'
+        });
+        var captured = helper.__getCaptured();
+
+        assert.strictEqual(summary.processedRows, 25000);
+        assert.strictEqual(summary.mappedProducts, 1);
+        assert.strictEqual(captured.sharedSnapshotWrites[0].snapshot.counts['simple-1'], 25000);
+        assert.strictEqual(Object.keys(captured.storage).filter(function (filePath) {
+            return filePath.indexOf('coveo_purchase_enrichment_download_') !== -1;
+        }).length, 0);
+    });
+
     it('builds product document rows only for current Product items', function () {
         var helper = createHelper({
             coveoHelper: {
@@ -427,7 +596,7 @@ describe('purchaseEnrichmentHelper', function () {
             catalogStructureMode: 'product_variant'
         }, required, counts);
 
-        assert.deepEqual(rows.mappedRows, [{
+        assert.deepEqual(getSortedMapValues(rows.mappedRows), [{
             productId: 'master-red',
             rootProductId: 'root-grouped',
             documentId: 'https://example.com/product/master-red',
@@ -438,11 +607,29 @@ describe('purchaseEnrichmentHelper', function () {
             documentId: 'https://example.com/product/simple-1',
             count: 2
         }]);
-        assert.deepEqual(rows.skippedRows, [{
+        assert.deepEqual(getSortedMapValues(rows.skippedRows), [{
             productId: 'missing-product',
             count: 1,
             reason: 'missing-product-mapping'
         }]);
+    });
+
+    it('does not open a catalog iterator when the export contains no purchased product ids', function () {
+        var queryOpened = false;
+        var helper = createHelper({
+            coveoHelper: {
+                buildProductQuery: function () {
+                    queryOpened = true;
+                    return createArrayIterator([]);
+                }
+            }
+        });
+        var counts = {};
+        var rows = helper.buildProductDocumentRows({}, helper.buildRequiredProductIds(counts), counts);
+
+        assert.isFalse(queryOpened);
+        assert.strictEqual(rows.mappedCount, 0);
+        assert.strictEqual(rows.skippedCount, 0);
     });
 
     it('maps variant ids and product-id suffix aliases back to the parent product document', function () {
@@ -486,7 +673,7 @@ describe('purchaseEnrichmentHelper', function () {
             catalogStructureMode: 'product_variant'
         }, required, counts);
 
-        assert.deepEqual(rows.mappedRows, [{
+        assert.deepEqual(getSortedMapValues(rows.mappedRows), [{
             productId: '1000879',
             rootProductId: 'root-grouped',
             documentId: 'https://example.com/product/master-red',
@@ -497,7 +684,7 @@ describe('purchaseEnrichmentHelper', function () {
             documentId: 'https://example.com/product/group-1234-2000999',
             count: 3
         }]);
-        assert.deepEqual(rows.skippedRows, []);
+        assert.deepEqual(getSortedMapValues(rows.skippedRows), []);
     });
 
     it('maps SKU-based product_only rows directly to their own product documents', function () {
@@ -535,7 +722,7 @@ describe('purchaseEnrichmentHelper', function () {
             catalogStructureMode: 'product_only'
         }, required, counts);
 
-        assert.deepEqual(rows.mappedRows, [{
+        assert.deepEqual(getSortedMapValues(rows.mappedRows), [{
             productId: 'SKU-1',
             rootProductId: 'root-product-only',
             documentId: 'https://example.com/product/SKU-1',
@@ -546,7 +733,7 @@ describe('purchaseEnrichmentHelper', function () {
             documentId: 'https://example.com/product/SKU-2',
             count: 1
         }]);
-        assert.deepEqual(rows.skippedRows, []);
+        assert.deepEqual(getSortedMapValues(rows.skippedRows), []);
     });
 
     it('creates a shared snapshot and writes target state when no reusable snapshot exists', function () {
@@ -635,6 +822,36 @@ describe('purchaseEnrichmentHelper', function () {
         assert.lengthOf(captured.targetStateWrites, 1);
         assert.strictEqual(captured.httpClientCalls[0].headers.Authorization, 'Bearer ua-access-token');
         assert.isUndefined(captured.httpClientCalls[1].headers.Authorization);
+    });
+
+    it('removes a partial temporary file when a redirected download fails', function () {
+        var helper = createHelper({
+            handleHttpClientCall: function (call) {
+                if (call.url === 'https://download.example.com/export.csv') {
+                    return {
+                        statusCode: 302,
+                        responseHeaders: {
+                            Location: 'https://signed.example.com/export.csv'
+                        }
+                    };
+                }
+
+                return {
+                    statusCode: 503,
+                    statusMessage: 'Unavailable',
+                    fileContents: 'partial'
+                };
+            }
+        });
+
+        assert.throws(function () {
+            helper.downloadExportFile('https://download.example.com/export.csv', {
+                targetId: 'target-1'
+            }, '/working/purchase-enrichment/');
+        }, /redirected Usage Analytics export download failed/);
+        assert.strictEqual(Object.keys(helper.__getCaptured().storage).filter(function (filePath) {
+            return filePath.indexOf('coveo_purchase_enrichment_download_') !== -1;
+        }).length, 0);
     });
 
     it('reuses a recent shared snapshot without creating a new export', function () {

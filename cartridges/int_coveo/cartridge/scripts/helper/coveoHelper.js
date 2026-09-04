@@ -12,6 +12,7 @@ var ProductSearchModel = require('dw/catalog/ProductSearchModel');
 
 var coveoConstant = require('*/cartridge/scripts/utils/coveoConstant');
 var catalogExportValidator = require('*/cartridge/scripts/helper/catalogExportValidator');
+var ROOT_ID_SET_SHARD_COUNT = 64;
 
 /**
  * Get Stream api headers
@@ -49,23 +50,72 @@ function createArrayIterator(values) {
     };
 }
 
+function getRootIdShardIndex(value) {
+    var text = String(value || '');
+    var hash = 0;
+    var index;
+
+    for (index = 0; index < text.length; index += 1) {
+        hash = ((hash << 5) - hash) + text.charCodeAt(index);
+        hash |= 0;
+    }
+
+    return Math.abs(hash) % ROOT_ID_SET_SHARD_COUNT;
+}
+
+function createShardedRootIdSet() {
+    var shards = {};
+
+    function getShard(value, createIfMissing) {
+        var shardIndex = getRootIdShardIndex(value);
+        var shard = shards[shardIndex];
+
+        if (!shard && createIfMissing) {
+            shard = new HashSet();
+            shards[shardIndex] = shard;
+        }
+
+        return shard;
+    }
+
+    return {
+        add: function (value) {
+            getShard(value, true).add(value);
+        },
+        contains: function (value) {
+            var shard = getShard(value, false);
+            return !!shard && shard.contains(value);
+        }
+    };
+}
+
+function toIterator(values) {
+    if (values && typeof values.hasNext === 'function' && typeof values.next === 'function') {
+        return values;
+    }
+
+    return createArrayIterator(values || []);
+}
+
 /**
  * Returns a deduplicated iterator that appends extra root ids after a base iterator.
  * @param {Object} baseIterator - Base product iterator.
- * @param {Array} extraRootIds - Additional root ids to append.
+ * @param {Array|Object} extraRootIds - Additional root ids or iterator to append.
  * @returns {Object} merged iterator.
  */
 function mergeRootIdIterators(baseIterator, extraRootIds) {
-    var seen = new HashSet();
     var base = baseIterator || createArrayIterator([]);
-    var extras = extraRootIds || [];
-    var extraIndex = 0;
+    var extras = toIterator(extraRootIds);
+    var seen;
     var nextValue = null;
     var hasBufferedValue = false;
 
-    if (!extras.length) {
+    if (!extras.hasNext()) {
+        closeIterator(extras);
         return base;
     }
+
+    seen = createShardedRootIdSet();
 
     function bufferNextValue() {
         while (!hasBufferedValue && base && base.hasNext && base.hasNext()) {
@@ -78,9 +128,8 @@ function mergeRootIdIterators(baseIterator, extraRootIds) {
             }
         }
 
-        while (!hasBufferedValue && extraIndex < extras.length) {
-            var extraValue = extras[extraIndex];
-            extraIndex += 1;
+        while (!hasBufferedValue && extras.hasNext()) {
+            var extraValue = extras.next();
 
             if (!empty(extraValue) && !seen.contains(extraValue)) {
                 seen.add(extraValue);
@@ -108,6 +157,7 @@ function mergeRootIdIterators(baseIterator, extraRootIds) {
         },
         close: function () {
             closeIterator(base);
+            closeIterator(extras);
         }
     };
 }
@@ -331,7 +381,7 @@ function buildDeltaProductQuery(exportContext) {
     var lastSync = constants.CATALOG_LAST_SYNC;
     var products = null;
     var rootIds = [];
-    var seen = new HashSet();
+    var seen = createShardedRootIdSet();
 
     if (empty(lastSync)
         && (empty(exportContext)
