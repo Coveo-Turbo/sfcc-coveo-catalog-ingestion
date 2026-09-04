@@ -678,6 +678,46 @@ Do not run the delta job before the first successful full sync. Manifest-enabled
 
 For `all` and `online_and_searchable`, the delta job scans current root products and compares SHA-256 payload checksums and document IDs one manifest shard at a time. It sends only changed additions/updates and removals. This allows it to detect physical deletion, catalog unassignment, variant removal, representative-document changes, and time-based online transitions even when `lastModified` did not change.
 
+### Delta reconciliation modes and scheduling
+
+The `coveoProductExportDelta` step has these reconciliation parameters:
+
+| Parameter | Imported default | Behavior |
+| --- | --- | --- |
+| `reconciliationMode` | `auto` | Accepts `auto`, `fast`, or `deep`. |
+| `forceDeepReconciliation` | `false` | When `true`, forces this run to use deep reconciliation regardless of the selected mode. |
+| `maxDeepReconciliationAgeHours` | `24` | Maximum age of the last successful deep baseline before `auto` selects deep again. |
+
+The modes differ as follows:
+
+- `auto` is the recommended operational mode. It selects fast when the active manifest contains compatible signatures from a successful full or deep run. It selects deep when no usable baseline exists, migrated records lack the required signatures, the configured maximum deep age has elapsed, or `forceDeepReconciliation=true`.
+- `fast` scans every current root using lightweight presence, eligibility, modification, variant-membership, and document-ownership descriptors. It carries unchanged manifest records forward and generates complete Coveo payloads only for dirty roots. Explicit fast mode requires a usable deep baseline and reports a clear error rather than treating roots omitted from payload generation as deleted.
+- `deep` regenerates and checksums the complete payload for every current root, matching the previous manifest-delta workload, but still uploads only changed `addOrUpdate` and `delete` operations.
+
+A fast run remains an O(N) lightweight scan because immediate deletion detection and cross-root document ownership require seeing the complete current root set. Its expensive payload-generation and upload work is O(K), where K is the number of dirty roots. The lightweight scan is expected and should not be mistaken for a full payload export.
+
+When upgrading an existing manifest, keep `reconciliationMode=auto`. Older records without compatible change and eligibility signatures cause one migration deep run, which seeds the new baseline without manual IMPEX state changes. A new target still requires its initial full export, and an incompatible target fingerprint still requires another full export.
+
+Recommended production scheduling:
+
+1. Run `reconciliationMode=auto` every 5–15 minutes, provided a representative run completes before the next trigger and does not overlap the source lock.
+2. Keep a periodic deep reconciliation as an operational backstop. Daily is recommended with the imported 24-hour maximum; `auto` performs the age-triggered deep run even if no separate deep job is configured.
+3. In price-book, promotion, or category import job chains, invoke the delta step afterward with `forceDeepReconciliation=true`. These dependencies can change exported payloads without changing product timestamps, so forcing deep gives immediate refresh instead of waiting for the bounded-staleness window.
+
+With the default maximum age, changes to external price, promotion, or category state that are not connected to a dirty-root or force-deep signal can remain stale for at most 24 hours, assuming scheduled deltas and the resulting deep reconciliation complete successfully. Fast mode still immediately handles changes visible in its lightweight scan, including removed or newly ineligible products, variant membership, and product modification signals.
+
+Each run writes a concise mode-selection message and end-of-run summary rather than per-product INFO logs. The summary includes the selected mode and reason, roots scanned/carried forward/generated/removed, dirty-root reasons, add/update and delete counts, lightweight-scan/payload-generation/reconciliation/upload durations, and the deep-baseline timestamp and age.
+
+Troubleshooting:
+
+- If explicit `fast` reports a missing or unusable baseline, switch to `auto` or run `deep` once; do not edit manifest files manually.
+- If `auto` repeatedly selects deep, inspect the mode-selection reason and deep-baseline timestamp. Confirm that a deep run can finish, upload, checkpoint, and promote successfully, and check whether the 24-hour age or a force-deep value is responsible.
+- If price, promotion, or category output appears stale, run one delta with `forceDeepReconciliation=true`, then verify that the related import chain requests force-deep and that the periodic deep schedule is succeeding.
+- If runs overlap or report an active source lock, increase the interval beyond the observed summary duration; never remove a lock until you confirm no export owns it.
+- A source-ownership file is durable and is different from a temporary source lock. If a retired test target previously claimed a source that you intentionally want to reassign, first confirm that no export is active, remove or reconfigure the retired target, and verify that the new target is the only target using that `coveoSourceId`. Then remove only the `coveo_catalog_source_<sourceKey>.json` ownership file named in the error and run a new full export. Do not remove ownership state merely to let two active targets share one source.
+- If the job reports an incompatible target fingerprint, run a full export. Deep reconciliation does not replace the full export required after target scope, locale, source, structure, eligibility, or mapping-profile changes.
+- If the lightweight scan count remains catalog-sized while few roots are generated, that is healthy fast-mode behavior: the O(N) ownership scan protects deletion correctness while expensive work remains selective.
+
 Catalog export state is stored under `IMPEX/src/coveo/state/catalog-export/`:
 
 - immutable generation shards contain root IDs, document IDs, and payload checksums
@@ -716,7 +756,7 @@ The job metadata still ships with `RefArch` as the example site context. If your
 12. Inspect the exported JSON under IMPEX and confirm the payload uses `addOrUpdate`, `ec_product_id`, the expected `language`, any configured extra fields, and `ec_variant_id` only for `product_variant` targets.
 13. Inspect the indexed content in the Coveo Content Browser and catalog inspection views.
 14. Confirm the manifest files were created under `IMPEX/src/coveo/state/catalog-export/` for `all` or `online_and_searchable`.
-15. Only after the full sync validates, run `coveoProductExportDelta` for the same resolved target.
+15. Only after the full sync validates, run `coveoProductExportDelta` for the same resolved target with the imported `reconciliationMode=auto`, `forceDeepReconciliation=false`, and `maxDeepReconciliationAgeHours=24` defaults.
 
 ## Validation checklist
 

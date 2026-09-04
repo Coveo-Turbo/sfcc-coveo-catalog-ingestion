@@ -158,6 +158,14 @@ describe('catalogExportStateHelper', function () {
         var run = helper.beginRun(context, new Date('2026-09-02T18:00:00Z'));
         var records = [];
 
+        helper.writeRootDescriptor(run, {
+            rootId: 'MASTER-1',
+            modificationSignature: 'modified-1',
+            eligibilitySignature: 'eligible-1',
+            ownershipSignature: 'owned-1'
+        });
+        helper.closeRootDescriptors(run);
+
         helper.writeRootRecord(run, 'MASTER-1', ['https://example.com/sku-1', 'https://example.com/sku-2'], {
             modifiedAt: '2026-09-01T00:00:00.000Z',
             eligibilitySignature: 'sku-1|sku-2',
@@ -176,6 +184,9 @@ describe('catalogExportStateHelper', function () {
         assert.strictEqual(promoted.documentCount, 2);
         assert.strictEqual(loaded.generation, '1788372000000');
         assert.strictEqual(loaded.fingerprint, helper.buildFingerprint(context));
+        assert.strictEqual(loaded.descriptorSchemaVersion, helper.DESCRIPTOR_SCHEMA_VERSION);
+        assert.strictEqual(loaded.reconciliationMode, 'deep');
+        assert.strictEqual(loaded.lastDeepReconciledAt, loaded.completedAt);
 
         Object.keys(loaded.shardFiles).forEach(function (shardIndex) {
             helper.forEachShardRecord(loaded, shardIndex, function (record) {
@@ -194,7 +205,136 @@ describe('catalogExportStateHelper', function () {
         })[0], 'items');
         assert.notStrictEqual(helper.getPayloadChecksum([{ value: 'Aa' }]), helper.getPayloadChecksum([{ value: 'BB' }]));
         Object.keys(fixture.fileSystem.files).forEach(function (filePath) {
-            assert.notMatch(filePath, /_(documents|deletes)_\d\d\.jsonl$/);
+            assert.notMatch(filePath, /_(documents|descriptors|deletes)_\d\d\.jsonl$/);
+        });
+    });
+
+    it('selects fast only from a usable current deep baseline', function () {
+        var helper = createHelper().helper;
+        var now = new Date('2026-09-04T12:00:00.000Z');
+        var manifest = {
+            descriptorSchemaVersion: helper.DESCRIPTOR_SCHEMA_VERSION,
+            lastDeepReconciledAt: '2026-09-04T00:00:00.000Z'
+        };
+        var selection = helper.selectReconciliationMode(manifest, {
+            requestedMode: 'auto',
+            maxAgeHours: 24
+        }, now);
+
+        assert.deepEqual(selection, {
+            mode: 'fast',
+            reason: 'usable-deep-baseline',
+            baselineAgeHours: 12
+        });
+        assert.deepEqual(helper.selectReconciliationMode(null, {
+            requestedMode: 'auto'
+        }, now), {
+            mode: 'deep',
+            reason: 'missing-deep-baseline',
+            baselineAgeHours: null
+        });
+        assert.strictEqual(helper.selectReconciliationMode({}, {
+            requestedMode: 'auto'
+        }, now).reason, 'unsupported-descriptor-schema');
+        assert.strictEqual(helper.selectReconciliationMode(manifest, {
+            requestedMode: 'deep'
+        }, now).reason, 'explicit-deep');
+    });
+
+    it('escalates auto and rejects explicit fast when deep reconciliation is required', function () {
+        var helper = createHelper().helper;
+        var now = new Date('2026-09-04T12:00:00.000Z');
+        var expiredManifest = {
+            descriptorSchemaVersion: helper.DESCRIPTOR_SCHEMA_VERSION,
+            lastDeepReconciledAt: '2026-09-03T12:00:00.000Z'
+        };
+        var forced = helper.selectReconciliationMode(expiredManifest, {
+            requestedMode: 'auto',
+            forceDeep: true
+        }, now);
+        var pending = helper.selectReconciliationMode(expiredManifest, {
+            requestedMode: 'auto',
+            pendingDeepRequest: 'price-import'
+        }, now);
+        var expired = helper.selectReconciliationMode(expiredManifest, {
+            requestedMode: 'auto',
+            maxAgeHours: 24
+        }, now);
+
+        assert.strictEqual(forced.reason, 'force-deep');
+        assert.strictEqual(pending.reason, 'pending-deep-request');
+        assert.strictEqual(expired.reason, 'maximum-deep-age-exceeded');
+        assert.strictEqual(expired.baselineAgeHours, 24);
+        assert.strictEqual(helper.selectReconciliationMode(expiredManifest, {
+            requestedMode: 'fast',
+            forceDeep: true
+        }, now).reason, 'force-deep');
+
+        [
+            { manifest: null, options: { requestedMode: 'fast' }, reason: 'missing-deep-baseline' },
+            { manifest: {}, options: { requestedMode: 'fast' }, reason: 'unsupported-descriptor-schema' },
+            { manifest: expiredManifest, options: { requestedMode: 'fast', maxAgeHours: 24 }, reason: 'maximum-deep-age-exceeded' },
+            { manifest: expiredManifest, options: { requestedMode: 'fast', pendingDeepRequest: true }, reason: 'pending-deep-request' }
+        ].forEach(function (testCase) {
+            var thrownError = null;
+
+            try {
+                helper.selectReconciliationMode(testCase.manifest, testCase.options, now);
+            } catch (error) {
+                thrownError = error;
+            }
+
+            assert.instanceOf(thrownError, Error);
+            assert.strictEqual(thrownError.reason, testCase.reason);
+            assert.match(thrownError.message, /cannot run/);
+        });
+    });
+
+    it('writes root-sharded descriptors and removes them when a run is aborted', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var run = helper.beginRun(createContext(), new Date('2026-09-02T18:00:00Z'));
+        var descriptors = [];
+        var purchaseRootIds = [];
+        var shardIndex;
+
+        helper.writeRootDescriptor(run, 'ROOT-1', {
+            rootType: 'master',
+            modifiedAt: '2026-09-02T17:00:00.000Z',
+            modificationSignature: 'modified',
+            eligibilitySignature: 'eligible',
+            ownershipSignature: 'owned',
+            documentIds: ['doc-2', 'doc-1', 'doc-1']
+        });
+        helper.closeRootDescriptors(run);
+        helper.writePurchaseRootId(run, 'ROOT-1');
+        helper.closePurchaseRootIds(run);
+
+        for (shardIndex = 0; shardIndex < helper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
+            helper.forEachRootDescriptor(run, shardIndex, function (descriptor) {
+                descriptors.push(descriptor);
+            });
+            helper.forEachPurchaseRootId(run, shardIndex, function (rootId) {
+                purchaseRootIds.push(rootId);
+            });
+        }
+
+        assert.lengthOf(descriptors, 1);
+        assert.include(descriptors[0], {
+            rootId: 'ROOT-1',
+            rootType: 'master',
+            descriptorVersion: helper.DESCRIPTOR_SCHEMA_VERSION,
+            modificationSignature: 'modified',
+            eligibilitySignature: 'eligible',
+            ownershipSignature: 'owned'
+        });
+        assert.deepEqual(descriptors[0].documentIds, ['doc-1', 'doc-2']);
+        assert.deepEqual(purchaseRootIds, ['ROOT-1']);
+
+        helper.abortRun(run);
+        Object.keys(fixture.fileSystem.files).forEach(function (filePath) {
+            assert.notMatch(filePath, /_descriptors_\d\d\.jsonl$/);
+            assert.notMatch(filePath, /_purchase_\d\d\.jsonl$/);
         });
     });
 
@@ -222,12 +362,15 @@ describe('catalogExportStateHelper', function () {
         var shardIndex;
 
         helper.writeRootRecord(run, 'ROOT-1', ['doc-current'], {
-            payloadChecksum: 'checksum',
-            items: [{ documentId: 'doc-current' }]
+            modifiedAt: '2026-09-02T17:00:00.000Z',
+            modificationSignature: 'modified',
+            eligibilitySignature: 'eligible',
+            ownershipSignature: 'owned',
+            payloadChecksum: 'checksum'
         });
-        helper.closeRun(run);
         helper.writeDeleteCandidate(run, 'doc-current');
         helper.writeDeleteCandidate(run, 'doc-deleted');
+        helper.closeRun(run);
         helper.closeDeleteCandidates(run);
 
         for (shardIndex = 0; shardIndex < helper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
@@ -241,6 +384,19 @@ describe('catalogExportStateHelper', function () {
 
         assert.deepEqual(currentDocumentIds, ['doc-current']);
         assert.sameMembers(deleteCandidates, ['doc-current', 'doc-deleted']);
+
+        var records = [];
+        helper.forEachShardRecord(run, helper.getShardIndex('ROOT-1'), function (record) {
+            records.push(record);
+        });
+        assert.include(records[0], {
+            descriptorVersion: helper.DESCRIPTOR_SCHEMA_VERSION,
+            modifiedAt: '2026-09-02T17:00:00.000Z',
+            modificationSignature: 'modified',
+            eligibilitySignature: 'eligible',
+            ownershipSignature: 'owned',
+            payloadChecksum: 'checksum'
+        });
 
         helper.abortRun(run);
         Object.keys(fixture.fileSystem.files).forEach(function (filePath) {
@@ -264,6 +420,46 @@ describe('catalogExportStateHelper', function () {
         assert.strictEqual(helper.loadActiveManifest(context).generation, firstRun.generation);
         assert.doesNotThrow(function () {
             helper.abortRun(helper.beginRun(context, new Date('2026-09-02T20:00:00Z')));
+        });
+    });
+
+    it('inherits the deep timestamp on fast promotion and protects a promoted run from abort', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var context = createContext();
+        var deepRun = helper.beginRun(context, new Date('2026-09-02T18:00:00Z'), {
+            reconciliationMode: 'deep'
+        });
+
+        helper.writeRootRecord(deepRun, 'ROOT-1', ['doc-1'], {
+            modificationSignature: 'modified',
+            eligibilitySignature: 'eligible',
+            ownershipSignature: 'owned',
+            payloadChecksum: 'checksum'
+        });
+        var deepManifest = helper.promoteRun(deepRun);
+        var deepTimestamp = deepManifest.lastDeepReconciledAt;
+        var fastRun = helper.beginRun(context, new Date('2026-09-02T19:00:00Z'), null, {
+            reconciliationMode: 'fast',
+            activeManifest: deepManifest
+        });
+
+        helper.writeRootRecord(fastRun, 'ROOT-1', ['doc-1'], {
+            modificationSignature: 'modified',
+            eligibilitySignature: 'eligible',
+            ownershipSignature: 'owned',
+            payloadChecksum: 'checksum'
+        });
+        var fastManifest = helper.promoteRun(fastRun);
+
+        assert.strictEqual(fastManifest.reconciliationMode, 'fast');
+        assert.strictEqual(fastManifest.lastDeepReconciledAt, deepTimestamp);
+        assert.notStrictEqual(fastManifest.completedAt, null);
+
+        helper.abortRun(fastRun);
+        assert.strictEqual(helper.loadActiveManifest(context).generation, fastRun.generation);
+        Object.keys(fixture.fileSystem.files).forEach(function (filePath) {
+            assert.notMatch(filePath, /_(documents|descriptors|deletes)_\d\d\.jsonl$/);
         });
     });
 
@@ -295,13 +491,16 @@ describe('catalogExportStateHelper', function () {
 
         helper.abortRun(run);
 
-        assert.throws(function () {
+        var ownershipError = assert.throws(function () {
             helper.beginRun(createContext({
                 targetId: 'mondou-fr',
                 locale: 'fr_CA',
                 language: 'fr'
             }), new Date('2026-09-02T20:00:00Z'));
         }, /already owned by another catalog export target/);
+        assert.include(ownershipError.message, 'mondou-en');
+        assert.include(ownershipError.message, 'mondou-fr');
+        assert.include(ownershipError.message, 'coveo_catalog_source_');
     });
 
     it('does not steal an old source lock automatically', function () {

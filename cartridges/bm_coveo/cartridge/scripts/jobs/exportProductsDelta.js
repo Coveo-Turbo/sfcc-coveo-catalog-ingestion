@@ -26,6 +26,72 @@ var deletesToExport = [];
 var MAX_OPERATIONS_PER_UPLOAD = 1000;
 var MAX_OPERATION_PAYLOAD_BYTES = 5 * 1024 * 1024;
 var pendingOperationBytes = 0;
+var modeSelection = null;
+var reconciliationStats = null;
+var scanStartedAt = null;
+var scanDurationMs = 0;
+var uploadDurationMs = 0;
+
+function createReconciliationStats() {
+    return {
+        rootsScanned: 0,
+        rootsCarriedForward: 0,
+        rootsGenerated: 0,
+        rootsRemoved: 0,
+        addUpdateOperations: 0,
+        deleteOperations: 0,
+        generationDurationMs: 0,
+        reconciliationDurationMs: 0,
+        dirtyReasons: {
+            new: 0,
+            modified: 0,
+            eligibilityOwnership: 0,
+            purchase: 0,
+            forced: 0,
+            migration: 0
+        }
+    };
+}
+
+function parseBooleanParameter(value) {
+    return value === true || String(value || '').toLowerCase() === 'true';
+}
+
+function documentIdsMatch(left, right) {
+    return JSON.stringify(left || []) === JSON.stringify(right || []);
+}
+
+function getDirtyReason(descriptor, previousRecord, purchaseRootLookup) {
+    if (modeSelection.mode === 'deep') {
+        return 'forced';
+    }
+
+    if (!previousRecord) {
+        return 'new';
+    }
+
+    if (previousRecord.descriptorVersion !== catalogExportStateHelper.DESCRIPTOR_SCHEMA_VERSION
+        || !previousRecord.modificationSignature
+        || !previousRecord.eligibilitySignature
+        || !previousRecord.ownershipSignature) {
+        return 'migration';
+    }
+
+    if (previousRecord.modificationSignature !== descriptor.modificationSignature) {
+        return 'modified';
+    }
+
+    if (previousRecord.eligibilitySignature !== descriptor.eligibilitySignature
+        || previousRecord.ownershipSignature !== descriptor.ownershipSignature) {
+        return 'eligibilityOwnership';
+    }
+
+    if (purchaseRootLookup['$' + descriptor.rootId]) {
+        return 'purchase';
+    }
+
+    return '';
+}
 
 /**
  * Formats service failure details for logs and thrown errors.
@@ -105,6 +171,8 @@ function uploadPendingOperations(parameters) {
         return;
     }
 
+    var uploadStartedAt = new Date().getTime();
+
     productFile = coveoHelper.writeProductOperationsFile(
         sourceFolder,
         productsToExport,
@@ -117,15 +185,24 @@ function uploadPendingOperations(parameters) {
         deletesToExport.length
     );
 
-    var fileContainer = ensureSuccessfulResponse(streamHelper.createFileContainer(exportContext), 'file container creation');
-    var uploadUri = fileContainer.object.uploadUri;
-    var requiredHeaders = fileContainer.object.requiredHeaders || {};
-    ensureSuccessfulResponse(streamHelper.uploadStreamService(productFile, uploadUri, requiredHeaders), 'file upload');
-    ensureSuccessfulResponse(streamHelper.sendFileContainer(fileContainer.object.fileId, exportContext), 'stream update');
-    cleanupProductFile(parameters, productFile);
+    try {
+        var fileContainer = ensureSuccessfulResponse(streamHelper.createFileContainer(exportContext), 'file container creation');
+        var uploadUri = fileContainer.object.uploadUri;
+        var requiredHeaders = fileContainer.object.requiredHeaders || {};
+        ensureSuccessfulResponse(streamHelper.uploadStreamService(productFile, uploadUri, requiredHeaders), 'file upload');
+        ensureSuccessfulResponse(streamHelper.sendFileContainer(fileContainer.object.fileId, exportContext), 'stream update');
+        cleanupProductFile(parameters, productFile);
+    } catch (error) {
+        if (productFile && typeof productFile.remove === 'function') {
+            productFile.remove();
+        }
+
+        throw error;
+    }
     productsToExport = [];
     deletesToExport = [];
     pendingOperationBytes = 0;
+    uploadDurationMs += new Date().getTime() - uploadStartedAt;
 }
 
 function getEstimatedSerializedBytes(value) {
@@ -242,6 +319,7 @@ function appendRootItemBatch(rootId, items, parameters) {
             productsToExport.push(item);
         }
     });
+    reconciliationStats.addUpdateOperations += items.length;
     pendingOperationBytes += operationBytes;
 }
 
@@ -251,7 +329,6 @@ function appendRootOperations(rootId, currentRecord, previousRecord, parameters)
     var currentItems = (!previousRecord || previousRecord.payloadChecksum !== currentRecord.payloadChecksum)
         ? (currentRecord.items || [])
         : [];
-    var deleteCandidateCount = 0;
     var rootItemBatches;
 
     (currentRecord.documentIds || []).forEach(function (documentId) {
@@ -261,7 +338,6 @@ function appendRootOperations(rootId, currentRecord, previousRecord, parameters)
     previousDocumentIds.forEach(function (documentId) {
         if (!currentDocumentIds['$' + documentId]) {
             catalogExportStateHelper.writeDeleteCandidate(stateRun, documentId);
-            deleteCandidateCount += 1;
         }
     });
 
@@ -270,9 +346,6 @@ function appendRootOperations(rootId, currentRecord, previousRecord, parameters)
         appendRootItemBatch(rootId, batch, parameters);
     });
 
-    if (currentItems.length || deleteCandidateCount) {
-        purchaseMetricHelper.putMapValue(exportedRootIds, rootId, true);
-    }
 }
 
 function appendDeletedDocument(documentId, parameters) {
@@ -284,6 +357,7 @@ function appendDeletedDocument(documentId, parameters) {
     }
 
     deletesToExport.push(documentId);
+    reconciliationStats.deleteOperations += 1;
     pendingOperationBytes += operationBytes;
 }
 
@@ -314,21 +388,78 @@ function appendEligibleDeleteCandidates(parameters) {
 
 function reconcileManifestRun(parameters) {
     var shardIndex;
+    var reconciliationStartedAt = new Date().getTime();
 
-    catalogExportStateHelper.closeRun(stateRun);
+    catalogExportStateHelper.closeRootDescriptors(stateRun);
 
     for (shardIndex = 0; shardIndex < catalogExportStateHelper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
         var previousRecords = {};
+        var purchaseRootLookup = {};
 
         catalogExportStateHelper.forEachShardRecord(activeManifest, shardIndex, function (record) {
             previousRecords['$' + record.rootId] = record;
         });
+        catalogExportStateHelper.forEachPurchaseRootId(stateRun, shardIndex, function (rootId) {
+            purchaseRootLookup['$' + rootId] = true;
+        });
 
-        catalogExportStateHelper.forEachShardRecord(stateRun, shardIndex, function (currentRecord) {
-            var key = '$' + currentRecord.rootId;
+        catalogExportStateHelper.forEachRootDescriptor(stateRun, shardIndex, function (descriptor) {
+            var key = '$' + descriptor.rootId;
             var previousRecord = previousRecords[key] || null;
+            var dirtyReason = getDirtyReason(descriptor, previousRecord, purchaseRootLookup);
 
-            appendRootOperations(currentRecord.rootId, currentRecord, previousRecord, parameters);
+            reconciliationStats.rootsScanned += 1;
+
+            if (dirtyReason !== '') {
+                var generationStartedAt = new Date().getTime();
+                var generatedRoot = productRequestGenerator.generateRoot(descriptor.rootId, isDelta, exportContext);
+                var items = generatedRoot.items;
+                var refreshedDescriptor = generatedRoot.descriptor;
+
+                reconciliationStats.generationDurationMs += new Date().getTime() - generationStartedAt;
+
+                if (!refreshedDescriptor) {
+                    throw new Error('Catalog root ' + descriptor.rootId + ' disappeared during delta payload generation. Retry the delta export.');
+                }
+
+                var generatedDocumentIds = catalogExportStateHelper.getDocumentIds(items);
+
+                if (!documentIdsMatch(generatedDocumentIds, refreshedDescriptor.documentIds)) {
+                    throw new Error('Catalog root ' + descriptor.rootId + ' changed document ownership during delta payload generation. Retry the delta export.');
+                }
+
+                var currentRecord = catalogExportStateHelper.writeRootRecord(
+                    stateRun,
+                    descriptor.rootId,
+                    generatedDocumentIds,
+                    {
+                        modifiedAt: refreshedDescriptor.modifiedAt,
+                        modificationSignature: refreshedDescriptor.modificationSignature,
+                        eligibilitySignature: refreshedDescriptor.eligibilitySignature,
+                        ownershipSignature: refreshedDescriptor.ownershipSignature,
+                        payloadChecksum: catalogExportStateHelper.getPayloadChecksum(items)
+                    }
+                );
+                currentRecord.items = items;
+                appendRootOperations(descriptor.rootId, currentRecord, previousRecord, parameters);
+                reconciliationStats.rootsGenerated += 1;
+                reconciliationStats.dirtyReasons[dirtyReason] += 1;
+            } else {
+                catalogExportStateHelper.writeRootRecord(
+                    stateRun,
+                    descriptor.rootId,
+                    previousRecord.documentIds,
+                    {
+                        modifiedAt: descriptor.modifiedAt,
+                        modificationSignature: descriptor.modificationSignature,
+                        eligibilitySignature: descriptor.eligibilitySignature,
+                        ownershipSignature: descriptor.ownershipSignature,
+                        payloadChecksum: previousRecord.payloadChecksum
+                    }
+                );
+                reconciliationStats.rootsCarriedForward += 1;
+            }
+
             delete previousRecords[key];
         });
 
@@ -338,14 +469,17 @@ function reconcileManifestRun(parameters) {
             (removedRecord.documentIds || []).forEach(function (documentId) {
                 catalogExportStateHelper.writeDeleteCandidate(stateRun, documentId);
             });
-            purchaseMetricHelper.putMapValue(exportedRootIds, removedRecord.rootId, true);
+            reconciliationStats.rootsRemoved += 1;
         });
 
         previousRecords = null;
+        purchaseRootLookup = null;
     }
 
+    catalogExportStateHelper.closeRun(stateRun);
     appendEligibleDeleteCandidates(parameters);
     uploadPendingOperations(parameters);
+    reconciliationStats.reconciliationDurationMs = new Date().getTime() - reconciliationStartedAt;
 }
 
 /**
@@ -365,6 +499,11 @@ exports.beforeStep = function (parameters, stepExecution) {
     productsToExport = [];
     deletesToExport = [];
     pendingOperationBytes = 0;
+    uploadDurationMs = 0;
+    modeSelection = null;
+    reconciliationStats = createReconciliationStats();
+    scanStartedAt = new Date().getTime();
+    scanDurationMs = 0;
     exportedRootIds = null;
     activeManifest = null;
     stateRun = null;
@@ -372,7 +511,7 @@ exports.beforeStep = function (parameters, stepExecution) {
     exportContext = exportTargetHelper.resolveExportContext(parameters);
     previousLocale = exportTargetHelper.applyRequestLocale(exportContext);
     manifestEnabled = catalogExportStateHelper.isManifestEnabled(exportContext);
-    exportedRootIds = purchaseMetricHelper.createHashMap();
+    exportedRootIds = manifestEnabled ? null : purchaseMetricHelper.createHashMap();
 
     try {
         purchaseMetricHelper.attachSnapshotsToExportContext(exportContext, purchaseMetricHelper.DEFAULT_STATE_PATH);
@@ -394,7 +533,30 @@ exports.beforeStep = function (parameters, stepExecution) {
         if (manifestEnabled) {
             activeManifest = catalogExportStateHelper.loadActiveManifest(exportContext, catalogExportStateHelper.DEFAULT_STATE_PATH);
             catalogExportStateHelper.assertCompatibleManifest(exportContext, activeManifest);
-            stateRun = catalogExportStateHelper.beginRun(exportContext, syncStartedAt, catalogExportStateHelper.DEFAULT_STATE_PATH);
+            modeSelection = catalogExportStateHelper.selectReconciliationMode(activeManifest, {
+                requestedMode: parameters.get('reconciliationMode') || 'auto',
+                forceDeep: parseBooleanParameter(parameters.get('forceDeepReconciliation')),
+                maxAgeHours: parameters.get('maxDeepReconciliationAgeHours')
+            }, syncStartedAt);
+            stateRun = catalogExportStateHelper.beginRun(exportContext, syncStartedAt, catalogExportStateHelper.DEFAULT_STATE_PATH, {
+                reconciliationMode: modeSelection.mode,
+                activeManifest: activeManifest
+            });
+            purchaseMetricHelper.forEachSnapshotDrivenRootId(
+                exportContext,
+                exportContext.purchaseMetrics,
+                purchaseMetricHelper.DEFAULT_STATE_PATH,
+                function (rootId) {
+                    catalogExportStateHelper.writePurchaseRootId(stateRun, rootId);
+                }
+            );
+            catalogExportStateHelper.closePurchaseRootIds(stateRun);
+            Logger.info(
+                'Selected Coveo manifest reconciliation mode={0}, reason={1}, deepBaselineAgeHours={2}.',
+                modeSelection.mode,
+                modeSelection.reason,
+                modeSelection.baselineAgeHours === null ? '[unavailable]' : modeSelection.baselineAgeHours
+            );
         }
 
         var snapshotDrivenRootIds = manifestEnabled
@@ -424,15 +586,17 @@ exports.read = function (parameters, stepExecution) { // eslint-disable-line
 };
 
 exports.process = function (product, parameters, stepExecution) {
-    var items = productRequestGenerator.processProducts(product, isDelta, exportContext);
-
     if (manifestEnabled) {
-        return {
-            rootId: product,
-            items: items
-        };
+        var descriptor = productRequestGenerator.buildRootDescriptor(product, exportContext);
+
+        if (!descriptor) {
+            throw new Error('Unable to build a lightweight catalog descriptor for root product ' + product + '.');
+        }
+
+        return descriptor;
     }
 
+    var items = productRequestGenerator.processProducts(product, isDelta, exportContext);
     purchaseMetricHelper.putMapValue(exportedRootIds, product, true);
     return items;
 };
@@ -441,16 +605,8 @@ exports.write = function (lines, parameters, stepExecution) {
     var productsList = new ArrayList(lines).toArray();
 
     if (manifestEnabled) {
-        productsList.forEach(function (result) {
-            catalogExportStateHelper.writeRootRecord(
-                stateRun,
-                result.rootId,
-                catalogExportStateHelper.getDocumentIds(result.items),
-                {
-                    payloadChecksum: catalogExportStateHelper.getPayloadChecksum(result.items),
-                    items: result.items
-                }
-            );
+        productsList.forEach(function (descriptor) {
+            catalogExportStateHelper.writeRootDescriptor(stateRun, descriptor);
         });
         return;
     }
@@ -480,6 +636,7 @@ exports.afterStep = function (success, parameters) {
 
         if (manifestEnabled) {
             closeProductsIterator();
+            scanDurationMs = new Date().getTime() - scanStartedAt;
             reconcileManifestRun(parameters);
         } else if (!empty(productsToExport) && productsToExport.length > 0) {
             productFile = coveoHelper.writeProductFile(sourceFolder, productsToExport, exportContext);
@@ -495,18 +652,52 @@ exports.afterStep = function (success, parameters) {
             Logger.info('No delta products were exported to Coveo.');
         }
 
-        purchaseMetricHelper.markDeltaExportApplied(
-            exportContext,
-            exportContext.purchaseMetrics,
-            purchaseMetricHelper.DEFAULT_STATE_PATH,
-            exportedRootIds
-        );
-        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
+        if (manifestEnabled) {
+            purchaseMetricHelper.markFullExportApplied(
+                exportContext,
+                exportContext.purchaseMetrics,
+                purchaseMetricHelper.DEFAULT_STATE_PATH
+            );
+        } else {
+            purchaseMetricHelper.markDeltaExportApplied(
+                exportContext,
+                exportContext.purchaseMetrics,
+                purchaseMetricHelper.DEFAULT_STATE_PATH,
+                exportedRootIds
+            );
+        }
 
         if (manifestEnabled) {
             catalogExportStateHelper.promoteRun(stateRun);
             statePromoted = true;
             stateRun = null;
+        }
+        exportTargetHelper.updateLastSync(exportContext, syncStartedAt);
+
+        if (manifestEnabled) {
+            Logger.info(
+                'Coveo manifest delta summary - mode={0}, reason={1}, deepBaselineAt={2}, deepBaselineAgeHours={3}, rootsScanned={4}, rootsCarried={5}, rootsGenerated={6}, rootsRemoved={7}, dirtyNew={8}, dirtyModified={9}, dirtyEligibilityOwnership={10}, dirtyPurchase={11}, dirtyForced={12}, dirtyMigration={13}, addUpdateOperations={14}, deleteOperations={15}, scanMs={16}, generationMs={17}, reconciliationMs={18}, uploadMs={19}.',
+                modeSelection.mode,
+                modeSelection.reason,
+                activeManifest.lastDeepReconciledAt || '[unavailable]',
+                modeSelection.baselineAgeHours === null ? '[unavailable]' : modeSelection.baselineAgeHours,
+                reconciliationStats.rootsScanned,
+                reconciliationStats.rootsCarriedForward,
+                reconciliationStats.rootsGenerated,
+                reconciliationStats.rootsRemoved,
+                reconciliationStats.dirtyReasons.new,
+                reconciliationStats.dirtyReasons.modified,
+                reconciliationStats.dirtyReasons.eligibilityOwnership,
+                reconciliationStats.dirtyReasons.purchase,
+                reconciliationStats.dirtyReasons.forced,
+                reconciliationStats.dirtyReasons.migration,
+                reconciliationStats.addUpdateOperations,
+                reconciliationStats.deleteOperations,
+                scanDurationMs,
+                reconciliationStats.generationDurationMs,
+                reconciliationStats.reconciliationDurationMs,
+                uploadDurationMs
+            );
         }
     } catch (error) {
         if (manifestEnabled && stateRun && !statePromoted) {

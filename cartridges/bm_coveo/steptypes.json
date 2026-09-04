@@ -346,6 +346,30 @@
                         "@required": "false",
                         "@trim": "true",
                         "description": "Optional export target id for multi-locale or catalog-scoped exports"
+                      },
+                      {
+                        "@name": "reconciliationMode",
+                        "@type": "string",
+                        "@required": "false",
+                        "@trim": "true",
+                        "default-value": "auto",
+                        "description": "Delta reconciliation mode: auto selects fast when a compatible deep baseline exists and deep otherwise; fast reuses unchanged manifest records; deep regenerates every current root"
+                      },
+                      {
+                        "@name": "forceDeepReconciliation",
+                        "@type": "boolean",
+                        "@required": "false",
+                        "@trim": "true",
+                        "default-value": false,
+                        "description": "Force this delta run to perform deep reconciliation regardless of the selected reconciliation mode"
+                      },
+                      {
+                        "@name": "maxDeepReconciliationAgeHours",
+                        "@type": "long",
+                        "@required": "false",
+                        "@trim": "true",
+                        "default-value": 24,
+                        "description": "Maximum age in hours of the last successful deep reconciliation before auto mode performs another deep run"
                       }
             ]
           },
