@@ -260,6 +260,17 @@ function createContext() {
 }
 
 describe('purchaseMetricHelper', function () {
+    it('exports the complete quota-bounded map API used by delta reconciliation', function () {
+        var helper = createFixture().helper;
+        var map = helper.createHashMap();
+
+        helper.putMapValue(map, 'root-1', 'value');
+        assert.strictEqual(helper.getMapValue(map, 'root-1'), 'value');
+        assert.isTrue(helper.containsMapKey(map, 'root-1'));
+        helper.removeMapKey(map, 'root-1');
+        assert.isFalse(helper.containsMapKey(map, 'root-1'));
+    });
+
     it('streams more than 20000 products through quota-bounded snapshot and target state', function () {
         var fixture = createFixture();
         var helper = fixture.helper;

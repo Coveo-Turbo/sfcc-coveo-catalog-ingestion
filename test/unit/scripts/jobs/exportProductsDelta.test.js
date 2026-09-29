@@ -141,6 +141,7 @@ function createFixture(options) {
         markedRoots: null,
         markedFull: false,
         modeSelections: [],
+        quotaMapCreations: 0,
         operations: [],
         processCounts: {},
         descriptorCounts: {},
@@ -358,13 +359,27 @@ function createFixture(options) {
         '*/cartridge/scripts/helper/purchaseMetricHelper': {
             DEFAULT_STATE_PATH: '/src/coveo/state/purchase-enrichment/',
             createHashMap: function () {
-                return {};
+                calls.quotaMapCreations += 1;
+                return {
+                    values: new Map()
+                };
             },
             containsMapKey: function (map, key) {
-                return Boolean(map[key]);
+                return map.values.has(key);
+            },
+            getMapValue: function (map, key) {
+                return map.values.has(key) ? map.values.get(key) : null;
             },
             putMapValue: function (map, key, value) {
-                map[key] = value;
+                map.values.set(key, value);
+            },
+            removeMapKey: function (map, key) {
+                map.values.delete(key);
+            },
+            iterateMap: function (map, callback) {
+                map.values.forEach(function (value, key) {
+                    callback(key, value);
+                });
             },
             attachSnapshotsToExportContext: function () {
                 exportContext.purchaseMetrics = [];
@@ -384,7 +399,7 @@ function createFixture(options) {
                     throw new Error('purchase state failed');
                 }
 
-                calls.markedRoots = Object.keys(rootIds);
+                calls.markedRoots = Array.from(rootIds.values.keys());
             },
             markFullExportApplied: function () {
                 if (fixtureOptions.failMarkApplied) {
@@ -574,6 +589,39 @@ describe('exportProductsDelta job', function () {
         assert.strictEqual(fixture.calls.processCounts['ROOT-123'], 1);
         assert.strictEqual(fixture.calls.processCounts['ROOT-9876'], 1);
         assert.strictEqual(fixture.run.records.length, 10000);
+    });
+
+    it('reconciles more than 2000 records in one manifest shard through quota-bounded maps', function () {
+        var currentItems = {};
+        var currentRootIds = [];
+        var previousRecords = [];
+        var index;
+
+        for (index = 0; index < 2501; index += 1) {
+            var rootId = 'SAME-SHARD-' + index;
+            var items = [{ documentId: 'same-shard-document-' + index }];
+
+            currentRootIds.push(rootId);
+            currentItems[rootId] = items;
+            previousRecords.push({
+                rootId: rootId,
+                documentIds: [items[0].documentId],
+                payloadChecksum: JSON.stringify(items)
+            });
+        }
+
+        var fixture = createFixture({
+            currentItems: currentItems,
+            currentRootIds: currentRootIds,
+            previousRecords: previousRecords
+        });
+
+        executeJob(fixture);
+
+        assert.strictEqual(fixture.run.records.length, 2501);
+        assert.strictEqual(Object.keys(fixture.calls.processCounts).length, 0);
+        assert.isAtLeast(fixture.calls.quotaMapCreations, 8);
+        assert.lengthOf(fixture.calls.operations, 0);
     });
 
     it('generates a purchase-driven root even when its catalog timestamp is unchanged', function () {

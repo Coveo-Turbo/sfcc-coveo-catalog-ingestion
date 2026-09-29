@@ -1342,6 +1342,7 @@ module.exports = {
     parsePositiveInteger: parsePositiveInteger,
     publishSharedSnapshotAndTargetState: publishSharedSnapshotAndTargetState,
     putMapValue: putMapValue,
+    removeMapKey: removeMapKey,
     readSharedSnapshot: readSharedSnapshot,
     sumCountsForAliases: sumCountsForAliases,
     withPurchaseStateLock: withPurchaseStateLock,
