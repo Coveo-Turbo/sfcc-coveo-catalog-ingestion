@@ -726,10 +726,12 @@ function isProductOnlyCatalogStructureMode(exportContext) {
  * Returns whether payload-generation errors must abort reconciliation.
  * Legacy exports preserve their historical best-effort behavior.
  * @param {Object} exportContext - Export context.
+ * @param {Error} error - Payload generation error.
  * @returns {boolean} whether errors must propagate.
  */
-function shouldPropagatePayloadError(exportContext) {
-    return exportTargetHelper.normalizeProductEligibilityMode(exportContext && exportContext.productEligibilityMode)
+function shouldPropagatePayloadError(exportContext, error) {
+    return !!(error && error.coveoAlternateLocalizationFailure)
+        || exportTargetHelper.normalizeProductEligibilityMode(exportContext && exportContext.productEligibilityMode)
         !== exportTargetHelper.PRODUCT_ELIGIBILITY_MODE_LEGACY;
 }
 
@@ -872,6 +874,85 @@ function getHtmlDocument(markupValue) {
     }
 
     return '<html><body>' + markupSource + '</body></html>';
+}
+
+/**
+ * Resolves and caches one product's built-in fields under an alternate locale.
+ * @param {Object} product - Source product.
+ * @param {Object} localization - Alternate localization definition.
+ * @param {Object} cache - Root-scoped quota-bounded cache.
+ * @param {boolean} includeDescriptions - Whether descriptions are required.
+ * @returns {Object} localized built-in values.
+ */
+function getAlternateLocalizedValues(product, localization, cache, includeDescriptions) {
+    var cacheKey = localization.locale + '\u0000' + product.ID;
+    var values;
+
+    if (purchaseMetricHelper.containsMapKey(cache, cacheKey)) {
+        values = purchaseMetricHelper.getMapValue(cache, cacheKey);
+
+        if (!includeDescriptions || values.includesDescriptions) {
+            return values;
+        }
+    }
+
+    try {
+        values = exportTargetHelper.withRequestLocale(localization.locale, function () {
+            var localizedValues = {
+                name: empty(product.name) ? '' : String(product.name),
+                description: '',
+                shortDescription: '',
+                includesDescriptions: includeDescriptions
+            };
+
+            if (includeDescriptions) {
+                localizedValues.description = getHtmlDocument(product.longDescription) || getHtmlDocument(product.shortDescription);
+                localizedValues.shortDescription = getMarkupSource(product.shortDescription);
+            }
+
+            return localizedValues;
+        });
+    } catch (error) {
+        var localizationError = new Error(
+            'Unable to resolve alternate locale '
+            + localization.locale
+            + ' for product '
+            + product.ID
+            + '. '
+            + (error.message || error)
+        );
+        localizationError.coveoAlternateLocalizationFailure = true;
+        throw localizationError;
+    }
+    purchaseMetricHelper.putMapValue(cache, cacheKey, values);
+
+    return values;
+}
+
+/**
+ * Adds configured alternate-language built-in fields to an exported item.
+ * @param {Object} item - Exported Product or Variant item.
+ * @param {Object} product - Source product.
+ * @param {Object} exportContext - Export context.
+ * @param {boolean} includeDescriptions - Whether description fields should be emitted.
+ * @param {Object} cache - Root-scoped quota-bounded cache.
+ */
+function applyAlternateLocalizedFields(item, product, exportContext, includeDescriptions, cache) {
+    (exportContext && exportContext.alternateLocalizations || []).forEach(function (localization) {
+        var values = getAlternateLocalizedValues(product, localization, cache, includeDescriptions);
+
+        if (!empty(values.name)) {
+            item[localization.nameField] = values.name;
+        }
+
+        if (includeDescriptions && !empty(values.description)) {
+            item[localization.descriptionField] = values.description;
+        }
+
+        if (includeDescriptions && !empty(values.shortDescription)) {
+            item[localization.shortDescriptionField] = values.shortDescription;
+        }
+    });
 }
 
 /**
@@ -1073,9 +1154,10 @@ function getExportPrices(product) {
  * @param {Object} product - product
  * @param {Object} exportOptions - export options
  * @param {Object} exportContext - export context
+ * @param {Object} alternateLocalizationCache - Root-scoped localization cache.
  * @returns {Object} - Object
  */
-function getProductsData(product, exportOptions, exportContext) {
+function getProductsData(product, exportOptions, exportContext, alternateLocalizationCache) {
     var prdObj = null;
     try {
         var productId = exportOptions && exportOptions.productId ? exportOptions.productId : getCanonicalProductId(product);
@@ -1117,6 +1199,7 @@ function getProductsData(product, exportOptions, exportContext) {
             prdObj.ec_promo_price = exportPrices.promoPrice;
         }
         fieldMappingHelper.applyFieldMappings(prdObj, product, mappingObjectTypes, exportContext);
+        applyAlternateLocalizedFields(prdObj, product, exportContext, true, alternateLocalizationCache);
         if (product.variant && 'color' in product.custom && !empty(product.custom.color)) {
             prdObj.ec_color = productColor;
         }
@@ -1136,7 +1219,7 @@ function getProductsData(product, exportOptions, exportContext) {
     } catch (ex) {
         Logger.error('(productRequestGenerator-getProductsData) -> Error occured while generating products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
 
-        if (shouldPropagatePayloadError(exportContext)) {
+        if (shouldPropagatePayloadError(exportContext, ex)) {
             throw ex;
         }
     }
@@ -1149,9 +1232,10 @@ function getProductsData(product, exportOptions, exportContext) {
  * @param {Object} product - product
  * @param {string} productId - productId
  * @param {Object} exportContext - export context
+ * @param {Object} alternateLocalizationCache - Root-scoped localization cache.
  * @returns {Object} - Object
  */
-function getVariantsData(product, productId, exportContext) {
+function getVariantsData(product, productId, exportContext, alternateLocalizationCache) {
     var variantObj = null;
     try {
         variantObj = {
@@ -1166,6 +1250,7 @@ function getVariantsData(product, productId, exportContext) {
             ec_variant_id: product.ID
         };
         fieldMappingHelper.applyFieldMappings(variantObj, product, coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT, exportContext);
+        applyAlternateLocalizedFields(variantObj, product, exportContext, false, alternateLocalizationCache);
         purchaseMetricHelper.applyPurchaseMetrics(variantObj, {
             objecttype: coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT,
             documentId: variantObj.documentId,
@@ -1174,7 +1259,7 @@ function getVariantsData(product, productId, exportContext) {
     } catch (ex) {
         Logger.error('(productRequestGenerator-getVariantsData) -> Error occured while generating Product variants and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
 
-        if (shouldPropagatePayloadError(exportContext)) {
+        if (shouldPropagatePayloadError(exportContext, ex)) {
             throw ex;
         }
     }
@@ -1191,6 +1276,9 @@ function getVariantsData(product, productId, exportContext) {
 function processLoadedProduct(product, isDelta, exportContext) {
     var coveoProducts = [];
     var isProductOnly = isProductOnlyCatalogStructureMode(exportContext);
+    var alternateLocalizationCache = exportContext && exportContext.alternateLocalizations && exportContext.alternateLocalizations.length
+        ? purchaseMetricHelper.createHashMap()
+        : null;
 
     try {
         var coveoPrd = product;
@@ -1216,7 +1304,7 @@ function processLoadedProduct(product, isDelta, exportContext) {
                             coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
                             coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT
                         ]
-                    }, exportContext));
+                    }, exportContext, alternateLocalizationCache));
                 });
 
                 return coveoProducts;
@@ -1248,10 +1336,10 @@ function processLoadedProduct(product, isDelta, exportContext) {
                     productId: parentProductId,
                     itemGroupId: coveoPrd.ID,
                     metricAliases: metricAliases
-                }, exportContext));
+                }, exportContext, alternateLocalizationCache));
 
                 currentProductVariants.forEach(function (element) {
-                    coveoProducts.push(getVariantsData(element, parentProductId, exportContext));
+                    coveoProducts.push(getVariantsData(element, parentProductId, exportContext, alternateLocalizationCache));
                 });
             });
         } else if (coveoPrd.variant && !empty(coveoPrd.masterProduct)) {
@@ -1268,7 +1356,7 @@ function processLoadedProduct(product, isDelta, exportContext) {
                         coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_PRODUCT,
                         coveoConstant.COVEO_CONSTANTS.OBJECT_TYPE_VARIANT
                     ]
-                }, exportContext));
+                }, exportContext, alternateLocalizationCache));
 
                 return coveoProducts;
             }
@@ -1278,8 +1366,8 @@ function processLoadedProduct(product, isDelta, exportContext) {
                 productId: groupedProductId,
                 itemGroupId: coveoPrd.masterProduct.ID,
                 metricAliases: [groupedProductId, coveoPrd.ID]
-            }, exportContext));
-            coveoProducts.push(getVariantsData(coveoPrd, groupedProductId, exportContext));
+            }, exportContext, alternateLocalizationCache));
+            coveoProducts.push(getVariantsData(coveoPrd, groupedProductId, exportContext, alternateLocalizationCache));
         } else {
             if (!productEligibilityHelper.isProductEligible(coveoPrd, exportContext)) {
                 return coveoProducts;
@@ -1288,12 +1376,12 @@ function processLoadedProduct(product, isDelta, exportContext) {
             coveoProducts.push(getProductsData(coveoPrd, {
                 productId: coveoPrd.ID,
                 metricAliases: [coveoPrd.ID]
-            }, exportContext));
+            }, exportContext, alternateLocalizationCache));
         }
     } catch (ex) {
         Logger.error('(productRequestGenerator-processProducts) -> Error occured while processing products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
 
-        if (shouldPropagatePayloadError(exportContext)) {
+        if (shouldPropagatePayloadError(exportContext, ex)) {
             throw ex;
         }
     }
@@ -1316,7 +1404,7 @@ function processProducts(product, isDelta, exportContext) {
     } catch (ex) {
         Logger.error('(productRequestGenerator-processProducts) -> Error occured while processing products and exception is: {0} in {1} : {2}', ex.toString(), ex.fileName, ex.lineNumber);
 
-        if (shouldPropagatePayloadError(exportContext)) {
+        if (shouldPropagatePayloadError(exportContext, ex)) {
             throw ex;
         }
 
