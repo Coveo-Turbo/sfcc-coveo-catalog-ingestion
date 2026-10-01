@@ -86,7 +86,7 @@ function getDirtyReason(descriptor, previousRecord, purchaseRootLookup) {
         return 'eligibilityOwnership';
     }
 
-    if (purchaseRootLookup['$' + descriptor.rootId]) {
+    if (purchaseMetricHelper.containsMapKey(purchaseRootLookup, descriptor.rootId)) {
         return 'purchase';
     }
 
@@ -260,7 +260,7 @@ function buildRootItemBatches(rootId, items) {
     }
 
     var parentGroups = [];
-    var parentGroupsById = {};
+    var parentGroupsById = purchaseMetricHelper.createHashMap();
     var otherItems = [];
 
     (items || []).forEach(function (item) {
@@ -271,7 +271,7 @@ function buildRootItemBatches(rootId, items) {
             };
 
             parentGroups.push(group);
-            parentGroupsById['$' + item.ec_product_id] = group;
+            purchaseMetricHelper.putMapValue(parentGroupsById, item.ec_product_id, group);
         } else if (!item || item.objecttype !== 'Variant') {
             otherItems.push(item);
         }
@@ -279,7 +279,7 @@ function buildRootItemBatches(rootId, items) {
 
     (items || []).forEach(function (item) {
         if (item && item.objecttype === 'Variant') {
-            var parentGroup = parentGroupsById['$' + item.ec_product_id];
+            var parentGroup = purchaseMetricHelper.getMapValue(parentGroupsById, item.ec_product_id);
 
             if (!parentGroup) {
                 throw new Error('The Coveo delta payload for root product ' + rootId + ' contains a Variant without its Product parent.');
@@ -324,7 +324,7 @@ function appendRootItemBatch(rootId, items, parameters) {
 }
 
 function appendRootOperations(rootId, currentRecord, previousRecord, parameters) {
-    var currentDocumentIds = {};
+    var currentDocumentIds = purchaseMetricHelper.createHashMap();
     var previousDocumentIds = previousRecord && previousRecord.documentIds ? previousRecord.documentIds : [];
     var currentItems = (!previousRecord || previousRecord.payloadChecksum !== currentRecord.payloadChecksum)
         ? (currentRecord.items || [])
@@ -332,11 +332,11 @@ function appendRootOperations(rootId, currentRecord, previousRecord, parameters)
     var rootItemBatches;
 
     (currentRecord.documentIds || []).forEach(function (documentId) {
-        currentDocumentIds['$' + documentId] = true;
+        purchaseMetricHelper.putMapValue(currentDocumentIds, documentId, true);
     });
 
     previousDocumentIds.forEach(function (documentId) {
-        if (!currentDocumentIds['$' + documentId]) {
+        if (!purchaseMetricHelper.containsMapKey(currentDocumentIds, documentId)) {
             catalogExportStateHelper.writeDeleteCandidate(stateRun, documentId);
         }
     });
@@ -367,21 +367,20 @@ function appendEligibleDeleteCandidates(parameters) {
     catalogExportStateHelper.closeDeleteCandidates(stateRun);
 
     for (shardIndex = 0; shardIndex < catalogExportStateHelper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
-        var currentDocumentIds = {};
-        var processedDeleteCandidates = {};
+        var currentDocumentIds = purchaseMetricHelper.createHashMap();
+        var processedDeleteCandidates = purchaseMetricHelper.createHashMap();
 
         catalogExportStateHelper.forEachCurrentDocumentId(stateRun, shardIndex, function (documentId) {
-            currentDocumentIds['$' + documentId] = true;
+            purchaseMetricHelper.putMapValue(currentDocumentIds, documentId, true);
         });
 
         catalogExportStateHelper.forEachDeleteCandidate(stateRun, shardIndex, function (documentId) {
-            var key = '$' + documentId;
-
-            if (!processedDeleteCandidates[key] && !currentDocumentIds[key]) {
+            if (!purchaseMetricHelper.containsMapKey(processedDeleteCandidates, documentId)
+                && !purchaseMetricHelper.containsMapKey(currentDocumentIds, documentId)) {
                 appendDeletedDocument(documentId, parameters);
             }
 
-            processedDeleteCandidates[key] = true;
+            purchaseMetricHelper.putMapValue(processedDeleteCandidates, documentId, true);
         });
     }
 }
@@ -393,19 +392,18 @@ function reconcileManifestRun(parameters) {
     catalogExportStateHelper.closeRootDescriptors(stateRun);
 
     for (shardIndex = 0; shardIndex < catalogExportStateHelper.MANIFEST_SHARD_COUNT; shardIndex += 1) {
-        var previousRecords = {};
-        var purchaseRootLookup = {};
+        var previousRecords = purchaseMetricHelper.createHashMap();
+        var purchaseRootLookup = purchaseMetricHelper.createHashMap();
 
         catalogExportStateHelper.forEachShardRecord(activeManifest, shardIndex, function (record) {
-            previousRecords['$' + record.rootId] = record;
+            purchaseMetricHelper.putMapValue(previousRecords, record.rootId, record);
         });
         catalogExportStateHelper.forEachPurchaseRootId(stateRun, shardIndex, function (rootId) {
-            purchaseRootLookup['$' + rootId] = true;
+            purchaseMetricHelper.putMapValue(purchaseRootLookup, rootId, true);
         });
 
         catalogExportStateHelper.forEachRootDescriptor(stateRun, shardIndex, function (descriptor) {
-            var key = '$' + descriptor.rootId;
-            var previousRecord = previousRecords[key] || null;
+            var previousRecord = purchaseMetricHelper.getMapValue(previousRecords, descriptor.rootId);
             var dirtyReason = getDirtyReason(descriptor, previousRecord, purchaseRootLookup);
 
             reconciliationStats.rootsScanned += 1;
@@ -460,12 +458,10 @@ function reconcileManifestRun(parameters) {
                 reconciliationStats.rootsCarriedForward += 1;
             }
 
-            delete previousRecords[key];
+            purchaseMetricHelper.removeMapKey(previousRecords, descriptor.rootId);
         });
 
-        Object.keys(previousRecords).forEach(function (key) {
-            var removedRecord = previousRecords[key];
-
+        purchaseMetricHelper.iterateMap(previousRecords, function (rootId, removedRecord) { // eslint-disable-line no-unused-vars
             (removedRecord.documentIds || []).forEach(function (documentId) {
                 catalogExportStateHelper.writeDeleteCandidate(stateRun, documentId);
             });
