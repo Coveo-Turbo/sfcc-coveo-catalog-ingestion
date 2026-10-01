@@ -20,6 +20,51 @@ function createIterator(values) {
     };
 }
 
+function createTargetHelper(targetCustom, fieldMappings) {
+    return proxyquire(path.resolve(__dirname, '../../../../cartridges/int_coveo/cartridge/scripts/helper/exportTargetHelper'), {
+        '*/cartridge/scripts/helper/fieldMappingHelper': {
+            buildFieldMappingContext: function () {
+                return {
+                    mappingProfileId: targetCustom.mappingProfileId || '',
+                    mappingProfile: null,
+                    fieldMappings: fieldMappings || []
+                };
+            }
+        },
+        'dw/object/CustomObjectMgr': {
+            getCustomObject: function () {
+                return {
+                    custom: targetCustom
+                };
+            }
+        },
+        'dw/system/Logger': {
+            getLogger: function () {
+                return {
+                    warn: function () {}
+                };
+            }
+        },
+        'dw/system/Site': {
+            current: {
+                ID: 'RefArch',
+                defaultLocale: 'en_CA',
+                preferences: {
+                    custom: {
+                        coveoOrganizationId: 'orgid',
+                        coveoSourceId: 'legacy-source'
+                    }
+                }
+            }
+        },
+        'dw/system/Transaction': {
+            wrap: function (callback) {
+                callback();
+            }
+        }
+    });
+}
+
 describe('exportTargetHelper', function () {
     beforeEach(function () {
         global.empty = function (value) {
@@ -32,6 +77,117 @@ describe('exportTargetHelper', function () {
 
     afterEach(function () {
         delete global.empty;
+        delete global.request;
+    });
+
+    it('normalizes configured alternate locales and derives generated field names', function () {
+        var helper = createTargetHelper({
+            siteId: 'RefArch',
+            locale: 'en_CA',
+            language: 'en',
+            alternateLocales: ' fr_CA; de_DE\nfr_ca ',
+            coveoSourceId: 'source-en',
+            enabled: true
+        });
+        var context = helper.resolveExportContext({
+            get: function (name) {
+                return name === 'targetId' ? 'en-ca' : '';
+            }
+        });
+
+        assert.deepEqual(context.alternateLocales, ['fr_CA', 'de_DE']);
+        assert.deepEqual(context.alternateLocalizations, [{
+            locale: 'fr_CA',
+            language: 'fr',
+            nameField: 'ec_name_fr',
+            descriptionField: 'ec_description_fr',
+            shortDescriptionField: 'ec_shortdesc_fr'
+        }, {
+            locale: 'de_DE',
+            language: 'de',
+            nameField: 'ec_name_de',
+            descriptionField: 'ec_description_de',
+            shortDescriptionField: 'ec_shortdesc_de'
+        }]);
+    });
+
+    it('rejects alternate locales that reuse a language suffix or a mapped field', function () {
+        var duplicateHelper = createTargetHelper({
+            siteId: 'RefArch',
+            locale: 'en_CA',
+            language: 'en',
+            alternateLocales: 'fr_CA,fr_FR',
+            coveoSourceId: 'source-en',
+            enabled: true
+        });
+        var collisionHelper = createTargetHelper({
+            siteId: 'RefArch',
+            locale: 'en_CA',
+            language: 'en',
+            alternateLocales: 'fr_CA',
+            coveoSourceId: 'source-en',
+            mappingProfileId: 'profile',
+            enabled: true
+        }, [{
+            mappingId: 'localized-name',
+            targetField: 'EC_NAME_FR'
+        }]);
+        var parameters = {
+            get: function (name) {
+                return name === 'targetId' ? 'en-ca' : '';
+            }
+        };
+
+        assert.throws(function () {
+            duplicateHelper.resolveExportContext(parameters);
+        }, /multiple alternate locales.*fr/i);
+        assert.throws(function () {
+            collisionHelper.resolveExportContext(parameters);
+        }, /conflicts with generated alternate-language field ec_name_fr/);
+    });
+
+    it('restores the request locale after alternate localized work succeeds or fails', function () {
+        var helper = createTargetHelper({});
+
+        global.request = {
+            locale: 'en_CA',
+            setLocale: function (locale) {
+                this.locale = locale;
+                return true;
+            }
+        };
+
+        assert.strictEqual(helper.withRequestLocale('fr_CA', function () {
+            assert.strictEqual(global.request.locale, 'fr_CA');
+            return 'localized';
+        }), 'localized');
+        assert.strictEqual(global.request.locale, 'en_CA');
+
+        assert.throws(function () {
+            helper.withRequestLocale('fr_CA', function () {
+                throw new Error('localized failure');
+            });
+        }, /localized failure/);
+        assert.strictEqual(global.request.locale, 'en_CA');
+    });
+
+    it('restores the primary locale when applying an alternate locale fails', function () {
+        var helper = createTargetHelper({});
+
+        global.request = {
+            locale: 'en_CA',
+            setLocale: function (locale) {
+                this.locale = locale;
+                return locale !== 'fr_CA';
+            }
+        };
+
+        assert.throws(function () {
+            helper.withRequestLocale('fr_CA', function () {
+                throw new Error('should not execute');
+            });
+        }, /Unable to apply configured alternate locale fr_CA/);
+        assert.strictEqual(global.request.locale, 'en_CA');
     });
 
     it('falls back to the legacy site-level export context when no targets are configured', function () {

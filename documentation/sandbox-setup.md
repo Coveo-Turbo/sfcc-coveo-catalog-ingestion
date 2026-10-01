@@ -218,6 +218,7 @@ Each `CoveoCatalogExportTarget` should define:
 - `siteId`
 - `locale`
 - `language`
+- optional `alternateLocales`
 - `coveoSourceId`
 - optional `catalogId`
 - optional `catalogStructureMode`
@@ -275,6 +276,7 @@ Use these values when creating the object:
 - `siteId`: exact SFCC site ID, for example `RefArch`
 - `locale`: exact SFCC locale ID, for example `en_CA` or `fr_CA`
 - `language`: language sent to Coveo, for example `en` or `fr`
+- `alternateLocales`: optional comma-, semicolon-, or newline-separated SFCC locales whose localized name and descriptions should be searchable in this target; for example, use `fr_CA` on an English Canadian target and `en_CA` on a French Canadian target
 - `coveoSourceId`: destination Coveo source for this locale or market
 - `catalogId`: leave empty for shared-catalog mode; set it only when this target must export a specific catalog
 - `catalogStructureMode`: leave empty or set `product_only` to emit only `Product` rows and tie `ec_product_id = permanentid = ec_sku` to the variant SKU; set `product_variant` when you want the current `Product` plus `Variant` export
@@ -288,8 +290,8 @@ Use these values when creating the object:
 Create one object per target. Typical examples:
 
 - shared catalog with two locales:
-  - `refarch-en-ca` with `locale=en_CA`, `language=en`, source A
-  - `refarch-fr-ca` with `locale=fr_CA`, `language=fr`, source B
+  - `refarch-en-ca` with `locale=en_CA`, `language=en`, `alternateLocales=fr_CA`, source A
+  - `refarch-fr-ca` with `locale=fr_CA`, `language=fr`, `alternateLocales=en_CA`, source B
 - different catalogs per market:
   - `refarch-en-us` with `locale=en_US`, `language=en`, `catalogId=us-catalog`, source A
   - `refarch-fr-ca` with `locale=fr_CA`, `language=fr`, `catalogId=ca-fr-catalog`, source B
@@ -309,7 +311,18 @@ Important behavior:
 - each target maintains its own `lastSync`, so delta runs stay isolated per locale or market
 - each target must use a distinct `coveoSourceId`; full reconciliation uses source-wide `deleteolderthan`, and manifest state prevents a second target from claiming the same source
 - `all` and `online_and_searchable` create sharded state under `IMPEX/src/coveo/state/catalog-export/`; do not remove these files between full and delta runs
-- changing catalog scope, locale, source, structure mode, eligibility mode, or mapping profile requires another successful full export before delta
+- changing catalog scope, locale, alternate locales, source, structure mode, eligibility mode, or mapping profile requires another successful full export before delta
+
+Alternate-language behavior:
+
+- each configured alternate locale emits `ec_name_<language>`, `ec_description_<language>`, and `ec_shortdesc_<language>` on Product items
+- separate Variant items receive only `ec_name_<language>`, matching the primary Variant schema
+- values use normal SFCC locale fallback; empty resolved values are omitted
+- the item's primary `language`, URL, price, category, mappings, and eligibility context stay tied to the target locale
+- locales that resolve to the primary language or duplicate another alternate language suffix are rejected
+- translated content participates in manifest payload checksums; run a forced deep delta after translation imports that do not update product or variant timestamps
+- each alternate adds up to three text fields per Product and one name field per separate Variant, so payload generation work, Stream payload size, and Coveo index size grow with every configured locale
+- confirm that lexical cross-language matching is the expected product behavior before enabling this option; it does not translate queries or create bilingual synonyms
 
 Eligibility details:
 
@@ -534,13 +547,14 @@ Business Manager path: `Administration > Operations > Jobs`
 
 Use this step when you want SFCC to ensure the target Coveo organization already contains the fields referenced by your mapping `targetField` values.
 
-The cartridge now includes a task-oriented job step named `custom.coveo.coveoPlatformFieldCreate` and a sample job `coveoPlatformFieldCreate`. The step reads the same JSON file format used by `coveoFieldMappingImport` and creates one Coveo field per enabled mapping `targetField`.
+The cartridge includes a task-oriented job step named `custom.coveo.coveoPlatformFieldCreate` and a sample job `coveoPlatformFieldCreate`. The step supports either a mapping JSON `sourceFile`, creating one Coveo field per enabled mapping `targetField`, or a `targetId`, creating the searchable built-in fields required by that target's `alternateLocales`. Leave `sourceFile` blank when using `targetId`.
 
 Important behavior:
 
 - the job uses the site preference `coveoOrganizationId`
 - the job uses the `int.coveo.platform.api.cred` credential, not the Push API credential
 - the field name is always the mapping `targetField`
+- target-derived alternate fields are `ec_name_<language>`, `ec_description_<language>`, and `ec_shortdesc_<language>` and explicitly set `includeInQuery=true` and `includeInResults=true`
 - if the JSON omits `coveoField`, the job creates a conservative default `STRING` field with `includeInQuery=true` and `includeInResults=true`
 - if `valueMode=displayValueArray`, the job also defaults `multiValueFacet=true`
 - if the field already exists, the Coveo batch create API treats that request idempotently
@@ -585,6 +599,13 @@ Recommended flow:
 2. Run `coveoFieldMappingImport` if the SFCC profile and rows are not imported yet.
 3. Run `coveoPlatformFieldCreate` with the same `sourceFile`.
 4. In Coveo, verify the new fields before running the first full export.
+
+For alternate-language fields:
+
+1. Configure `alternateLocales` on the export target.
+2. Leave `sourceFile` blank and run `coveoPlatformFieldCreate` with that target's `targetId`.
+3. Verify the generated fields in Coveo.
+4. Run a full export for the changed target before resuming deltas.
 
 ## 7E. Audit populated catalog attributes before creating mappings
 

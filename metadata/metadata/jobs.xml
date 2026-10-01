@@ -175,8 +175,8 @@
     </job>
 
     <job job-id="coveoPlatformFieldCreate" priority="0">
-        <description>Creates missing Coveo platform fields from the same JSON file used for SFCC
-            field mapping imports.</description>
+        <description>Creates missing Coveo platform fields from a field mapping JSON file or an
+            export target's configured alternate locales.</description>
         <parameters />
         <split sequential="false">
             <contexts template-ref="template_141">
@@ -185,8 +185,8 @@
             <flow-template template-id="template_141">
                 <step step-id="CreateCoveoPlatformFields"
                     type="custom.coveo.coveoPlatformFieldCreate" enforce-restart="false">
-                    <description>Ensures all enabled mapping target fields exist in the configured
-                        Coveo organization.</description>
+                    <description>Ensures configured mapping or alternate-language fields exist in
+                        the Coveo organization.</description>
                     <parameters>
                         <parameter name="sourceFile">
                             /src/coveo/config/field-mappings/default-commerce-fields.json</parameter>

@@ -12,6 +12,7 @@ var CATALOG_STRUCTURE_MODE_PRODUCT_ONLY = 'product_only';
 var PRODUCT_ELIGIBILITY_MODE_LEGACY = 'legacy';
 var PRODUCT_ELIGIBILITY_MODE_ALL = 'all';
 var PRODUCT_ELIGIBILITY_MODE_ONLINE_AND_SEARCHABLE = 'online_and_searchable';
+var ALTERNATE_FIELD_BASE_NAMES = ['ec_name', 'ec_description', 'ec_shortdesc'];
 
 /**
  * Returns the normalized catalog structure mode for an export target.
@@ -73,6 +74,38 @@ function getLanguageFromLocale(locale) {
 }
 
 /**
+ * Parses alternate SFCC locales and derives their Coveo field names.
+ * @param {*} value - Comma, semicolon, or newline separated locale ids.
+ * @returns {Array} normalized alternate localization definitions.
+ */
+function parseAlternateLocalizations(value) {
+    var seenLocales = {};
+
+    return normalizeString(value).split(/[\r\n,;]+/).map(function (locale) {
+        return normalizeString(locale);
+    }).filter(function (locale) {
+        var localeKey = locale.toLowerCase();
+
+        if (locale === '' || seenLocales[localeKey]) {
+            return false;
+        }
+
+        seenLocales[localeKey] = true;
+        return true;
+    }).map(function (locale) {
+        var language = getLanguageFromLocale(locale);
+
+        return {
+            locale: locale,
+            language: language,
+            nameField: 'ec_name_' + language,
+            descriptionField: 'ec_description_' + language,
+            shortDescriptionField: 'ec_shortdesc_' + language
+        };
+    });
+}
+
+/**
  * Converts supported truthy values to boolean.
  * @param {*} value - Value to inspect.
  * @returns {boolean} normalized boolean.
@@ -121,6 +154,8 @@ function buildLegacyExportContext() {
         siteId: normalizeString(currentSite.ID),
         locale: locale,
         language: getLanguageFromLocale(locale),
+        alternateLocales: [],
+        alternateLocalizations: [],
         coveoOrganizationId: normalizeString(sitePreferences.coveoOrganizationId),
         coveoSourceId: normalizeString(sitePreferences.coveoSourceId),
         coveoTrackingId: '',
@@ -150,6 +185,7 @@ function buildLegacyExportContext() {
  */
 function buildTargetExportContext(targetObject, targetId) {
     var custom = targetObject.custom || {};
+    var alternateLocalizations = parseAlternateLocalizations(custom.alternateLocales);
 
     return {
         legacyMode: false,
@@ -158,6 +194,10 @@ function buildTargetExportContext(targetObject, targetId) {
         siteId: normalizeString(custom.siteId),
         locale: normalizeString(custom.locale),
         language: normalizeString(custom.language).toLowerCase(),
+        alternateLocales: alternateLocalizations.map(function (localization) {
+            return localization.locale;
+        }),
+        alternateLocalizations: alternateLocalizations,
         coveoOrganizationId: normalizeString(Site.current.preferences.custom.coveoOrganizationId),
         coveoSourceId: normalizeString(custom.coveoSourceId),
         coveoTrackingId: normalizeString(custom.coveoTrackingId),
@@ -201,6 +241,8 @@ function enrichExportContext(exportContext) {
  */
 function validateExportContext(exportContext) {
     var missing = [];
+    var alternateLanguages = {};
+    var generatedFields = {};
     var contextLabel = exportContext.legacyMode
         ? 'legacy site preferences'
         : 'target ' + (exportContext.targetId || exportContext.label || exportContext.locale || '[unknown]');
@@ -273,6 +315,40 @@ function validateExportContext(exportContext) {
             + '.'
         );
     }
+
+    (exportContext.alternateLocalizations || []).forEach(function (localization) {
+        var localeKey = normalizeString(localization.locale).toLowerCase();
+        var language = normalizeString(localization.language).toLowerCase();
+
+        if (!/^[a-z]{2,8}$/.test(language)) {
+            throw new Error('The Coveo export ' + contextLabel + ' has alternate locale "' + localization.locale + '" with an invalid language suffix.');
+        }
+
+        if (localeKey === normalizeString(exportContext.locale).toLowerCase()) {
+            throw new Error('The Coveo export ' + contextLabel + ' cannot use its primary locale ' + exportContext.locale + ' as an alternate locale.');
+        }
+
+        if (language === normalizeString(exportContext.language).toLowerCase()) {
+            throw new Error('The Coveo export ' + contextLabel + ' cannot use alternate locale ' + localization.locale + ' because it has the primary language suffix ' + language + '.');
+        }
+
+        if (alternateLanguages[language]) {
+            throw new Error('The Coveo export ' + contextLabel + ' has multiple alternate locales that produce the field suffix ' + language + '.');
+        }
+
+        alternateLanguages[language] = true;
+        ALTERNATE_FIELD_BASE_NAMES.forEach(function (baseName) {
+            generatedFields[baseName + '_' + language] = true;
+        });
+    });
+
+    (exportContext.fieldMappings || []).forEach(function (mapping) {
+        var targetField = normalizeString(mapping && mapping.targetField).toLowerCase();
+
+        if (generatedFields[targetField]) {
+            throw new Error('The Coveo export ' + contextLabel + ' mapping ' + mapping.mappingId + ' conflicts with generated alternate-language field ' + targetField + '.');
+        }
+    });
 
     if (exportContext.siteId !== normalizeString(Site.current.ID)) {
         throw new Error('The Coveo export target ' + (exportContext.targetId || exportContext.label || exportContext.locale) + ' is configured for site ' + exportContext.siteId + ' but the current job context is site ' + Site.current.ID + '.');
@@ -476,7 +552,9 @@ function resolveExportContext(parameters) {
 
         resolvedContext = buildTargetExportContext(requestedTarget, requestedTargetId);
         validateExportContext(resolvedContext);
-        return enrichExportContext(resolvedContext);
+        resolvedContext = enrichExportContext(resolvedContext);
+        validateExportContext(resolvedContext);
+        return resolvedContext;
     }
 
     siteTargets = getTargetsForCurrentSite();
@@ -484,7 +562,9 @@ function resolveExportContext(parameters) {
     if (!siteTargets.length) {
         resolvedContext = buildLegacyExportContext();
         validateExportContext(resolvedContext);
-        return enrichExportContext(resolvedContext);
+        resolvedContext = enrichExportContext(resolvedContext);
+        validateExportContext(resolvedContext);
+        return resolvedContext;
     }
 
     if (siteTargets.length > 1) {
@@ -493,7 +573,9 @@ function resolveExportContext(parameters) {
 
     resolvedContext = buildTargetExportContext(siteTargets[0], '');
     validateExportContext(resolvedContext);
-    return enrichExportContext(resolvedContext);
+    resolvedContext = enrichExportContext(resolvedContext);
+    validateExportContext(resolvedContext);
+    return resolvedContext;
 }
 
 /**
@@ -541,6 +623,48 @@ function restoreRequestLocale(previousLocale) {
 }
 
 /**
+ * Executes a callback under a configured request locale and always restores it.
+ * @param {string} locale - Locale to apply.
+ * @param {Function} callback - Work to execute under the locale.
+ * @returns {*} callback result.
+ */
+function withRequestLocale(locale, callback) {
+    var normalizedLocale = normalizeString(locale);
+    var previousLocale;
+    var applied;
+
+    if (normalizedLocale === '') {
+        throw new Error('An alternate locale is required to resolve localized Coveo fields.');
+    }
+
+    if (typeof request === 'undefined' || empty(request) || typeof request.setLocale !== 'function') {
+        throw new Error('Unable to apply alternate locale ' + normalizedLocale + ' because the global request object is unavailable in this job context.');
+    }
+
+    previousLocale = normalizeString(request.locale);
+
+    try {
+        if (previousLocale !== normalizedLocale) {
+            applied = request.setLocale(normalizedLocale);
+
+            if (applied === false || normalizeString(request.locale) !== normalizedLocale) {
+                throw new Error('Unable to apply configured alternate locale ' + normalizedLocale + '.');
+            }
+        }
+
+        return callback();
+    } finally {
+        if (previousLocale !== '' && normalizeString(request.locale) !== previousLocale) {
+            applied = request.setLocale(previousLocale);
+
+            if (applied === false || normalizeString(request.locale) !== previousLocale) {
+                throw new Error('Unable to restore request locale ' + previousLocale + ' after resolving alternate localized fields.');
+            }
+        }
+    }
+}
+
+/**
  * Persists the last successful sync time for the resolved context.
  * @param {Object} exportContext - Export context.
  * @param {Date} lastSync - Sync timestamp.
@@ -580,9 +704,11 @@ module.exports = {
     getTargetsForCurrentSite: getTargetsForCurrentSite,
     normalizeCatalogStructureMode: normalizeCatalogStructureMode,
     normalizeProductEligibilityMode: normalizeProductEligibilityMode,
+    parseAlternateLocalizations: parseAlternateLocalizations,
     resolveExportContext: resolveExportContext,
     resolveListingSyncGroups: resolveListingSyncGroups,
     restoreRequestLocale: restoreRequestLocale,
     updateLastSync: updateLastSync,
-    validateExportContext: validateExportContext
+    validateExportContext: validateExportContext,
+    withRequestLocale: withRequestLocale
 };

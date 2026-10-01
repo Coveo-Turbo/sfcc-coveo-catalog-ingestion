@@ -247,6 +247,33 @@ function buildFieldDefinitionsFromConfig(config) {
 }
 
 /**
+ * Builds searchable Coveo fields for an export target's alternate locales.
+ * @param {Object} exportContext - Resolved catalog export context.
+ * @returns {Array} field definitions.
+ */
+function buildAlternateLanguageFieldDefinitions(exportContext) {
+    var fields = [];
+
+    (exportContext && exportContext.alternateLocalizations || []).forEach(function (localization) {
+        [
+            localization.nameField,
+            localization.descriptionField,
+            localization.shortDescriptionField
+        ].forEach(function (fieldName) {
+            fields.push({
+                name: fieldName,
+                description: 'Generated from SFCC alternate locale ' + localization.locale + ' for export target ' + exportContext.targetId + '.',
+                type: 'STRING',
+                includeInQuery: true,
+                includeInResults: true
+            });
+        });
+    });
+
+    return fields;
+}
+
+/**
  * Creates fields individually to diagnose or recover from batch failures.
  * @param {Array} fields - Field definitions to create.
  * @param {string} organizationId - Coveo organization id.
@@ -324,101 +351,99 @@ function getAlreadyExistingFieldNames(response) {
 }
 
 /**
- * Creates missing platform fields from the JSON payload.
- * @param {Object} config - Parsed JSON payload.
+ * Creates the requested platform field definitions with existing-field recovery.
+ * @param {Array} fieldDefinitions - Validated field definitions.
+ * @param {Object} summary - Summary identity for a profile or export target.
  * @param {Object} options - Runtime options.
  * @returns {Object} sync summary.
  */
-function createFieldsFromConfig(config, options) {
+function createFieldDefinitions(fieldDefinitions, summary, options) {
     var organizationId = getOrganizationId(options);
-    var generatedFields = buildFieldDefinitionsFromConfig(config);
     var response = null;
     var existingFieldNames = [];
     var existingFieldLookup = {};
     var missingFieldDefinitions = [];
-    var summary = {
-        profileId: generatedFields.profile.profileId,
-        siteId: generatedFields.profile.siteId,
-        organizationId: organizationId,
-        fieldsRequested: generatedFields.fields.length,
-        fieldNames: generatedFields.fields.map(function (fieldDefinition) {
-            return fieldDefinition.name;
-        }),
-        fieldDefinitions: generatedFields.fields
-    };
+    var resolvedSummary = summary || {};
+
+    resolvedSummary.organizationId = organizationId;
+    resolvedSummary.fieldsRequested = fieldDefinitions.length;
+    resolvedSummary.fieldNames = fieldDefinitions.map(function (fieldDefinition) {
+        return fieldDefinition.name;
+    });
+    resolvedSummary.fieldDefinitions = fieldDefinitions;
 
     if (isEmptyValue(organizationId)) {
         throw new Error('The Coveo platform field creation requires the site preference coveoOrganizationId to be configured.');
     }
 
-    if (generatedFields.fields.length === 0) {
+    if (fieldDefinitions.length === 0) {
         Logger.info(
-            'Skipped Coveo platform field creation for profile {0} on site {1} because no enabled mappings requested remote fields.',
-            summary.profileId,
-            summary.siteId
+            'Skipped Coveo platform field creation for {0} on site {1} because no fields were requested.',
+            resolvedSummary.profileId || resolvedSummary.targetId,
+            resolvedSummary.siteId
         );
 
-        return summary;
+        return resolvedSummary;
     }
 
-    response = platformFieldService.createFields(generatedFields.fields, {
+    response = platformFieldService.createFields(fieldDefinitions, {
         coveoOrganizationId: organizationId
     });
-    summary.response = response;
+    resolvedSummary.response = response;
 
     if (isFieldAlreadyExistsResponse(response)) {
         existingFieldNames = getAlreadyExistingFieldNames(response);
-        summary.existingFieldNames = existingFieldNames;
+        resolvedSummary.existingFieldNames = existingFieldNames;
 
-        if (existingFieldNames.length === generatedFields.fields.length) {
-            summary.response = {
+        if (existingFieldNames.length === fieldDefinitions.length) {
+            resolvedSummary.response = {
                 ok: true,
                 status: 'OK',
                 object: {}
             };
 
-            return summary;
+            return resolvedSummary;
         }
 
         existingFieldNames.forEach(function (fieldName) {
             existingFieldLookup[fieldName] = true;
         });
 
-        missingFieldDefinitions = generatedFields.fields.filter(function (fieldDefinition) {
+        missingFieldDefinitions = fieldDefinitions.filter(function (fieldDefinition) {
             return !existingFieldLookup[fieldDefinition.name];
         });
 
-        summary.fallbackMode = 'single';
-        summary.individualResults = createFieldsIndividually(missingFieldDefinitions, organizationId);
+        resolvedSummary.fallbackMode = 'single';
+        resolvedSummary.individualResults = createFieldsIndividually(missingFieldDefinitions, organizationId);
 
-        if (summary.individualResults.failed.length === 0) {
+        if (resolvedSummary.individualResults.failed.length === 0) {
             Logger.info(
-                'Recovered Coveo platform field creation for profile {0} on site {1} by creating {2} missing fields individually after the batch reported {3} existing fields.',
-                summary.profileId,
-                summary.siteId,
+                'Recovered Coveo platform field creation for {0} on site {1} by creating {2} missing fields individually after the batch reported {3} existing fields.',
+                resolvedSummary.profileId || resolvedSummary.targetId,
+                resolvedSummary.siteId,
                 missingFieldDefinitions.length,
                 existingFieldNames.length
             );
 
-            summary.response = {
+            resolvedSummary.response = {
                 ok: true,
                 status: 'OK',
                 object: {}
             };
         }
     } else if (!response.ok) {
-        summary.fallbackMode = 'single';
-        summary.individualResults = createFieldsIndividually(generatedFields.fields, organizationId);
+        resolvedSummary.fallbackMode = 'single';
+        resolvedSummary.individualResults = createFieldsIndividually(fieldDefinitions, organizationId);
 
-        if (summary.individualResults.failed.length === 0) {
+        if (resolvedSummary.individualResults.failed.length === 0) {
             Logger.info(
-                'Recovered Coveo platform field creation for profile {0} on site {1} by retrying {2} fields individually after a failed batch request.',
-                summary.profileId,
-                summary.siteId,
-                summary.fieldsRequested
+                'Recovered Coveo platform field creation for {0} on site {1} by retrying {2} fields individually after a failed batch request.',
+                resolvedSummary.profileId || resolvedSummary.targetId,
+                resolvedSummary.siteId,
+                resolvedSummary.fieldsRequested
             );
 
-            summary.response = {
+            resolvedSummary.response = {
                 ok: true,
                 status: 'OK',
                 object: {}
@@ -426,10 +451,41 @@ function createFieldsFromConfig(config, options) {
         }
     }
 
-    return summary;
+    return resolvedSummary;
+}
+
+/**
+ * Creates missing platform fields from the JSON payload.
+ * @param {Object} config - Parsed JSON payload.
+ * @param {Object} options - Runtime options.
+ * @returns {Object} sync summary.
+ */
+function createFieldsFromConfig(config, options) {
+    var generatedFields = buildFieldDefinitionsFromConfig(config);
+
+    return createFieldDefinitions(generatedFields.fields, {
+        profileId: generatedFields.profile.profileId,
+        siteId: generatedFields.profile.siteId
+    }, options);
+}
+
+/**
+ * Creates missing alternate-language fields for one export target.
+ * @param {Object} exportContext - Resolved export context.
+ * @returns {Object} sync summary.
+ */
+function createFieldsForExportTarget(exportContext) {
+    return createFieldDefinitions(buildAlternateLanguageFieldDefinitions(exportContext), {
+        targetId: exportContext.targetId,
+        siteId: exportContext.siteId
+    }, {
+        coveoOrganizationId: exportContext.coveoOrganizationId
+    });
 }
 
 module.exports = {
+    buildAlternateLanguageFieldDefinitions: buildAlternateLanguageFieldDefinitions,
     buildFieldDefinitionsFromConfig: buildFieldDefinitionsFromConfig,
+    createFieldsForExportTarget: createFieldsForExportTarget,
     createFieldsFromConfig: createFieldsFromConfig
 };
