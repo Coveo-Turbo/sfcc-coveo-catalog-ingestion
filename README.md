@@ -34,7 +34,7 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
 - `ec_item_group_id` is populated on every exported `Product`; standalone products use their own `ec_product_id`, while grouped products use their shared parent group identifier.
 - Export scope is target-aware:
   - legacy mode uses site preferences when no export targets exist
-  - target mode uses `CoveoCatalogExportTarget` custom objects for `locale`, `language`, `coveoSourceId`, optional `catalogId`, optional `catalogStructureMode`, optional `productEligibilityMode`, optional `mappingProfileId`, and per-target `lastSync`
+  - target mode uses `CoveoCatalogExportTarget` custom objects for `locale`, `language`, `coveoSourceId`, optional `alternateLocales`, optional `catalogId`, optional `catalogStructureMode`, optional `productEligibilityMode`, optional `mappingProfileId`, and per-target `lastSync`
   - jobs accept an optional `targetId`; if multiple targets exist and no `targetId` is provided, the job fails fast
 - Product eligibility is target-aware:
   - `legacy` is the compatibility default and preserves the historical full/delta selection behavior
@@ -46,6 +46,12 @@ The storefront sample integration that existed in the archived `coveo/SFCC-Cartr
   - built-in mappings still emit `ec_name`
   - optional mapping profiles add extra fields without code changes
   - configured mappings are additive only and cannot override reserved export fields
+- Export targets can emit searchable alternate-language built-ins:
+  - `alternateLocales` accepts comma-, semicolon-, or newline-separated SFCC locales such as `fr_CA,de_DE`
+  - each locale adds `ec_name_<language>`, `ec_description_<language>`, and `ec_shortdesc_<language>` to Product items
+  - separate Variant items receive `ec_name_<language>` only, matching the primary Variant schema
+  - alternate values use normal SFCC locale fallback while the item's primary `language`, URL, price, category, and eligibility context remain unchanged
+  - each alternate adds up to three text fields per Product and one per separate Variant, increasing payload generation work, Stream payload size, and Coveo index size proportionally
 
 ## Local Verification
 
@@ -84,16 +90,18 @@ These tests cover:
 - Set the site-level `coveoOrganizationId`.
 - Keep using site-level `coveoSourceId` and `coveoCatalogLastSync` only for the legacy single-target fallback.
 - If a catalog uses non-default SFCC image view types, optionally set `coveoProductImageViewTypes` and `coveoProductThumbnailViewTypes` on the site as ordered comma-separated fallback lists, for example `large,medium,original` and `medium,large,original`.
-- For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target, use the default `product_only` mode or switch `catalogStructureMode` to `product_variant`, and select `productEligibilityMode=online_and_searchable` when Coveo must mirror storefront visibility. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
+- For multi-locale or market-specific exports, create one `CoveoCatalogExportTarget` custom object per target, optionally set `alternateLocales` for lexical cross-language matching, use the default `product_only` mode or switch `catalogStructureMode` to `product_variant`, and select `productEligibilityMode=online_and_searchable` when Coveo must mirror storefront visibility. The exact Business Manager steps are documented in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
+- Confirm with the product owner that lexical cross-language matching is desired before enabling `alternateLocales`; it makes text from another locale searchable but does not translate queries or manage bilingual synonyms.
 - Assign a distinct Coveo source to every export target. Full reconciliation is source-wide, and manifest-enabled runs enforce one target owner per source.
 - If you need extra catalog fields beyond the built-in export payload, create a `CoveoCatalogFieldMappingProfile`, add `CoveoCatalogFieldMapping` rows under that profile, and assign the profile on the target `mappingProfileId`. For larger mapping sets, you can also load the profile and rows from JSON with the `coveoFieldMappingImport` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
-- If your mapping JSON should also create the matching Coveo fields, run `coveoPlatformFieldCreate` with the same `sourceFile`. The job creates one platform field per enabled mapping `targetField`, and the optional `coveoField` block on each mapping can set the initial field type and options.
+- Run `coveoPlatformFieldCreate` with a mapping `sourceFile` to create configured mapping fields, or leave `sourceFile` blank and provide `targetId` to create that target's searchable alternate-language fields. The optional `coveoField` block on mappings can set their initial field type and options.
 - To maintain best-seller sort fields from Coveo Usage Analytics purchase events, run `coveoPurchaseEnrichmentSync` per target. The job creates or reuses a rolling export for one `trackingId`, stores a shared snapshot in IMPEX, and writes target-specific mapped or skipped reports. Subsequent full exports emit `ec_units_sold_<window>d` values for every product, and delta exports also include products whose units-sold values changed in the snapshot state.
 - Purchase enrichment downloads and parses Usage Analytics exports as IMPEX-backed streams, writes generation-specific count files, and atomically promotes their metadata. Snapshot and target-state readers/writers are serialized by a `trackingId` lock under `IMPEX/src/coveo/state/purchase-enrichment/`; do not remove an active lock or its referenced count generation. If an interrupted instance leaves a stale lock, remove it only after confirming that no purchase sync or catalog export is using that tracking ID.
 - To upload a field-mapping JSON file to IMPEX with the credentials in `dw.json`, run `npm run uploadFieldMappingsJson -- documentation/examples/default-commerce-fields.sample.json`.
 - To inspect which catalog attributes are actually populated before you build mappings, run the `coveoCatalogAttributeAudit` job described in [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md).
 - To sync CMH listing pages, set the target's `coveoTrackingId`, `coveoCountry`, `coveoCurrency`, `storefrontBaseUrl`, and `listingCategoryUrlTemplate`, then run `coveoListingPagesSync`. If you need existing brand landing page URLs to keep resolving to `Brands|...` category pages, also set `listingBrandUrlTemplate` as an optional legacy URL alias.
-- Run a full export after enabling a manifest-backed eligibility mode and after changing target scope, locale, source, structure, eligibility, or mapping profile. Delta fails fast when its active manifest fingerprint is incompatible.
+- Run a full export after enabling a manifest-backed eligibility mode and after changing target scope, locale, alternate locales, source, structure, eligibility, or mapping profile. Delta fails fast when its active manifest fingerprint is incompatible.
+- Fast deltas refresh translated fields when the product or variant timestamp changes. Run a forced deep reconciliation after translation imports that do not update those timestamps.
 - For manifest-enabled targets, schedule the default `auto` delta every 5–15 minutes when runtime stays below the interval, and retain a periodic deep reconciliation (daily is recommended with the default `maxDeepReconciliationAgeHours=24`). Fast runs immediately reconcile changes visible in the lightweight product scan, but price-book, promotion, or category changes can remain stale until a requested or age-triggered deep run.
 - Set `forceDeepReconciliation=true` on the delta step invoked after price, promotion, or category import chains so those external dependencies are refreshed immediately. The override applies to that run and is preferable to waiting for the 24-hour bounded-staleness safety net.
 - After deploying fast reconciliation over an older manifest, leave `reconciliationMode=auto`; the first delta detects missing signatures and seeds them with a migration deep run. End-of-run logs summarize the selected mode and reason, scanned/carried/generated/removed roots, dirty reasons, operation counts, phase durations, and deep-baseline age. Use that summary to investigate unexpected deep selection, generated-root counts, stale dependencies, or schedules that overlap the source lock.

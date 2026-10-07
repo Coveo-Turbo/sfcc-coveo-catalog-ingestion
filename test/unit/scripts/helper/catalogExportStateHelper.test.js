@@ -151,6 +151,19 @@ function createHelper() {
 }
 
 describe('catalogExportStateHelper', function () {
+    it('fingerprints configured alternate locales without changing unconfigured targets', function () {
+        var fixture = createHelper();
+        var helper = fixture.helper;
+        var legacyFingerprint = JSON.parse(helper.buildFingerprint(createContext()));
+        var alternateFingerprint = JSON.parse(helper.buildFingerprint(createContext({
+            alternateLocales: ['fr_CA', 'de_DE']
+        })));
+
+        assert.notProperty(legacyFingerprint, 'alternateLocales');
+        assert.deepEqual(alternateFingerprint.alternateLocales, ['fr_CA', 'de_DE']);
+        assert.notStrictEqual(JSON.stringify(legacyFingerprint), JSON.stringify(alternateFingerprint));
+    });
+
     it('writes and promotes a sharded manifest without retaining every root in memory', function () {
         var fixture = createHelper();
         var helper = fixture.helper;

@@ -31,14 +31,14 @@ function isEmptyValue(value) {
 /**
  * Resolves the configured input file in IMPEX.
  * @param {Object} parameters - Job step parameters.
- * @returns {dw.io.File} resolved file.
+ * @returns {dw.io.File|null} resolved file.
  */
 function resolveSourceFile(parameters) {
     var sourceFile = normalizeString(parameters && typeof parameters.get === 'function' ? parameters.get('sourceFile') : '');
     var file = null;
 
     if (sourceFile === '') {
-        throw new Error('The Coveo platform field creation requires a sourceFile parameter.');
+        return null;
     }
 
     file = new File([File.IMPEX, sourceFile].join(File.SEPARATOR));
@@ -139,8 +139,20 @@ function ensureSuccessfulResponse(response) {
 exports.execute = function (parameters) {
     try {
         var sourceFile = resolveSourceFile(parameters);
-        var config = readImportConfig(sourceFile);
-        var summary = platformFieldHelper.createFieldsFromConfig(config);
+        var targetId = sourceFile ? '' : normalizeString(parameters && typeof parameters.get === 'function' ? parameters.get('targetId') : '');
+        var summary;
+        var contextLabel;
+
+        if (sourceFile) {
+            summary = platformFieldHelper.createFieldsFromConfig(readImportConfig(sourceFile));
+            contextLabel = 'file ' + sourceFile.fullPath;
+        } else if (targetId !== '') {
+            var exportTargetHelper = require('*/cartridge/scripts/helper/exportTargetHelper');
+            summary = platformFieldHelper.createFieldsForExportTarget(exportTargetHelper.resolveExportContext(parameters));
+            contextLabel = 'target ' + targetId;
+        } else {
+            throw new Error('The Coveo platform field creation requires either a sourceFile or targetId parameter.');
+        }
 
         if (summary.fieldsRequested > 0) {
             if (
@@ -162,9 +174,10 @@ exports.execute = function (parameters) {
         }
 
         Logger.info(
-            'Coveo platform field creation completed for file {0}. profileId={1}, siteId={2}, organizationId={3}, fieldsRequested={4}',
-            sourceFile.fullPath,
-            summary.profileId,
+            'Coveo platform field creation completed for {0}. profileId={1}, targetId={2}, siteId={3}, organizationId={4}, fieldsRequested={5}',
+            contextLabel,
+            summary.profileId || '',
+            summary.targetId || '',
             summary.siteId,
             summary.organizationId,
             summary.fieldsRequested

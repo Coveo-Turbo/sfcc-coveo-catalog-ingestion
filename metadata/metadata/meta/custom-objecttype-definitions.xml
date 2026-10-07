@@ -44,6 +44,13 @@
                 <externally-managed-flag>false</externally-managed-flag>
                 <min-length>1</min-length>
             </attribute-definition>
+            <attribute-definition attribute-id="alternateLocales">
+                <display-name xml:lang="x-default">Alternate Locales</display-name>
+                <description xml:lang="x-default">Optional comma-, semicolon-, or newline-separated SFCC locales used to emit searchable alternate-language product fields, for example fr_CA,de_DE.</description>
+                <type>text</type>
+                <mandatory-flag>false</mandatory-flag>
+                <externally-managed-flag>false</externally-managed-flag>
+            </attribute-definition>
             <attribute-definition attribute-id="coveoSourceId">
                 <display-name xml:lang="x-default">Coveo Source ID</display-name>
                 <description xml:lang="x-default">Target Coveo source for this locale export.</description>
@@ -180,6 +187,7 @@
                 <attribute attribute-id="siteId"/>
                 <attribute attribute-id="locale"/>
                 <attribute attribute-id="language"/>
+                <attribute attribute-id="alternateLocales"/>
                 <attribute attribute-id="coveoSourceId"/>
                 <attribute attribute-id="coveoTrackingId"/>
                 <attribute attribute-id="coveoCountry"/>

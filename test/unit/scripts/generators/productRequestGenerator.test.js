@@ -112,6 +112,17 @@ function createExportTargetHelperStub() {
         },
         getLanguageFromLocale: function (locale) {
             return locale.split(/[-_]/)[0].toLowerCase();
+        },
+        withRequestLocale: function (locale, callback) {
+            var previousLocale = global.request.locale;
+
+            global.request.setLocale(locale);
+
+            try {
+                return callback();
+            } finally {
+                global.request.setLocale(previousLocale);
+            }
         }
     };
 }
@@ -305,7 +316,7 @@ function createGeneratorForProduct(product, options) {
                 OBJECT_TYPE_VARIANT: 'Variant'
             }
         },
-        '*/cartridge/scripts/helper/exportTargetHelper': createExportTargetHelperStub(),
+        '*/cartridge/scripts/helper/exportTargetHelper': options.exportTargetHelper || createExportTargetHelperStub(),
         '*/cartridge/scripts/helper/productEligibilityHelper': createProductEligibilityHelperStub(),
         '*/cartridge/scripts/helper/fieldMappingHelper': {
             applyFieldMappings: function (payload, sourceProduct) {
@@ -319,7 +330,19 @@ function createGeneratorForProduct(product, options) {
             }
         },
         '*/cartridge/scripts/helper/purchaseMetricHelper': {
-            applyPurchaseMetrics: function () {}
+            applyPurchaseMetrics: function () {},
+            createHashMap: function () {
+                return new Map();
+            },
+            containsMapKey: function (map, key) {
+                return map.has(key);
+            },
+            getMapValue: function (map, key) {
+                return map.get(key);
+            },
+            putMapValue: function (map, key, value) {
+                map.set(key, value);
+            }
         },
         'dw/system/Logger': {
             getLogger: function () {
@@ -355,6 +378,7 @@ describe('productRequestGenerator', function () {
 
     afterEach(function () {
         delete global.empty;
+        delete global.request;
     });
 
     it('exports a standalone product without creating a synthetic variant item', function () {
@@ -1333,6 +1357,134 @@ describe('productRequestGenerator', function () {
         assert.lengthOf(exports, 1);
         assert.strictEqual(exports[0].language, 'fr');
         assert.strictEqual(exports[0].ec_name, 'Name SKU-1');
+    });
+
+    it('adds alternate localized Product fields and only alternate names to Variants', function () {
+        var master = createProduct({
+            ID: 'MASTER-I18N',
+            master: true
+        });
+        var variant = createProduct({
+            ID: 'SKU-I18N',
+            variant: true,
+            masterProduct: master,
+            custom: {
+                color: 'black',
+                size: 'm'
+            }
+        });
+        var localizedValues = {
+            en_CA: {
+                name: 'Dog Food',
+                shortDescription: 'English short',
+                longDescription: 'English long'
+            },
+            fr_CA: {
+                name: 'Nourriture pour chiens',
+                shortDescription: 'Description courte',
+                longDescription: 'Description longue'
+            }
+        };
+        var localeChanges = [];
+
+        ['name', 'shortDescription', 'longDescription'].forEach(function (propertyName) {
+            Object.defineProperty(variant, propertyName, {
+                configurable: true,
+                get: function () {
+                    var value = localizedValues[global.request.locale][propertyName];
+                    return propertyName === 'name' ? value : {
+                        source: value
+                    };
+                }
+            });
+        });
+        global.request = {
+            locale: 'en_CA',
+            setLocale: function (locale) {
+                localeChanges.push(locale);
+                this.locale = locale;
+                return true;
+            }
+        };
+
+        var generator = createGeneratorForProduct(variant);
+        var exports = generator.processProducts('SKU-I18N', false, {
+            locale: 'en_CA',
+            language: 'en',
+            catalogStructureMode: 'product_variant',
+            alternateLocalizations: [{
+                locale: 'fr_CA',
+                language: 'fr',
+                nameField: 'ec_name_fr',
+                descriptionField: 'ec_description_fr',
+                shortDescriptionField: 'ec_shortdesc_fr'
+            }]
+        });
+        var productExport = exports.filter(function (item) {
+            return item.objecttype === 'Product';
+        })[0];
+        var variantExport = exports.filter(function (item) {
+            return item.objecttype === 'Variant';
+        })[0];
+
+        assert.strictEqual(productExport.language, 'en');
+        assert.strictEqual(productExport.ec_name, 'Dog Food');
+        assert.strictEqual(productExport.ec_name_fr, 'Nourriture pour chiens');
+        assert.strictEqual(productExport.ec_description_fr, '<html><body>Description longue</body></html>');
+        assert.strictEqual(productExport.ec_shortdesc_fr, 'Description courte');
+        assert.strictEqual(variantExport.ec_name_fr, 'Nourriture pour chiens');
+        assert.notProperty(variantExport, 'ec_description_fr');
+        assert.notProperty(variantExport, 'ec_shortdesc_fr');
+        assert.deepEqual(localeChanges, ['fr_CA', 'en_CA']);
+        assert.strictEqual(global.request.locale, 'en_CA');
+
+        var productOnlyExports = generator.processProducts('SKU-I18N', false, {
+            locale: 'en_CA',
+            language: 'en',
+            catalogStructureMode: 'product_only',
+            alternateLocalizations: [{
+                locale: 'fr_CA',
+                language: 'fr',
+                nameField: 'ec_name_fr',
+                descriptionField: 'ec_description_fr',
+                shortDescriptionField: 'ec_shortdesc_fr'
+            }]
+        });
+
+        assert.lengthOf(productOnlyExports, 1);
+        assert.strictEqual(productOnlyExports[0].objecttype, 'Product');
+        assert.strictEqual(productOnlyExports[0].ec_name_fr, 'Nourriture pour chiens');
+        assert.strictEqual(productOnlyExports[0].ec_shortdesc_fr, 'Description courte');
+        assert.strictEqual(global.request.locale, 'en_CA');
+    });
+
+    it('propagates alternate localization failures even in legacy export mode', function () {
+        var product = createProduct({
+            ID: 'SKU-I18N-FAIL'
+        });
+        var targetHelper = createExportTargetHelperStub();
+
+        targetHelper.withRequestLocale = function () {
+            throw new Error('locale unavailable');
+        };
+
+        var generator = createGeneratorForProduct(product, {
+            exportTargetHelper: targetHelper
+        });
+
+        assert.throws(function () {
+            generator.processProducts('SKU-I18N-FAIL', false, {
+                catalogStructureMode: 'product_only',
+                productEligibilityMode: 'legacy',
+                alternateLocalizations: [{
+                    locale: 'fr_CA',
+                    language: 'fr',
+                    nameField: 'ec_name_fr',
+                    descriptionField: 'ec_description_fr',
+                    shortDescriptionField: 'ec_shortdesc_fr'
+                }]
+            });
+        }, /Unable to resolve alternate locale fr_CA.*locale unavailable/);
     });
 
     it('preserves full HTML documents in longDescription without double wrapping', function () {

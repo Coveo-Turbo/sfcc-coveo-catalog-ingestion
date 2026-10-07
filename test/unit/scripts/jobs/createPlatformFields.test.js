@@ -5,6 +5,66 @@ var assert = require('chai').assert;
 var proxyquire = require('proxyquire').noCallThru();
 
 describe('createPlatformFields job', function () {
+    it('creates alternate-language fields from an export target when sourceFile is blank', function () {
+        var capturedContext = null;
+        var resolvedContext = {
+            targetId: 'mondou-en-ca',
+            siteId: 'RefArch',
+            coveoOrganizationId: 'my-org'
+        };
+        var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/createPlatformFields'), {
+            'dw/io/File': function File() {},
+            'dw/io/FileReader': function FileReader() {},
+            'dw/system/Logger': {
+                getLogger: function () {
+                    return {
+                        info: function () {},
+                        error: function () {}
+                    };
+                }
+            },
+            'dw/system/Status': (function () {
+                function Status(status, code, message) {
+                    this.status = status;
+                    this.code = code;
+                    this.message = message;
+                }
+
+                Status.OK = 'OK';
+                Status.ERROR = 'ERROR';
+                return Status;
+            }()),
+            '*/cartridge/scripts/helper/exportTargetHelper': {
+                resolveExportContext: function () {
+                    return resolvedContext;
+                }
+            },
+            '*/cartridge/scripts/helper/platformFieldHelper': {
+                createFieldsForExportTarget: function (context) {
+                    capturedContext = context;
+                    return {
+                        targetId: context.targetId,
+                        siteId: context.siteId,
+                        organizationId: context.coveoOrganizationId,
+                        fieldsRequested: 3,
+                        response: {
+                            ok: true,
+                            object: {}
+                        }
+                    };
+                }
+            }
+        });
+        var status = job.execute({
+            get: function (name) {
+                return name === 'targetId' ? 'mondou-en-ca' : '';
+            }
+        });
+
+        assert.strictEqual(status.status, 'OK');
+        assert.strictEqual(capturedContext, resolvedContext);
+    });
+
     it('reads a JSON file from IMPEX and creates platform fields through the helper', function () {
         var capturedConfig = null;
         var job = proxyquire(path.resolve(__dirname, '../../../../cartridges/bm_coveo/cartridge/scripts/jobs/createPlatformFields'), {

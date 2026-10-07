@@ -199,7 +199,7 @@ function getPayloadChecksum(items) {
 }
 
 function buildFingerprint(exportContext) {
-    return JSON.stringify({
+    var fingerprint = {
         schemaVersion: MANIFEST_SCHEMA_VERSION,
         siteId: normalizeString(exportContext && exportContext.siteId),
         targetId: normalizeString(exportContext && exportContext.targetId),
@@ -211,7 +211,16 @@ function buildFingerprint(exportContext) {
         catalogStructureMode: normalizeString(exportContext && exportContext.catalogStructureMode),
         productEligibilityMode: normalizeString(exportContext && exportContext.productEligibilityMode),
         mappingProfileId: normalizeString(exportContext && exportContext.mappingProfileId)
-    });
+    };
+    var alternateLocales = exportContext && exportContext.alternateLocales
+        ? exportContext.alternateLocales.map(normalizeString)
+        : [];
+
+    if (alternateLocales.length) {
+        fingerprint.alternateLocales = alternateLocales;
+    }
+
+    return JSON.stringify(fingerprint);
 }
 
 function closeQuietly(closeable) {

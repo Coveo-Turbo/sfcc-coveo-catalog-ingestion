@@ -76,6 +76,50 @@ function createHelper(options) {
 }
 
 describe('platformFieldHelper', function () {
+    it('creates searchable alternate-language fields from an export target', function () {
+        var helper = createHelper();
+        var summary = helper.createFieldsForExportTarget({
+            targetId: 'mondou-en-ca',
+            siteId: 'RefArch',
+            coveoOrganizationId: 'target-org',
+            alternateLocalizations: [{
+                locale: 'fr_CA',
+                language: 'fr',
+                nameField: 'ec_name_fr',
+                descriptionField: 'ec_description_fr',
+                shortDescriptionField: 'ec_shortdesc_fr'
+            }]
+        });
+        var captured = helper.__getCaptured();
+
+        assert.strictEqual(summary.targetId, 'mondou-en-ca');
+        assert.strictEqual(summary.fieldsRequested, 3);
+        assert.strictEqual(captured.exportContext.coveoOrganizationId, 'target-org');
+        assert.deepEqual(captured.fields.map(function (field) {
+            return {
+                name: field.name,
+                type: field.type,
+                includeInQuery: field.includeInQuery,
+                includeInResults: field.includeInResults
+            };
+        }), [{
+            name: 'ec_name_fr',
+            type: 'STRING',
+            includeInQuery: true,
+            includeInResults: true
+        }, {
+            name: 'ec_description_fr',
+            type: 'STRING',
+            includeInQuery: true,
+            includeInResults: true
+        }, {
+            name: 'ec_shortdesc_fr',
+            type: 'STRING',
+            includeInQuery: true,
+            includeInResults: true
+        }]);
+    });
+
     it('builds field definitions from enabled mappings and applies sensible defaults', function () {
         var helper = createHelper();
         var result = helper.buildFieldDefinitionsFromConfig({
