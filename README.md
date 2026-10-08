@@ -109,3 +109,7 @@ These tests cover:
 - Stream updates are asynchronous after API acceptance. Validate the first full export and major policy changes in Coveo before relying on subsequent delta schedules.
 
 See [`documentation/sandbox-setup.md`](documentation/sandbox-setup.md) for the full ingestion setup and validation flow.
+
+## License
+
+Copyright 2026 Coveo Solutions Inc. Licensed under the [Apache License, Version 2.0](LICENSE).
